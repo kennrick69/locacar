@@ -149,30 +149,19 @@ router.post('/token-login', async (req, res) => {
   try {
     const { token: tokenInput } = req.body;
 
-    // Limpa qualquer formatação
-    const cleanToken = (tokenInput || '').replace(/\D/g, '').trim();
-
-    if (!cleanToken || cleanToken.length !== 6) {
-      return res.status(400).json({ error: 'Token deve ter exatamente 6 dígitos numéricos' });
+    if (!tokenInput || tokenInput.length !== 6) {
+      return res.status(400).json({ error: 'Token deve ter 6 dígitos' });
     }
-
-    console.log(`🔑 Token-login tentativa: "${cleanToken}"`);
 
     const result = await pool.query(`
       SELECT u.id, u.nome, u.email, u.role, u.ativo, dp.id as profile_id, dp.status, dp.token_externo
       FROM driver_profiles dp
       JOIN users u ON u.id = dp.user_id
       WHERE dp.token_externo = $1
-    `, [cleanToken]);
+    `, [tokenInput]);
 
     if (result.rows.length === 0) {
-      console.log(`⚠️ Token-login falhou: token="${cleanToken}" (raw: "${tokenInput}") não encontrado no banco`);
-      // Debug: lista tokens existentes (só em dev)
-      if (process.env.NODE_ENV !== 'production') {
-        const all = await pool.query('SELECT dp.token_externo, u.nome FROM driver_profiles dp JOIN users u ON u.id = dp.user_id WHERE dp.token_externo IS NOT NULL LIMIT 10');
-        console.log('Tokens existentes:', all.rows.map(r => `${r.token_externo} (${r.nome})`));
-      }
-      return res.status(401).json({ error: 'Token não encontrado. Verifique se são os 6 primeiros números do seu CPF.' });
+      return res.status(401).json({ error: 'Token não encontrado' });
     }
 
     const user = result.rows[0];

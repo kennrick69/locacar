@@ -423,7 +423,7 @@ router.post('/admin-create', auth, adminOnly, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { nome, email, cpf, telefone, car_id, data_inicio, data_fim, observacoes, dia_cobranca } = req.body;
+    const { nome, email, cpf, telefone, car_id, data_inicio, data_fim, observacoes } = req.body;
 
     if (!nome || !cpf) {
       return res.status(400).json({ error: 'Nome e CPF são obrigatórios' });
@@ -453,10 +453,10 @@ router.post('/admin-create', auth, adminOnly, async (req, res) => {
 
     // Cria perfil de motorista já ativo
     const profileResult = await client.query(`
-      INSERT INTO driver_profiles (user_id, car_id, status, token_externo, contrato_confirmado, data_inicio, motivo_reprovacao, dia_cobranca)
-      VALUES ($1, $2, 'ativo', $3, true, $4, $5, $6)
+      INSERT INTO driver_profiles (user_id, car_id, status, token_externo, contrato_confirmado, data_inicio, motivo_reprovacao)
+      VALUES ($1, $2, 'ativo', $3, true, $4, $5)
       RETURNING *
-    `, [user.id, car_id || null, tokenExterno, data_inicio || new Date(), observacoes || null, dia_cobranca || 'segunda']);
+    `, [user.id, car_id || null, tokenExterno, data_inicio || new Date(), observacoes || null]);
 
     // Se atribuiu carro, marca como indisponível
     if (car_id) {
@@ -506,91 +506,6 @@ router.get('/', auth, adminOnly, async (req, res) => {
   } catch (err) {
     console.error('Erro ao listar motoristas:', err);
     res.status(500).json({ error: 'Erro interno' });
-  }
-});
-
-/**
- * PATCH /api/drivers/:id/update - Admin: editar dados do motorista
- */
-router.patch('/:id/update', auth, adminOnly, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const driverId = req.params.id;
-    const { nome, cpf, telefone, email, car_id, dia_cobranca, observacoes } = req.body;
-
-    // Busca driver
-    const driverRes = await client.query('SELECT * FROM driver_profiles WHERE id = $1', [driverId]);
-    if (driverRes.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Motorista não encontrado' }); }
-    const driver = driverRes.rows[0];
-
-    // Atualiza user (nome, cpf, telefone, email)
-    if (nome || cpf || telefone || email) {
-      const fields = [];
-      const vals = [];
-      let idx = 1;
-      if (nome) { fields.push(`nome = $${idx++}`); vals.push(nome); }
-      if (cpf) { fields.push(`cpf = $${idx++}`); vals.push(cpf); }
-      if (telefone !== undefined) { fields.push(`telefone = $${idx++}`); vals.push(telefone || null); }
-      if (email) { fields.push(`email = $${idx++}`); vals.push(email); }
-      if (fields.length > 0) {
-        vals.push(driver.user_id);
-        await client.query(`UPDATE users SET ${fields.join(', ')} WHERE id = $${idx}`, vals);
-      }
-    }
-
-    // Atualiza perfil (car_id, dia_cobranca, observacoes)
-    const profileFields = [];
-    const profileVals = [];
-    let pIdx = 1;
-
-    if (car_id !== undefined) {
-      // Libera carro antigo
-      if (driver.car_id && driver.car_id !== parseInt(car_id)) {
-        await client.query('UPDATE cars SET disponivel = true, updated_at = NOW() WHERE id = $1', [driver.car_id]);
-      }
-      // Ocupa novo carro
-      if (car_id) {
-        await client.query('UPDATE cars SET disponivel = false, updated_at = NOW() WHERE id = $1', [car_id]);
-      }
-      profileFields.push(`car_id = $${pIdx++}`); profileVals.push(car_id || null);
-    }
-    if (dia_cobranca !== undefined) { profileFields.push(`dia_cobranca = $${pIdx++}`); profileVals.push(dia_cobranca); }
-    if (observacoes !== undefined) { profileFields.push(`motivo_reprovacao = $${pIdx++}`); profileVals.push(observacoes); }
-
-    if (profileFields.length > 0) {
-      profileFields.push(`updated_at = NOW()`);
-      profileVals.push(driverId);
-      await client.query(`UPDATE driver_profiles SET ${profileFields.join(', ')} WHERE id = $${pIdx}`, profileVals);
-    }
-
-    // Atualiza token_externo se CPF mudou
-    if (cpf) {
-      const cpfClean = cpf.replace(/\D/g, '');
-      const token = cpfClean.substring(0, 6);
-      await client.query('UPDATE driver_profiles SET token_externo = $1 WHERE id = $2', [token, driverId]);
-    }
-
-    await client.query('COMMIT');
-    
-    // Retorna driver atualizado
-    const updated = await pool.query(`
-      SELECT dp.*, u.nome, u.email, u.cpf, u.telefone,
-        c.marca as car_marca, c.modelo as car_modelo, c.placa as car_placa,
-        c.valor_semanal as car_valor_semanal
-      FROM driver_profiles dp
-      JOIN users u ON u.id = dp.user_id
-      LEFT JOIN cars c ON c.id = dp.car_id
-      WHERE dp.id = $1
-    `, [driverId]);
-
-    res.json(updated.rows[0]);
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Erro ao atualizar motorista:', err);
-    res.status(500).json({ error: err.message || 'Erro interno' });
-  } finally {
-    client.release();
   }
 });
 
@@ -848,84 +763,6 @@ router.post('/:id/charges', auth, adminOnly, async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Erro ao criar cobrança:', err);
-    res.status(500).json({ error: 'Erro interno' });
-  } finally {
-    client.release();
-  }
-});
-
-/**
- * POST /api/drivers/charges/auto-generate - Admin: gerar cobranças automáticas
- * Gera cobrança para todos motoristas ativos cujo dia_cobranca = dia informado
- * Se não informar dia, usa o dia atual da semana
- */
-router.post('/charges/auto-generate', auth, adminOnly, async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const diasMap = { 0: 'domingo', 1: 'segunda', 2: 'terca', 3: 'quarta', 4: 'quinta', 5: 'sexta', 6: 'sabado' };
-    const diaFiltro = req.body.dia_cobranca || diasMap[new Date().getDay()];
-    const semanaRef = req.body.semana_ref || new Date().toISOString().split('T')[0];
-
-    // Busca motoristas ativos com carro atribuído nesse dia
-    const drivers = await client.query(`
-      SELECT dp.id, dp.car_id, dp.dia_cobranca, c.valor_semanal
-      FROM driver_profiles dp
-      JOIN cars c ON c.id = dp.car_id
-      WHERE dp.status = 'ativo'
-        AND dp.car_id IS NOT NULL
-        AND dp.dia_cobranca = $1
-    `, [diaFiltro]);
-
-    let geradas = 0;
-    let puladas = 0;
-    const detalhes = [];
-
-    for (const drv of drivers.rows) {
-      // Verifica se já existe cobrança nessa semana
-      const exists = await client.query(
-        'SELECT id FROM weekly_charges WHERE driver_id = $1 AND semana_ref = $2',
-        [drv.id, semanaRef]
-      );
-      if (exists.rows.length > 0) {
-        puladas++;
-        continue;
-      }
-
-      // Busca crédito da última cobrança
-      const lastCharge = await client.query(
-        'SELECT credito_anterior, pago FROM weekly_charges WHERE driver_id = $1 ORDER BY semana_ref DESC LIMIT 1',
-        [drv.id]
-      );
-      let creditoAnterior = 0;
-      if (lastCharge.rows.length > 0 && lastCharge.rows[0].pago && parseFloat(lastCharge.rows[0].credito_anterior) < 0) {
-        creditoAnterior = parseFloat(lastCharge.rows[0].credito_anterior);
-      }
-
-      const base = parseFloat(drv.valor_semanal);
-      const valorFinal = Math.max(base + creditoAnterior, 0);
-
-      await client.query(`
-        INSERT INTO weekly_charges (driver_id, semana_ref, valor_base, credito_anterior, valor_final, observacoes)
-        VALUES ($1, $2, $3, $4, $5, $6)
-      `, [drv.id, semanaRef, base, creditoAnterior, valorFinal, 'Gerada automaticamente']);
-
-      geradas++;
-      detalhes.push({ driver_id: drv.id, valor: valorFinal });
-    }
-
-    await client.query('COMMIT');
-    res.json({
-      dia: diaFiltro,
-      semana_ref: semanaRef,
-      total_motoristas: drivers.rows.length,
-      geradas,
-      puladas,
-      detalhes
-    });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('Erro ao gerar cobranças:', err);
     res.status(500).json({ error: 'Erro interno' });
   } finally {
     client.release();

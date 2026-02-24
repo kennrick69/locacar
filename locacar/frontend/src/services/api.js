@@ -88,8 +88,6 @@ export const driversAPI = {
   adminUploadDoc: (driverId, tipo, formData) => api.post(`/drivers/${driverId}/documents?tipo=${tipo}`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
-  updateDriver: (driverId, data) => api.patch(`/drivers/${driverId}/update`, data),
-  autoGenerateCharges: (data) => api.post('/drivers/charges/auto-generate', data),
   approve: (id, data) => api.patch(`/drivers/${id}/approve`, data),
   reject: (id, data) => api.patch(`/drivers/${id}/reject`, data),
   activate: (id) => api.patch(`/drivers/${id}/activate`),

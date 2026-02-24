@@ -1,379 +1,348 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { driversAPI, carsAPI } from '../../services/api';
 import { toast } from 'react-toastify';
 import {
   ArrowLeft, CheckCircle2, XCircle, Clock, Car, FileText,
   Eye, X, Shield, UserCheck, AlertCircle, Plus, Banknote,
-  Check, Download
+  Check, Download, Upload, Pencil, Save, Calendar, User
 } from 'lucide-react';
 
 const STATUS_BADGE = {
-  pendente: 'bg-gray-100 text-gray-700',
-  em_analise: 'bg-yellow-100 text-yellow-800',
-  aprovado: 'bg-blue-100 text-blue-800',
-  reprovado: 'bg-red-100 text-red-800',
-  ativo: 'bg-green-100 text-green-800',
-  inadimplente: 'bg-red-100 text-red-800',
-  rescindido: 'bg-gray-200 text-gray-600',
-  recolhido: 'bg-gray-200 text-gray-600',
+  pendente: 'bg-gray-100 text-gray-700', em_analise: 'bg-yellow-100 text-yellow-800',
+  aprovado: 'bg-blue-100 text-blue-800', reprovado: 'bg-red-100 text-red-800',
+  ativo: 'bg-green-100 text-green-800', inadimplente: 'bg-red-100 text-red-800',
+  rescindido: 'bg-gray-200 text-gray-600', recolhido: 'bg-gray-200 text-gray-600',
 };
+
+const DIAS_SEMANA = [
+  { value: 'segunda', label: 'Segunda-feira' },
+  { value: 'terca', label: 'Terça-feira' },
+  { value: 'quarta', label: 'Quarta-feira' },
+  { value: 'quinta', label: 'Quinta-feira' },
+  { value: 'sexta', label: 'Sexta-feira' },
+  { value: 'sabado', label: 'Sábado' },
+  { value: 'domingo', label: 'Domingo' },
+];
+
+const DOC_TYPES = [
+  { tipo: 'cnh', label: 'CNH' },
+  { tipo: 'comprovante', label: 'Comprovante End.' },
+  { tipo: 'selfie', label: 'Selfie c/ Doc' },
+  { tipo: 'contrato', label: 'Contrato' },
+  { tipo: 'nota_fiscal', label: 'Nota Fiscal' },
+  { tipo: 'outro', label: 'Outro Doc' },
+];
+
+const fmt = (v) => parseFloat(v || 0).toFixed(2).replace('.', ',');
 
 export default function AdminDriverDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [driver, setDriver] = useState(null);
-  const [cars, setCars] = useState([]);
+  const [allCars, setAllCars] = useState([]);
   const [loading, setLoading] = useState(true);
   const [previewUrl, setPreviewUrl] = useState(null);
 
-  // Approve modal
-  const [approveModal, setApproveModal] = useState(false);
-  const [selectedCar, setSelectedCar] = useState('');
+  // Edit mode
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({});
+  const [saving, setSaving] = useState(false);
 
-  // Reject modal
-  const [rejectModal, setRejectModal] = useState(false);
-  const [rejectReason, setRejectReason] = useState('');
-
-  // Create charge modal
+  // Charge modal
   const [chargeModal, setChargeModal] = useState(false);
   const [chargeForm, setChargeForm] = useState({ semana_ref: '', valor_base: '', observacoes: '' });
-
-  // Settlement modal
-  const [settlementModal, setSettlementModal] = useState(false);
-  const [settlementForm, setSettlementForm] = useState({
-    debitos_pendentes: 0, multas_acumuladas: 0, danos: 0, outros_descontos: 0, observacoes: ''
-  });
 
   // Acréscimo
   const [acrescimoChargeId, setAcrescimoChargeId] = useState(null);
   const [acrescimoForm, setAcrescimoForm] = useState({ descricao: '', valor: '' });
 
+  // Approve/Reject
+  const [approveModal, setApproveModal] = useState(false);
+  const [selectedCar, setSelectedCar] = useState('');
+  const [rejectModal, setRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+
+  // Settlement
+  const [settlementModal, setSettlementModal] = useState(false);
+  const [settlementForm, setSettlementForm] = useState({ debitos_pendentes: 0, multas_acumuladas: 0, danos: 0, outros_descontos: 0, observacoes: '' });
+
+  // Upload doc
+  const [uploading, setUploading] = useState(false);
+  const docInputRef = useRef(null);
+  const [uploadTipo, setUploadTipo] = useState('');
+
   const [processing, setProcessing] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, [id]);
+  useEffect(() => { loadData(); }, [id]);
 
   const loadData = async () => {
     try {
-      const [driverRes, carsRes] = await Promise.all([
-        driversAPI.get(id),
-        carsAPI.listAll(),
-      ]);
+      const [driverRes, carsRes] = await Promise.all([driversAPI.get(id), carsAPI.listAll()]);
       setDriver(driverRes.data);
-      setCars(carsRes.data.filter(c => c.disponivel));
-
-      // Preenche settlement com dados reais
+      setAllCars(carsRes.data);
+      initEditForm(driverRes.data);
       if (driverRes.data.charges) {
         const pending = driverRes.data.charges.filter(c => !c.pago);
-        const totalDebitos = pending.reduce((s, c) => s + parseFloat(c.valor_final || 0), 0);
-        const totalMultas = pending.reduce((s, c) => s + parseFloat(c.multa || 0), 0);
         setSettlementForm(prev => ({
           ...prev,
-          debitos_pendentes: totalDebitos.toFixed(2),
-          multas_acumuladas: totalMultas.toFixed(2),
+          debitos_pendentes: pending.reduce((s, c) => s + parseFloat(c.valor_final || 0), 0).toFixed(2),
+          multas_acumuladas: pending.reduce((s, c) => s + parseFloat(c.multa || 0), 0).toFixed(2),
         }));
       }
     } catch (err) {
       toast.error('Erro ao carregar motorista');
       navigate('/admin/motoristas');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
-  const handleApprove = async () => {
-    setProcessing(true);
-    try {
-      await driversAPI.approve(id, { car_id: selectedCar || null });
-      toast.success('Motorista aprovado!');
-      setApproveModal(false);
-      await loadData();
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Erro ao aprovar');
-    } finally {
-      setProcessing(false);
-    }
+  const initEditForm = (d) => {
+    setEditForm({
+      nome: d.nome || '', cpf: d.cpf || '', telefone: d.telefone || '', email: d.email || '',
+      car_id: d.car_id || '', dia_cobranca: d.dia_cobranca || 'segunda', observacoes: d.motivo_reprovacao || '',
+    });
   };
 
-  const handleReject = async () => {
-    setProcessing(true);
+  // ========== SAVE EDIT ==========
+  const handleSaveEdit = async () => {
+    setSaving(true);
     try {
-      await driversAPI.reject(id, { motivo: rejectReason });
-      toast.success('Motorista reprovado');
-      setRejectModal(false);
-      await loadData();
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Erro ao reprovar');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const handleConfirmContract = async () => {
-    try {
-      await driversAPI.confirmContract(id);
-      toast.success('Contrato confirmado!');
-      await loadData();
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Erro');
-    }
-  };
-
-  const handleActivate = async () => {
-    try {
-      await driversAPI.activate(id);
-      toast.success('Motorista ativado!');
-      await loadData();
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Erro ao ativar');
-    }
-  };
-
-  const handleCreateCharge = async () => {
-    if (!chargeForm.semana_ref || !chargeForm.valor_base) {
-      return toast.warning('Preencha semana e valor base');
-    }
-    setProcessing(true);
-    try {
-      await driversAPI.createCharge(id, chargeForm);
-      toast.success('Cobrança criada!');
-      setChargeModal(false);
-      setChargeForm({ semana_ref: '', valor_base: '', observacoes: '' });
-      await loadData();
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Erro');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const handleApproveAbatimento = async (abatId) => {
-    try {
-      await driversAPI.approveAbatimento(id, abatId);
-      toast.success('Abatimento aprovado!');
-      await loadData();
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Erro');
-    }
-  };
-
-  const handleAddAcrescimo = async () => {
-    if (!acrescimoForm.descricao || !acrescimoForm.valor) {
-      return toast.warning('Preencha descrição e valor');
-    }
-    try {
-      await driversAPI.addAcrescimo(id, {
-        charge_id: acrescimoChargeId,
-        descricao: acrescimoForm.descricao,
-        valor: parseFloat(acrescimoForm.valor)
+      await driversAPI.updateDriver(id, {
+        nome: editForm.nome, cpf: editForm.cpf, telefone: editForm.telefone, email: editForm.email,
+        car_id: editForm.car_id || null, dia_cobranca: editForm.dia_cobranca, observacoes: editForm.observacoes,
       });
-      toast.success('Acréscimo adicionado!');
-      setAcrescimoChargeId(null);
-      setAcrescimoForm({ descricao: '', valor: '' });
+      toast.success('Dados atualizados!');
+      setEditing(false);
       await loadData();
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Erro');
-    }
+      toast.error(err.response?.data?.error || 'Erro ao salvar');
+    } finally { setSaving(false); }
   };
 
-  const handleRemoveAcrescimo = async (acrescimoId) => {
-    try {
-      await driversAPI.removeAcrescimo(id, acrescimoId);
-      toast.success('Acréscimo removido!');
-      await loadData();
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Erro');
-    }
+  // ========== ACTIONS ==========
+  const handleApprove = async () => { setProcessing(true); try { await driversAPI.approve(id, { car_id: selectedCar || null }); toast.success('Aprovado!'); setApproveModal(false); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } finally { setProcessing(false); } };
+  const handleReject = async () => { setProcessing(true); try { await driversAPI.reject(id, { motivo: rejectReason }); toast.success('Reprovado'); setRejectModal(false); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } finally { setProcessing(false); } };
+  const handleConfirmContract = async () => { try { await driversAPI.confirmContract(id); toast.success('Contrato confirmado!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
+  const handleActivate = async () => { try { await driversAPI.activate(id); toast.success('Ativado!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
+  const handleCreateCharge = async () => { if (!chargeForm.semana_ref || !chargeForm.valor_base) return toast.warning('Preencha semana e valor'); setProcessing(true); try { await driversAPI.createCharge(id, chargeForm); toast.success('Cobrança criada!'); setChargeModal(false); setChargeForm({ semana_ref: '', valor_base: '', observacoes: '' }); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } finally { setProcessing(false); } };
+  const handleApproveAbatimento = async (abatId) => { try { await driversAPI.approveAbatimento(id, abatId); toast.success('Abatimento aprovado!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
+  const handleAddAcrescimo = async () => { if (!acrescimoForm.descricao || !acrescimoForm.valor) return toast.warning('Preencha'); try { await driversAPI.addAcrescimo(id, { charge_id: acrescimoChargeId, descricao: acrescimoForm.descricao, valor: parseFloat(acrescimoForm.valor) }); toast.success('Acréscimo adicionado!'); setAcrescimoChargeId(null); setAcrescimoForm({ descricao: '', valor: '' }); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
+  const handleRemoveAcrescimo = async (acrescimoId) => { try { await driversAPI.removeAcrescimo(id, acrescimoId); toast.success('Removido!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
+
+  const triggerDocUpload = (tipo) => { setUploadTipo(tipo); setTimeout(() => docInputRef.current?.click(), 50); };
+  const handleDocUpload = async (e) => {
+    const file = e.target.files?.[0]; if (!file || !uploadTipo) return;
+    setUploading(true);
+    try { const fd = new FormData(); fd.append('arquivo', file); await driversAPI.adminUploadDoc(id, uploadTipo, fd); toast.success(`${uploadTipo.toUpperCase()} enviado!`); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); }
+    finally { setUploading(false); setUploadTipo(''); if (docInputRef.current) docInputRef.current.value = ''; }
   };
 
-  const handleSettlement = async () => {
-    setProcessing(true);
-    try {
-      const res = await fetch(`/api/drivers/${id}/settlement`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('locacar_token')}`,
-        },
-        body: JSON.stringify(settlementForm),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      toast.success('Acerto final gerado!');
-      setSettlementModal(false);
-      await loadData();
-    } catch (err) {
-      toast.error(err.message || 'Erro ao gerar acerto');
-    } finally {
-      setProcessing(false);
-    }
-  };
+  const handleSettlement = async () => { setProcessing(true); try { await fetch(`/api/drivers/${id}/settlement`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('locacar_token')}` }, body: JSON.stringify(settlementForm) }); toast.success('Rescisão processada!'); setSettlementModal(false); await loadData(); } catch (e) { toast.error('Erro na rescisão'); } finally { setProcessing(false); } };
 
-  const fmt = (v) => parseFloat(v || 0).toFixed(2).replace('.', ',');
+  // Carros disponíveis = disponíveis + o carro atual do motorista
+  const availableCars = allCars.filter(c => c.disponivel || (driver && c.id === driver.car_id));
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
-      </div>
-    );
-  }
-
+  if (loading) return <div className="flex justify-center items-center h-64"><div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" /></div>;
   if (!driver) return null;
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/admin/motoristas')} className="p-2 hover:bg-gray-100 rounded-lg">
-          <ArrowLeft className="w-5 h-5 text-gray-600" />
-        </button>
+        <button onClick={() => navigate('/admin/motoristas')} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-5 h-5" /></button>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold text-gray-800">{driver.nome}</h1>
-          <p className="text-sm text-gray-400">{driver.email} · CPF: {driver.cpf || '—'} · Tel: {driver.telefone || '—'}</p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-xl font-bold text-gray-800">{driver.nome}</h1>
+            <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_BADGE[driver.status]}`}>{driver.status?.replace('_', ' ')}</span>
+          </div>
+          <p className="text-sm text-gray-400">{driver.email} · CPF: {driver.cpf}{driver.telefone ? ` · Tel: ${driver.telefone}` : ''}</p>
+          {driver.token_externo && <p className="text-xs text-brand-600 font-mono">Token: {driver.token_externo}</p>}
         </div>
-        <span className={`text-sm px-3 py-1 rounded-full font-medium ${STATUS_BADGE[driver.status] || ''}`}>
-          {driver.status?.replace('_', ' ')}
-        </span>
+        <button onClick={() => { setEditing(!editing); if (editing) initEditForm(driver); }} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${editing ? 'bg-gray-200 text-gray-700' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'}`}>
+          {editing ? <><X className="w-4 h-4" /> Cancelar</> : <><Pencil className="w-4 h-4" /> Editar</>}
+        </button>
       </div>
 
-      {/* Info Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* ========== EDIT FORM ========== */}
+      {editing && (
+        <div className="card border-2 border-brand-200 space-y-4">
+          <h3 className="font-semibold text-gray-800 flex items-center gap-2"><User className="w-4 h-4 text-brand-600" /> Editar Dados</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Nome *</label>
+              <input type="text" value={editForm.nome} onChange={e => setEditForm({...editForm, nome: e.target.value})} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">CPF *</label>
+              <input type="text" value={editForm.cpf} onChange={e => setEditForm({...editForm, cpf: e.target.value})} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Telefone</label>
+              <input type="text" value={editForm.telefone} onChange={e => setEditForm({...editForm, telefone: e.target.value})} className="input-field" placeholder="(00) 00000-0000" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Email</label>
+              <input type="email" value={editForm.email} onChange={e => setEditForm({...editForm, email: e.target.value})} className="input-field" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1 flex items-center gap-1"><Car className="w-3.5 h-3.5" /> Carro atribuído</label>
+              <select value={editForm.car_id} onChange={e => setEditForm({...editForm, car_id: e.target.value})} className="input-field">
+                <option value="">Nenhum</option>
+                {availableCars.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.marca} {c.modelo} — {c.placa} (R$ {fmt(c.valor_semanal)}/sem)
+                    {c.id === driver.car_id ? ' ← atual' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1 flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> Dia da cobrança semanal</label>
+              <select value={editForm.dia_cobranca} onChange={e => setEditForm({...editForm, dia_cobranca: e.target.value})} className="input-field">
+                {DIAS_SEMANA.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Observações</label>
+            <textarea value={editForm.observacoes} onChange={e => setEditForm({...editForm, observacoes: e.target.value})} className="input-field" rows={2} placeholder="Notas internas..." />
+          </div>
+
+          <button onClick={handleSaveEdit} disabled={saving} className="btn-primary flex items-center gap-2">
+            {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save className="w-4 h-4" />}
+            Salvar Alterações
+          </button>
+        </div>
+      )}
+
+      {/* ========== INFO CARDS ========== */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Veículo */}
         <div className="card">
-          <div className="flex items-center gap-2 mb-3">
-            <Car className="w-4 h-4 text-brand-600" />
-            <h3 className="font-semibold text-gray-700 text-sm">Veículo Atribuído</h3>
-          </div>
+          <div className="flex items-center gap-2 mb-2"><Car className="w-4 h-4 text-brand-600" /><h3 className="font-semibold text-gray-700 text-sm">Veículo</h3></div>
           {driver.car_marca ? (
             <div>
               <p className="font-medium">{driver.car_marca} {driver.car_modelo}</p>
-              <p className="text-sm text-gray-400">{driver.car_placa} · R$ {fmt(driver.car_valor_semanal)}/sem · Caução: R$ {fmt(driver.car_valor_caucao)}</p>
+              <p className="text-xs text-gray-400">{driver.car_placa} · R$ {fmt(driver.car_valor_semanal)}/sem</p>
             </div>
           ) : (
-            <p className="text-sm text-gray-400">Nenhum veículo atribuído</p>
+            <p className="text-sm text-gray-400">Nenhum — <button onClick={() => setEditing(true)} className="text-brand-600 underline">atribuir</button></p>
           )}
         </div>
 
-        {/* Status flags */}
+        {/* Dia da cobrança */}
         <div className="card">
-          <div className="flex items-center gap-2 mb-3">
-            <Shield className="w-4 h-4 text-brand-600" />
-            <h3 className="font-semibold text-gray-700 text-sm">Progresso</h3>
-          </div>
-          <div className="space-y-2 text-sm">
-            <div className="flex items-center gap-2">
-              {driver.cnh_url ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-gray-300" />}
-              <span>CNH</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {driver.comprovante_url ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-gray-300" />}
-              <span>Comprovante</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {driver.selfie_url ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-gray-300" />}
-              <span>Selfie</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {driver.caucao_pago ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-gray-300" />}
-              <span>Caução pago</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {driver.contrato_confirmado ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : driver.contrato_url ? <Clock className="w-4 h-4 text-yellow-500" /> : <XCircle className="w-4 h-4 text-gray-300" />}
-              <span>Contrato {driver.contrato_confirmado ? 'confirmado' : driver.contrato_url ? '(aguardando)' : ''}</span>
-            </div>
+          <div className="flex items-center gap-2 mb-2"><Calendar className="w-4 h-4 text-brand-600" /><h3 className="font-semibold text-gray-700 text-sm">Cobrança</h3></div>
+          <p className="font-medium capitalize">{driver.dia_cobranca || 'segunda'}-feira</p>
+          <p className="text-xs text-gray-400">Dia da semana para cobrança</p>
+        </div>
+
+        {/* Progresso */}
+        <div className="card">
+          <div className="flex items-center gap-2 mb-2"><Shield className="w-4 h-4 text-brand-600" /><h3 className="font-semibold text-gray-700 text-sm">Progresso</h3></div>
+          <div className="space-y-1 text-xs">
+            {[
+              { ok: driver.cnh_url, label: 'CNH' },
+              { ok: driver.comprovante_url, label: 'Comprovante' },
+              { ok: driver.selfie_url, label: 'Selfie' },
+              { ok: driver.caucao_pago, label: 'Caução' },
+              { ok: driver.contrato_confirmado, label: 'Contrato' },
+            ].map((item, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                {item.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> : <XCircle className="w-3.5 h-3.5 text-gray-300" />}
+                <span className={item.ok ? 'text-gray-700' : 'text-gray-400'}>{item.label}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
       {/* ========== AÇÕES POR STATUS ========== */}
-
-      {/* Aprovar / Reprovar */}
       {driver.status === 'em_analise' && (
         <div className="card border-l-4 border-yellow-400">
-          <h3 className="font-semibold text-gray-800 mb-3">Ação Necessária: Aprovação de Cadastro</h3>
+          <h3 className="font-semibold text-gray-800 mb-3">Aprovação de Cadastro</h3>
           <div className="flex gap-3">
-            <button onClick={() => setApproveModal(true)} className="btn-primary flex items-center gap-2">
-              <UserCheck className="w-4 h-4" /> Aprovar
-            </button>
-            <button onClick={() => setRejectModal(true)} className="btn-danger flex items-center gap-2">
-              <XCircle className="w-4 h-4" /> Reprovar
-            </button>
+            <button onClick={() => setApproveModal(true)} className="btn-primary flex items-center gap-2"><UserCheck className="w-4 h-4" /> Aprovar</button>
+            <button onClick={() => setRejectModal(true)} className="btn-danger flex items-center gap-2"><XCircle className="w-4 h-4" /> Reprovar</button>
           </div>
         </div>
       )}
 
-      {/* Confirmar contrato */}
       {driver.status === 'aprovado' && driver.contrato_url && !driver.contrato_confirmado && (
         <div className="card border-l-4 border-purple-400">
-          <h3 className="font-semibold text-gray-800 mb-2">Validar Contrato Gov.br</h3>
-          <p className="text-sm text-gray-500 mb-3">O motorista enviou o contrato assinado. Verifique e confirme.</p>
-          <div className="flex gap-3">
-            <button onClick={() => setPreviewUrl(driver.contrato_url)} className="btn-secondary flex items-center gap-2">
-              <Eye className="w-4 h-4" /> Ver Contrato
-            </button>
-            <button onClick={handleConfirmContract} className="btn-primary flex items-center gap-2">
-              <Check className="w-4 h-4" /> Confirmar Contrato
-            </button>
-          </div>
+          <h3 className="font-semibold text-gray-800 mb-2">Confirmar Contrato</h3>
+          <button onClick={handleConfirmContract} className="btn-primary flex items-center gap-2"><Check className="w-4 h-4" /> Confirmar Contrato</button>
         </div>
       )}
 
-      {/* Ativar */}
       {driver.status === 'aprovado' && driver.caucao_pago && driver.contrato_confirmado && (
         <div className="card border-l-4 border-green-400">
           <h3 className="font-semibold text-gray-800 mb-2">Ativar Motorista</h3>
-          <p className="text-sm text-gray-500 mb-3">Caução pago e contrato confirmado. O motorista está pronto para ser ativado.</p>
-          <button onClick={handleActivate} className="btn-primary flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4" /> Ativar Motorista
-          </button>
+          <button onClick={handleActivate} className="btn-primary flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Ativar Motorista</button>
         </div>
       )}
 
       {/* ========== DOCUMENTOS ========== */}
-      {driver.documents && driver.documents.length > 0 && (
-        <div className="card">
-          <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-brand-600" /> Documentos Enviados
-          </h3>
-          <div className="divide-y divide-gray-100">
-            {driver.documents.map(doc => (
-              <div key={doc.id} className="flex items-center justify-between py-2">
-                <div>
-                  <p className="text-sm font-medium text-gray-700">{doc.tipo.toUpperCase()}</p>
-                  <p className="text-xs text-gray-400">{doc.nome_arquivo} · {new Date(doc.created_at).toLocaleDateString('pt-BR')}</p>
+      <div className="card">
+        <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-brand-600" /> Documentos</h3>
+        <input type="file" ref={docInputRef} onChange={handleDocUpload} accept="image/*,application/pdf,.doc,.docx" className="hidden" />
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+          {DOC_TYPES.map(doc => {
+            const urlField = { cnh: 'cnh_url', comprovante: 'comprovante_url', selfie: 'selfie_url', contrato: 'contrato_url' };
+            const hasFile = urlField[doc.tipo] ? driver[urlField[doc.tipo]] : false;
+            return (
+              <div key={doc.tipo} className={`rounded-lg border p-2.5 text-center ${hasFile ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
+                <p className="text-xs font-medium text-gray-700 mb-1.5">{doc.label}</p>
+                <div className="flex items-center justify-center gap-1">
+                  {hasFile && (
+                    <button onClick={() => setPreviewUrl(driver[urlField[doc.tipo]])} className="text-[11px] bg-white border text-brand-600 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                      <Eye className="w-3 h-3" /> Ver
+                    </button>
+                  )}
+                  <button onClick={() => triggerDocUpload(doc.tipo)} disabled={uploading}
+                    className={`text-[11px] px-1.5 py-0.5 rounded flex items-center gap-0.5 ${hasFile ? 'bg-white border text-gray-500' : 'bg-brand-600 text-white'}`}>
+                    <Upload className="w-3 h-3" /> {hasFile ? 'Trocar' : 'Enviar'}
+                  </button>
                 </div>
-                <button onClick={() => setPreviewUrl(doc.caminho)} className="text-brand-600 hover:text-brand-700">
-                  <Eye className="w-4 h-4" />
-                </button>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
-      )}
+
+        {uploading && <p className="text-sm text-brand-600 animate-pulse mb-2">Enviando...</p>}
+
+        {driver.documents?.length > 0 && (
+          <details className="text-sm">
+            <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">Histórico ({driver.documents.length} arquivos)</summary>
+            <div className="mt-2 divide-y divide-gray-100 max-h-40 overflow-auto">
+              {driver.documents.map(doc => (
+                <div key={doc.id} className="flex items-center justify-between py-1.5">
+                  <span className="text-xs text-gray-600">{doc.tipo.toUpperCase()} — {doc.nome_arquivo} · {new Date(doc.created_at).toLocaleDateString('pt-BR')}</span>
+                  <button onClick={() => setPreviewUrl(doc.caminho)} className="text-brand-600"><Eye className="w-3.5 h-3.5" /></button>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
 
       {/* ========== COBRANÇAS ========== */}
       {(driver.status === 'ativo' || driver.status === 'inadimplente' || driver.charges?.length > 0) && (
         <div className="card">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-              <Banknote className="w-4 h-4 text-brand-600" /> Cobranças Semanais
-            </h3>
-            <button onClick={() => {
-              setChargeForm({
-                semana_ref: new Date().toISOString().split('T')[0],
-                valor_base: driver.car_valor_semanal || '',
-                observacoes: '',
-              });
-              setChargeModal(true);
-            }} className="btn-primary text-sm flex items-center gap-1">
+            <h3 className="font-semibold text-gray-800 flex items-center gap-2"><Banknote className="w-4 h-4 text-brand-600" /> Cobranças Semanais</h3>
+            <button onClick={() => { setChargeForm({ semana_ref: new Date().toISOString().split('T')[0], valor_base: driver.car_valor_semanal || '', observacoes: '' }); setChargeModal(true); }}
+              className="text-sm bg-brand-600 text-white px-3 py-1.5 rounded-lg hover:bg-brand-700 flex items-center gap-1">
               <Plus className="w-3.5 h-3.5" /> Nova Cobrança
             </button>
           </div>
 
-          {driver.charges && driver.charges.length > 0 ? (
+          {driver.charges?.length > 0 ? (
             <div className="space-y-2 max-h-[500px] overflow-auto">
               {driver.charges.map(charge => {
                 const abats = charge.abatimentos_lista || [];
@@ -387,9 +356,7 @@ export default function AdminDriverDetail() {
                   <div key={charge.id} className="bg-gray-50 rounded-lg p-3">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium">
-                          Semana {new Date(charge.semana_ref).toLocaleDateString('pt-BR')}
-                        </p>
+                        <p className="text-sm font-medium">Semana {new Date(charge.semana_ref).toLocaleDateString('pt-BR')}</p>
                         <p className="text-xs text-gray-400">
                           Base: R$ {fmt(charge.valor_base)}
                           {parseFloat(charge.abatimentos) > 0 && ` | Abat: -R$ ${fmt(charge.abatimentos)}`}
@@ -406,83 +373,52 @@ export default function AdminDriverDetail() {
                       </div>
                     </div>
 
-                    {/* Acréscimos existentes */}
+                    {/* Acréscimos */}
                     {acrescimos.length > 0 && (
                       <div className="mt-2 pt-2 border-t border-gray-200 space-y-1">
                         <p className="text-xs font-medium text-red-700">Acréscimos:</p>
                         {acrescimos.map(acr => (
                           <div key={acr.id} className="flex items-center justify-between bg-red-50 rounded px-2 py-1">
-                            <span className="text-xs text-gray-700">{acr.descricao} — <strong>+R$ {fmt(acr.valor)}</strong></span>
-                            {!charge.pago && (
-                              <button onClick={() => handleRemoveAcrescimo(acr.id)}
-                                className="text-xs text-red-500 hover:text-red-700 px-1">✕</button>
-                            )}
+                            <span className="text-xs">{acr.descricao} — <strong>+R$ {fmt(acr.valor)}</strong></span>
+                            {!charge.pago && <button onClick={() => handleRemoveAcrescimo(acr.id)} className="text-xs text-red-500 px-1">✕</button>}
                           </div>
                         ))}
                       </div>
                     )}
 
-                    {/* Botão adicionar acréscimo */}
+                    {/* Add acréscimo */}
                     {!charge.pago && (
                       <div className="mt-2">
                         {acrescimoChargeId === charge.id ? (
-                          <div className="bg-white rounded-lg p-2 border border-gray-200 space-y-2">
-                            <select value={acrescimoForm.descricao}
-                              onChange={e => setAcrescimoForm({ ...acrescimoForm, descricao: e.target.value })}
-                              className="input-field text-xs py-1.5">
-                              <option value="">Tipo do acréscimo...</option>
-                              <option value="Multa de trânsito">Multa de trânsito</option>
-                              <option value="Danos ao veículo">Danos ao veículo</option>
-                              <option value="Guincho / Reboque">Guincho / Reboque</option>
-                              <option value="Manutenção">Manutenção</option>
-                              <option value="Seguro">Seguro</option>
-                              <option value="Outro">Outro</option>
+                          <div className="bg-white rounded-lg p-2 border space-y-2">
+                            <select value={acrescimoForm.descricao} onChange={e => setAcrescimoForm({...acrescimoForm, descricao: e.target.value})} className="input-field text-xs py-1.5">
+                              <option value="">Tipo...</option>
+                              <option>Multa de trânsito</option><option>Danos ao veículo</option>
+                              <option>Guincho / Reboque</option><option>Manutenção</option>
+                              <option>Seguro</option><option>Outro</option>
                             </select>
-                            {acrescimoForm.descricao === 'Outro' && (
-                              <input type="text" placeholder="Descreva..."
-                                onChange={e => setAcrescimoForm({ ...acrescimoForm, descricao: e.target.value })}
-                                className="input-field text-xs py-1.5" />
-                            )}
-                            <input type="number" step="0.01" placeholder="Valor R$" value={acrescimoForm.valor}
-                              onChange={e => setAcrescimoForm({ ...acrescimoForm, valor: e.target.value })}
-                              className="input-field text-xs py-1.5" />
+                            {acrescimoForm.descricao === 'Outro' && <input type="text" placeholder="Descreva..." onChange={e => setAcrescimoForm({...acrescimoForm, descricao: e.target.value})} className="input-field text-xs py-1.5" />}
+                            <input type="number" step="0.01" placeholder="Valor R$" value={acrescimoForm.valor} onChange={e => setAcrescimoForm({...acrescimoForm, valor: e.target.value})} className="input-field text-xs py-1.5" />
                             <div className="flex gap-2">
-                              <button onClick={handleAddAcrescimo}
-                                className="text-xs bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 flex-1">Adicionar</button>
-                              <button onClick={() => setAcrescimoChargeId(null)}
-                                className="text-xs bg-gray-200 text-gray-600 px-3 py-1 rounded hover:bg-gray-300">Cancelar</button>
+                              <button onClick={handleAddAcrescimo} className="text-xs bg-red-600 text-white px-3 py-1 rounded flex-1">Adicionar</button>
+                              <button onClick={() => setAcrescimoChargeId(null)} className="text-xs bg-gray-200 px-3 py-1 rounded">Cancelar</button>
                             </div>
                           </div>
                         ) : (
                           <button onClick={() => { setAcrescimoChargeId(charge.id); setAcrescimoForm({ descricao: '', valor: '' }); }}
-                            className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1">
-                            <Plus className="w-3 h-3" /> Adicionar acréscimo
-                          </button>
+                            className="text-xs text-red-600 font-medium flex items-center gap-1"><Plus className="w-3 h-3" /> Acréscimo</button>
                         )}
                       </div>
                     )}
 
-                    {/* Abatimentos pendentes de aprovação */}
+                    {/* Abatimentos pendentes */}
                     {pendingAbats.length > 0 && (
                       <div className="mt-2 pt-2 border-t border-gray-200 space-y-1">
                         <p className="text-xs font-medium text-yellow-700">Abatimentos pendentes:</p>
                         {pendingAbats.map(abat => (
                           <div key={abat.id} className="flex items-center justify-between bg-yellow-50 rounded px-2 py-1">
-                            <div className="flex items-center gap-2 text-xs">
-                              <span className="text-gray-600">{abat.descricao || 'S/ descrição'}</span>
-                              <span className="font-medium">R$ {fmt(abat.valor)}</span>
-                              {abat.nota_url && (
-                                <button onClick={() => setPreviewUrl(abat.nota_url)} className="text-brand-600">
-                                  <Eye className="w-3 h-3" />
-                                </button>
-                              )}
-                            </div>
-                            <button
-                              onClick={() => handleApproveAbatimento(abat.id)}
-                              className="text-xs bg-green-600 text-white px-2 py-0.5 rounded hover:bg-green-700"
-                            >
-                              Aprovar
-                            </button>
+                            <span className="text-xs">{abat.descricao || 'S/ desc'} — R$ {fmt(abat.valor)}</span>
+                            <button onClick={() => handleApproveAbatimento(abat.id)} className="text-xs bg-green-600 text-white px-2 py-0.5 rounded">Aprovar</button>
                           </div>
                         ))}
                       </div>
@@ -491,20 +427,16 @@ export default function AdminDriverDetail() {
                 );
               })}
             </div>
-          ) : (
-            <p className="text-sm text-gray-400">Nenhuma cobrança registrada</p>
-          )}
+          ) : <p className="text-sm text-gray-400">Nenhuma cobrança registrada</p>}
         </div>
       )}
 
-      {/* ========== RESCISÃO / ACERTO FINAL ========== */}
+      {/* ========== RESCISÃO ========== */}
       {(driver.status === 'ativo' || driver.status === 'inadimplente') && (
-        <div className="card border-l-4 border-orange-400">
-          <h3 className="font-semibold text-gray-800 mb-2">Rescisão e Acerto Final</h3>
-          <p className="text-sm text-gray-500 mb-3">
-            Gera relatório PDF de retenção do caução com todos os débitos, multas e danos.
-          </p>
-          <button onClick={() => setSettlementModal(true)} className="btn-danger flex items-center gap-2">
+        <div className="card border border-red-200">
+          <h3 className="font-semibold text-gray-800 mb-1">Rescisão e Acerto Final</h3>
+          <p className="text-sm text-gray-500 mb-3">Gera relatório PDF de retenção do caução.</p>
+          <button onClick={() => setSettlementModal(true)} className="bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-red-700 text-sm">
             <AlertCircle className="w-4 h-4" /> Iniciar Rescisão
           </button>
         </div>
@@ -512,29 +444,32 @@ export default function AdminDriverDetail() {
 
       {/* ========== MODAIS ========== */}
 
+      {/* Preview doc */}
+      {previewUrl && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setPreviewUrl(null)}>
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-3 border-b">
+              <span className="text-sm font-medium">Documento</span>
+              <button onClick={() => setPreviewUrl(null)}><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-2"><img src={previewUrl} alt="Doc" className="w-full rounded" onError={e => { e.target.style.display='none'; }} /></div>
+          </div>
+        </div>
+      )}
+
       {/* Modal Aprovar */}
       {approveModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setApproveModal(false)}>
           <div className="bg-white rounded-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
-            <h3 className="font-semibold text-gray-800 mb-4">Aprovar Motorista</h3>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Atribuir veículo (opcional)</label>
-              <select value={selectedCar} onChange={e => setSelectedCar(e.target.value)} className="input-field">
-                <option value="">Sem veículo</option>
-                {cars.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.marca} {c.modelo} ({c.placa}) — R$ {fmt(c.valor_semanal)}/sem
-                  </option>
-                ))}
-              </select>
-            </div>
-
+            <h3 className="font-semibold text-lg mb-4">Aprovar Motorista</h3>
+            <label className="block text-sm mb-1">Atribuir carro:</label>
+            <select value={selectedCar} onChange={e => setSelectedCar(e.target.value)} className="input-field mb-4">
+              <option value="">Nenhum (atribuir depois)</option>
+              {availableCars.map(c => <option key={c.id} value={c.id}>{c.marca} {c.modelo} ({c.placa}) — R$ {fmt(c.valor_semanal)}/sem</option>)}
+            </select>
             <div className="flex gap-3">
               <button onClick={() => setApproveModal(false)} className="btn-secondary flex-1">Cancelar</button>
-              <button onClick={handleApprove} disabled={processing} className="btn-primary flex-1">
-                {processing ? 'Aprovando...' : 'Confirmar Aprovação'}
-              </button>
+              <button onClick={handleApprove} disabled={processing} className="btn-primary flex-1">Aprovar</button>
             </div>
           </div>
         </div>
@@ -544,24 +479,11 @@ export default function AdminDriverDetail() {
       {rejectModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setRejectModal(false)}>
           <div className="bg-white rounded-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
-            <h3 className="font-semibold text-gray-800 mb-4">Reprovar Motorista</h3>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Motivo da reprovação</label>
-              <textarea
-                value={rejectReason}
-                onChange={e => setRejectReason(e.target.value)}
-                className="input-field"
-                rows={3}
-                placeholder="Informe o motivo..."
-              />
-            </div>
-
+            <h3 className="font-semibold text-lg mb-4">Reprovar Motorista</h3>
+            <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="input-field mb-4" rows={3} placeholder="Motivo da reprovação" />
             <div className="flex gap-3">
               <button onClick={() => setRejectModal(false)} className="btn-secondary flex-1">Cancelar</button>
-              <button onClick={handleReject} disabled={processing} className="btn-danger flex-1">
-                {processing ? 'Reprovando...' : 'Confirmar Reprovação'}
-              </button>
+              <button onClick={handleReject} disabled={processing} className="btn-danger flex-1">Reprovar</button>
             </div>
           </div>
         </div>
@@ -571,116 +493,49 @@ export default function AdminDriverDetail() {
       {chargeModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setChargeModal(false)}>
           <div className="bg-white rounded-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
-            <h3 className="font-semibold text-gray-800 mb-4">Nova Cobrança Semanal</h3>
-
+            <h3 className="font-semibold text-lg mb-4">Nova Cobrança Semanal</h3>
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Semana referência *</label>
-                <input type="date" value={chargeForm.semana_ref} onChange={e => setChargeForm({ ...chargeForm, semana_ref: e.target.value })} className="input-field" />
+                <label className="block text-sm mb-1">Semana de referência *</label>
+                <input type="date" value={chargeForm.semana_ref} onChange={e => setChargeForm({...chargeForm, semana_ref: e.target.value})} className="input-field" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Valor base (R$) *</label>
-                <input type="number" step="0.01" value={chargeForm.valor_base} onChange={e => setChargeForm({ ...chargeForm, valor_base: e.target.value })} className="input-field" />
+                <label className="block text-sm mb-1">Valor base (R$) *</label>
+                <input type="number" step="0.01" value={chargeForm.valor_base} onChange={e => setChargeForm({...chargeForm, valor_base: e.target.value})} className="input-field" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Observações</label>
-                <textarea value={chargeForm.observacoes} onChange={e => setChargeForm({ ...chargeForm, observacoes: e.target.value })} className="input-field" rows={2} />
+                <label className="block text-sm mb-1">Observações</label>
+                <textarea value={chargeForm.observacoes} onChange={e => setChargeForm({...chargeForm, observacoes: e.target.value})} className="input-field" rows={2} />
               </div>
             </div>
-
             <div className="flex gap-3 mt-4">
               <button onClick={() => setChargeModal(false)} className="btn-secondary flex-1">Cancelar</button>
-              <button onClick={handleCreateCharge} disabled={processing} className="btn-primary flex-1">
-                {processing ? 'Criando...' : 'Criar Cobrança'}
-              </button>
+              <button onClick={handleCreateCharge} disabled={processing} className="btn-primary flex-1">Criar Cobrança</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal Acerto Final / Rescisão */}
+      {/* Modal Rescisão */}
       {settlementModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setSettlementModal(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-auto p-6" onClick={e => e.stopPropagation()}>
-            <h3 className="font-semibold text-gray-800 mb-1">Acerto Final — Rescisão</h3>
-            <p className="text-sm text-gray-500 mb-4">O relatório PDF será gerado com todos os valores abaixo.</p>
-
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="font-semibold text-lg mb-4 text-red-700">Rescisão e Acerto Final</h3>
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Débitos pendentes (R$)</label>
-                  <input type="number" step="0.01" value={settlementForm.debitos_pendentes} onChange={e => setSettlementForm({ ...settlementForm, debitos_pendentes: e.target.value })} className="input-field" />
+              {[{ k: 'debitos_pendentes', l: 'Débitos pendentes' }, { k: 'multas_acumuladas', l: 'Multas acumuladas' }, { k: 'danos', l: 'Danos' }, { k: 'outros_descontos', l: 'Outros descontos' }].map(f => (
+                <div key={f.k}>
+                  <label className="block text-sm mb-1">{f.l} (R$)</label>
+                  <input type="number" step="0.01" value={settlementForm[f.k]} onChange={e => setSettlementForm({...settlementForm, [f.k]: e.target.value})} className="input-field" />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Multas acumuladas (R$)</label>
-                  <input type="number" step="0.01" value={settlementForm.multas_acumuladas} onChange={e => setSettlementForm({ ...settlementForm, multas_acumuladas: e.target.value })} className="input-field" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Danos ao veículo (R$)</label>
-                  <input type="number" step="0.01" value={settlementForm.danos} onChange={e => setSettlementForm({ ...settlementForm, danos: e.target.value })} className="input-field" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Outros descontos (R$)</label>
-                  <input type="number" step="0.01" value={settlementForm.outros_descontos} onChange={e => setSettlementForm({ ...settlementForm, outros_descontos: e.target.value })} className="input-field" />
-                </div>
-              </div>
-
-              <div className="bg-gray-50 rounded-lg p-3 text-sm">
-                <p className="text-gray-500">Valor do caução:</p>
-                <p className="text-xl font-bold text-gray-800">R$ {fmt(driver.car_valor_caucao)}</p>
-                <p className="text-xs text-gray-400 mt-1">
-                  Saldo final = Caução - Débitos - Multas - Danos - Outros
-                </p>
-                <p className="text-lg font-bold mt-1">
-                  {(() => {
-                    const saldo = parseFloat(driver.car_valor_caucao || 0)
-                      - parseFloat(settlementForm.debitos_pendentes || 0)
-                      - parseFloat(settlementForm.multas_acumuladas || 0)
-                      - parseFloat(settlementForm.danos || 0)
-                      - parseFloat(settlementForm.outros_descontos || 0);
-                    return (
-                      <span className={saldo >= 0 ? 'text-green-700' : 'text-red-700'}>
-                        {saldo >= 0 ? `Devolver R$ ${fmt(saldo)}` : `Motorista deve R$ ${fmt(Math.abs(saldo))}`}
-                      </span>
-                    );
-                  })()}
-                </p>
-              </div>
-
+              ))}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Observações</label>
-                <textarea value={settlementForm.observacoes} onChange={e => setSettlementForm({ ...settlementForm, observacoes: e.target.value })} className="input-field" rows={2} />
+                <label className="block text-sm mb-1">Observações</label>
+                <textarea value={settlementForm.observacoes} onChange={e => setSettlementForm({...settlementForm, observacoes: e.target.value})} className="input-field" rows={2} />
               </div>
             </div>
-
             <div className="flex gap-3 mt-4">
               <button onClick={() => setSettlementModal(false)} className="btn-secondary flex-1">Cancelar</button>
-              <button onClick={handleSettlement} disabled={processing} className="btn-danger flex-1 flex items-center justify-center gap-2">
-                {processing ? 'Processando...' : (
-                  <><Download className="w-4 h-4" /> Gerar Acerto e Rescindir</>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Preview modal */}
-      {previewUrl && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setPreviewUrl(null)}>
-          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="font-semibold">Documento</h3>
-              <button onClick={() => setPreviewUrl(null)} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="p-4">
-              {previewUrl.endsWith('.pdf') ? (
-                <iframe src={previewUrl} className="w-full h-[70vh] rounded" title="PDF" />
-              ) : (
-                <img src={previewUrl} alt="Documento" className="w-full rounded" />
-              )}
+              <button onClick={handleSettlement} disabled={processing} className="btn-danger flex-1">Processar Rescisão</button>
             </div>
           </div>
         </div>

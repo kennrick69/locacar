@@ -122,7 +122,6 @@ async function start() {
           contrato_confirmado BOOLEAN DEFAULT false, caucao_pago BOOLEAN DEFAULT false,
           token_externo VARCHAR(20), cadastro_externo BOOLEAN DEFAULT false,
           data_inicio TIMESTAMP, data_rescisao TIMESTAMP, motivo_reprovacao TEXT,
-          dia_cobranca VARCHAR(20) DEFAULT 'segunda',
           created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW()
         )`);
 
@@ -203,17 +202,6 @@ async function start() {
         // Add data_inicio if missing
         await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS data_inicio TIMESTAMP`);
         await pool.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS justificativa TEXT`);
-        await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS dia_cobranca VARCHAR(20) DEFAULT 'segunda'`);
-
-        // Backfill: preenche token_externo para motoristas que não têm
-        await pool.query(`
-          UPDATE driver_profiles dp
-          SET token_externo = SUBSTRING(REGEXP_REPLACE(u.cpf, '[^0-9]', '', 'g'), 1, 6)
-          FROM users u
-          WHERE u.id = dp.user_id
-            AND u.cpf IS NOT NULL
-            AND (dp.token_externo IS NULL OR dp.token_externo = '')
-        `);
       } catch (e) { /* já existe */ }
     }
   } catch (err) {
@@ -257,93 +245,6 @@ async function start() {
   app.listen(PORT, () => {
     console.log('🚗 LocaCar API porta ' + PORT + ' | ' + (process.env.NODE_ENV || 'development'));
   });
-
-  // 5) CRON: Gerar cobranças automáticas diariamente
-  const startChargeCron = () => {
-    const diasMap = { 0: 'domingo', 1: 'segunda', 2: 'terca', 3: 'quarta', 4: 'quinta', 5: 'sexta', 6: 'sabado' };
-
-    const gerarCobrancasDoDia = async () => {
-      try {
-        const now = new Date();
-        // Ajusta para horário de Brasília (UTC-3)
-        const brDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-        const diaSemana = diasMap[brDate.getDay()];
-        const semanaRef = brDate.toISOString().split('T')[0];
-
-        console.log(`⏰ CRON: Verificando cobranças para ${diaSemana} (${semanaRef})...`);
-
-        // Busca motoristas ativos com carro nesse dia
-        const drivers = await pool.query(`
-          SELECT dp.id, dp.car_id, c.valor_semanal
-          FROM driver_profiles dp
-          JOIN cars c ON c.id = dp.car_id
-          WHERE dp.status = 'ativo' AND dp.car_id IS NOT NULL AND dp.dia_cobranca = $1
-        `, [diaSemana]);
-
-        if (drivers.rows.length === 0) {
-          console.log(`⏰ CRON: Nenhum motorista para cobrar na ${diaSemana}.`);
-          return;
-        }
-
-        let geradas = 0;
-        const client = await pool.connect();
-        try {
-          await client.query('BEGIN');
-          for (const drv of drivers.rows) {
-            // Não duplica
-            const exists = await client.query(
-              'SELECT id FROM weekly_charges WHERE driver_id = $1 AND semana_ref = $2',
-              [drv.id, semanaRef]
-            );
-            if (exists.rows.length > 0) continue;
-
-            // Crédito anterior
-            const lastCharge = await client.query(
-              'SELECT credito_anterior, pago FROM weekly_charges WHERE driver_id = $1 ORDER BY semana_ref DESC LIMIT 1',
-              [drv.id]
-            );
-            let creditoAnterior = 0;
-            if (lastCharge.rows.length > 0 && lastCharge.rows[0].pago && parseFloat(lastCharge.rows[0].credito_anterior) < 0) {
-              creditoAnterior = parseFloat(lastCharge.rows[0].credito_anterior);
-            }
-
-            const base = parseFloat(drv.valor_semanal);
-            const valorFinal = Math.max(base + creditoAnterior, 0);
-
-            await client.query(`
-              INSERT INTO weekly_charges (driver_id, semana_ref, valor_base, credito_anterior, valor_final, observacoes)
-              VALUES ($1, $2, $3, $4, $5, 'Gerada automaticamente')
-            `, [drv.id, semanaRef, base, creditoAnterior, valorFinal]);
-            geradas++;
-          }
-          await client.query('COMMIT');
-        } catch (cronErr) {
-          await client.query('ROLLBACK');
-          throw cronErr;
-        } finally {
-          client.release();
-        }
-
-        if (geradas > 0) {
-          console.log(`✅ CRON: ${geradas} cobrança(s) gerada(s) para ${diaSemana} (${semanaRef})`);
-        } else {
-          console.log(`⏰ CRON: Cobranças de ${diaSemana} já existiam.`);
-        }
-      } catch (err) {
-        console.error('❌ CRON erro:', err.message);
-      }
-    };
-
-    // Roda imediatamente ao iniciar o servidor
-    setTimeout(gerarCobrancasDoDia, 5000);
-
-    // Depois roda a cada 1 hora (verifica se precisa gerar)
-    setInterval(gerarCobrancasDoDia, 60 * 60 * 1000);
-
-    console.log('⏰ CRON de cobranças automáticas ativo (verifica a cada 1h)');
-  };
-
-  startChargeCron();
 }
 
 start();
