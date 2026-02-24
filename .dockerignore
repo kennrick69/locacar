@@ -1,0 +1,10 @@
+**/node_modules
+**/.git
+**/.env
+**/dist
+**/*.log
+.github
+*.bat
+*.sh
+*.yml
+README.md

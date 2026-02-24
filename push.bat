@@ -7,13 +7,13 @@ echo.
 
 cd /d "%~dp0"
 
-echo [1/4] npm install no backend...
+echo [1/4] npm install backend...
 cd backend
 call npm install
 cd ..
 
 echo.
-echo [2/4] npm install no frontend...
+echo [2/4] npm install frontend...
 cd frontend
 call npm install
 cd ..

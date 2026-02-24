@@ -48,10 +48,24 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString(), env: process.env.NODE_ENV || 'development' });
 });
 
-// ========== RAIZ ==========
-app.get('/', (req, res) => {
-  res.json({ app: 'LocaCar API', version: '1.0', health: '/api/health' });
-});
+// ========== RAIZ / FRONTEND ==========
+const fs = require('fs');
+const publicPath = path.join(__dirname, '..', 'public');
+const indexPath = path.join(publicPath, 'index.html');
+
+if (fs.existsSync(indexPath)) {
+  console.log('📁 Frontend encontrado em /public. Servindo SPA...');
+  app.use(express.static(publicPath));
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api/') && !req.path.startsWith('/uploads/')) {
+      res.sendFile(indexPath);
+    }
+  });
+} else {
+  app.get('/', (req, res) => {
+    res.json({ app: 'LocaCar API', version: '1.0', health: '/api/health' });
+  });
+}
 
 // ========== ERROR ==========
 app.use((err, req, res, next) => {
