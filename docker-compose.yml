@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # ========== POSTGRES ==========
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: locacar
+      POSTGRES_USER: locacar
+      POSTGRES_PASSWORD: ${DB_PASS:-locacar_secret}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U locacar"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========== BACKEND ==========
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: locacar
+      DB_USER: locacar
+      DB_PASS: ${DB_PASS:-locacar_secret}
+      JWT_SECRET: ${JWT_SECRET:-trocar_em_producao}
+      MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
+      MP_PUBLIC_KEY: ${MP_PUBLIC_KEY:-}
+      MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}
+      MP_WEBHOOK_URL: ${MP_WEBHOOK_URL:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      EXTERNAL_API_URL: ${EXTERNAL_API_URL:-}
+      EXTERNAL_API_KEY: ${EXTERNAL_API_KEY:-}
+    volumes:
+      - uploads:/app/uploads
+    ports:
+      - "3001:3001"
+
+  # ========== FRONTEND ==========
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+
+volumes:
+  pgdata:
+  uploads:
