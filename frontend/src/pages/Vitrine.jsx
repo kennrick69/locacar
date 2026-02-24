@@ -33,7 +33,7 @@ export default function Vitrine() {
       const res = await authAPI.tokenLogin(cleaned);
       localStorage.setItem('locacar_token', res.data.token);
       localStorage.setItem('locacar_user', JSON.stringify(res.data.user));
-      navigate('/driver');
+      navigate('/motorista');
     } catch (err) {
       setTokenError(err.response?.data?.error || 'Token não encontrado');
     } finally {
