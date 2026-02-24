@@ -166,6 +166,13 @@ async function start() {
           ativo BOOLEAN DEFAULT true
         )`);
 
+        await client.query(`CREATE TABLE IF NOT EXISTS acrescimos (
+          id SERIAL PRIMARY KEY, charge_id INTEGER REFERENCES weekly_charges(id) ON DELETE CASCADE,
+          driver_id INTEGER REFERENCES driver_profiles(id) ON DELETE CASCADE,
+          descricao VARCHAR(255) NOT NULL, valor DECIMAL(10,2) NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW()
+        )`);
+
         await client.query(`CREATE TABLE IF NOT EXISTS final_settlements (
           id SERIAL PRIMARY KEY, driver_id INTEGER REFERENCES driver_profiles(id),
           debitos_pendentes DECIMAL(10,2) DEFAULT 0, multas_acumuladas DECIMAL(10,2) DEFAULT 0,
@@ -184,6 +191,18 @@ async function start() {
       }
     } else {
       console.log('✅ Tabelas OK.');
+      // Incremental: cria tabelas novas se não existirem
+      try {
+        await pool.query(`CREATE TABLE IF NOT EXISTS acrescimos (
+          id SERIAL PRIMARY KEY, charge_id INTEGER REFERENCES weekly_charges(id) ON DELETE CASCADE,
+          driver_id INTEGER REFERENCES driver_profiles(id) ON DELETE CASCADE,
+          descricao VARCHAR(255) NOT NULL, valor DECIMAL(10,2) NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW()
+        )`);
+        // Add data_inicio if missing
+        await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS data_inicio TIMESTAMP`);
+        await pool.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS justificativa TEXT`);
+      } catch (e) { /* já existe */ }
     }
   } catch (err) {
     console.error('❌ Erro verificar tabelas:', err.message);

@@ -141,4 +141,49 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/auth/token-login
+ * Login do motorista via token (6 primeiros dígitos do CPF)
+ */
+router.post('/token-login', async (req, res) => {
+  try {
+    const { token: tokenInput } = req.body;
+
+    if (!tokenInput || tokenInput.length !== 6) {
+      return res.status(400).json({ error: 'Token deve ter 6 dígitos' });
+    }
+
+    const result = await pool.query(`
+      SELECT u.id, u.nome, u.email, u.role, u.ativo, dp.id as profile_id, dp.status, dp.token_externo
+      FROM driver_profiles dp
+      JOIN users u ON u.id = dp.user_id
+      WHERE dp.token_externo = $1
+    `, [tokenInput]);
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Token não encontrado' });
+    }
+
+    const user = result.rows[0];
+
+    if (!user.ativo) {
+      return res.status(403).json({ error: 'Conta desativada' });
+    }
+
+    const jwtToken = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    );
+
+    res.json({
+      user: { id: user.id, nome: user.nome, email: user.email, role: user.role, ativo: user.ativo },
+      token: jwtToken
+    });
+  } catch (err) {
+    console.error('Erro no token-login:', err);
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 module.exports = router;

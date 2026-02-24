@@ -80,7 +80,7 @@ router.post('/caucao', auth, driverOnly, async (req, res) => {
  */
 router.post('/weekly/:chargeId', auth, driverOnly, async (req, res) => {
   try {
-    const { metodo, parcelas } = req.body;
+    const { metodo, parcelas, valor_pago, justificativa } = req.body;
 
     const profile = await pool.query('SELECT id FROM driver_profiles WHERE user_id = $1', [req.user.id]);
     if (profile.rows.length === 0) return res.status(404).json({ error: 'Perfil não encontrado' });
@@ -96,15 +96,32 @@ router.post('/weekly/:chargeId', auth, driverOnly, async (req, res) => {
     const c = charge.rows[0];
     if (c.pago) return res.status(400).json({ error: 'Esta cobrança já foi paga' });
 
+    // Calcula quanto já foi pago
+    const jaPage = await pool.query(
+      "SELECT COALESCE(SUM(valor), 0) as total FROM payments WHERE charge_id = $1 AND status = 'pago'",
+      [c.id]
+    );
+    const totalJaPago = parseFloat(jaPage.rows[0].total);
+    const restante = parseFloat(c.valor_final) - totalJaPago;
+
+    // Valor a pagar: customizado ou total restante
+    let valor = valor_pago ? parseFloat(valor_pago) : restante;
+    if (valor <= 0) return res.status(400).json({ error: 'Valor deve ser maior que zero' });
+    if (valor > restante + 0.01) return res.status(400).json({ error: `Valor máximo: R$ ${restante.toFixed(2)}` });
+
     const resultado = await PaymentService.criarPagamento({
       userId: req.user.id,
       driverId,
       chargeId: c.id,
       tipo: 'semanal',
       metodo: metodo || 'pix',
-      valor: parseFloat(c.valor_final),
+      valor,
       parcelas: parcelas || 1,
+      justificativa: justificativa || null,
     });
+
+    resultado.parcial = valor < restante;
+    resultado.restante = Math.max(restante - valor, 0);
 
     res.status(201).json(resultado);
   } catch (err) {
@@ -154,9 +171,24 @@ router.post('/:id/confirm', auth, async (req, res) => {
     }
 
     if (p.tipo === 'semanal' && p.charge_id) {
-      await client.query(`
-        UPDATE weekly_charges SET pago = true, data_pagamento = NOW(), updated_at = NOW() WHERE id = $1
-      `, [p.charge_id]);
+      // Verifica se a cobrança foi totalmente paga
+      const totalPago = await client.query(
+        "SELECT COALESCE(SUM(valor), 0) as total FROM payments WHERE charge_id = $1 AND status = 'pago'",
+        [p.charge_id]
+      );
+      const charge = await client.query('SELECT valor_final FROM weekly_charges WHERE id = $1', [p.charge_id]);
+      
+      if (charge.rows.length > 0) {
+        const pago = parseFloat(totalPago.rows[0].total) + parseFloat(p.valor);
+        const devido = parseFloat(charge.rows[0].valor_final);
+        
+        if (pago >= devido - 0.01) {
+          // Totalmente pago
+          await client.query(`
+            UPDATE weekly_charges SET pago = true, data_pagamento = NOW(), updated_at = NOW() WHERE id = $1
+          `, [p.charge_id]);
+        }
+      }
     }
 
     await client.query('COMMIT');

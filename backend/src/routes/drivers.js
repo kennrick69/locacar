@@ -187,7 +187,15 @@ router.get('/me/charges', auth, driverOnly, async (req, res) => {
         COALESCE(
           (SELECT json_agg(a.*) FROM abatimentos a WHERE a.charge_id = wc.id),
           '[]'
-        ) as abatimentos_lista
+        ) as abatimentos_lista,
+        COALESCE(
+          (SELECT json_agg(ac.*) FROM acrescimos ac WHERE ac.charge_id = wc.id),
+          '[]'
+        ) as acrescimos_lista,
+        COALESCE(
+          (SELECT SUM(p.valor) FROM payments p WHERE p.charge_id = wc.id AND p.status = 'pago'),
+          0
+        ) as total_pago
       FROM weekly_charges wc
       WHERE wc.driver_id = $1
       ORDER BY wc.semana_ref DESC
@@ -409,6 +417,69 @@ router.get('/me/payments', auth, driverOnly, async (req, res) => {
 // ========================================================
 
 /**
+ * POST /api/drivers/admin-create - Admin: cadastrar motorista manualmente
+ */
+router.post('/admin-create', auth, adminOnly, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { nome, email, cpf, telefone, car_id, data_inicio, data_fim, observacoes } = req.body;
+
+    if (!nome || !cpf) {
+      return res.status(400).json({ error: 'Nome e CPF são obrigatórios' });
+    }
+
+    // Verifica se CPF já existe
+    const cpfCheck = await client.query('SELECT id FROM users WHERE cpf = $1', [cpf]);
+    if (cpfCheck.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'CPF já cadastrado' });
+    }
+
+    // Cria user (senha = token = 6 primeiros do CPF)
+    const bcrypt = require('bcryptjs');
+    const cpfClean = cpf.replace(/\D/g, '');
+    const tokenExterno = cpfClean.substring(0, 6);
+    const senhaHash = await bcrypt.hash(tokenExterno, 10);
+    const emailFinal = email || `motorista_${cpfClean}@locacar.temp`;
+
+    const userResult = await client.query(`
+      INSERT INTO users (nome, email, senha_hash, cpf, telefone, role)
+      VALUES ($1, $2, $3, $4, $5, 'motorista')
+      RETURNING id, nome, email, cpf, telefone, role
+    `, [nome, emailFinal, senhaHash, cpf, telefone || null]);
+
+    const user = userResult.rows[0];
+
+    // Cria perfil de motorista já ativo
+    const profileResult = await client.query(`
+      INSERT INTO driver_profiles (user_id, car_id, status, token_externo, contrato_confirmado, data_inicio, motivo_reprovacao)
+      VALUES ($1, $2, 'ativo', $3, true, $4, $5)
+      RETURNING *
+    `, [user.id, car_id || null, tokenExterno, data_inicio || new Date(), observacoes || null]);
+
+    // Se atribuiu carro, marca como indisponível
+    if (car_id) {
+      await client.query('UPDATE cars SET disponivel = false, updated_at = NOW() WHERE id = $1', [car_id]);
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({
+      user,
+      profile: profileResult.rows[0],
+      token: tokenExterno,
+      message: `Motorista criado! Token de acesso: ${tokenExterno}`
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao criar motorista:', err);
+    res.status(500).json({ error: err.message || 'Erro interno' });
+  } finally {
+    client.release();
+  }
+});
+
+/**
  * GET /api/drivers - Admin: lista todos os motoristas
  */
 router.get('/', auth, adminOnly, async (req, res) => {
@@ -466,7 +537,9 @@ router.get('/:id', auth, adminOnly, async (req, res) => {
     // Cobranças
     const charges = await pool.query(`
       SELECT wc.*,
-        COALESCE((SELECT json_agg(a.*) FROM abatimentos a WHERE a.charge_id = wc.id), '[]') as abatimentos_lista
+        COALESCE((SELECT json_agg(a.*) FROM abatimentos a WHERE a.charge_id = wc.id), '[]') as abatimentos_lista,
+        COALESCE((SELECT json_agg(ac.*) FROM acrescimos ac WHERE ac.charge_id = wc.id), '[]') as acrescimos_lista,
+        COALESCE((SELECT SUM(p.valor) FROM payments p WHERE p.charge_id = wc.id AND p.status = 'pago'), 0) as total_pago
       FROM weekly_charges wc WHERE wc.driver_id = $1
       ORDER BY wc.semana_ref DESC LIMIT 20
     `, [req.params.id]);
@@ -702,6 +775,113 @@ router.patch('/:driverId/abatimentos/:id/approve', auth, adminOnly, async (req, 
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Erro ao aprovar abatimento:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * POST /api/drivers/:id/acrescimos - Admin: adicionar acréscimo a uma cobrança
+ */
+router.post('/:id/acrescimos', auth, adminOnly, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { charge_id, descricao, valor } = req.body;
+    const driverId = req.params.id;
+
+    if (!charge_id || !descricao || !valor) {
+      return res.status(400).json({ error: 'charge_id, descricao e valor são obrigatórios' });
+    }
+
+    // Verifica se a cobrança existe e pertence ao motorista
+    const charge = await client.query(
+      'SELECT * FROM weekly_charges WHERE id = $1 AND driver_id = $2',
+      [charge_id, driverId]
+    );
+    if (charge.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Cobrança não encontrada' });
+    }
+
+    // Insere acréscimo
+    const result = await client.query(`
+      INSERT INTO acrescimos (charge_id, driver_id, descricao, valor)
+      VALUES ($1, $2, $3, $4) RETURNING *
+    `, [charge_id, driverId, descricao, parseFloat(valor)]);
+
+    // Recalcula valor_final
+    const totalAcrescimos = await client.query(
+      'SELECT COALESCE(SUM(valor), 0) as total FROM acrescimos WHERE charge_id = $1',
+      [charge_id]
+    );
+    const totalAbatimentos = await client.query(
+      'SELECT COALESCE(SUM(valor), 0) as total FROM abatimentos WHERE charge_id = $1 AND aprovado = true',
+      [charge_id]
+    );
+
+    const c = charge.rows[0];
+    const valorFinal = parseFloat(c.valor_base) - parseFloat(totalAbatimentos.rows[0].total) 
+      + parseFloat(c.credito_anterior) + parseFloat(c.multa) + parseFloat(totalAcrescimos.rows[0].total);
+
+    await client.query(
+      'UPDATE weekly_charges SET valor_final = $1, updated_at = NOW() WHERE id = $2',
+      [Math.max(valorFinal, 0), charge_id]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao adicionar acréscimo:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * DELETE /api/drivers/:id/acrescimos/:acrescimoId - Admin: remover acréscimo
+ */
+router.delete('/:id/acrescimos/:acrescimoId', auth, adminOnly, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const acr = await client.query(
+      'SELECT * FROM acrescimos WHERE id = $1 AND driver_id = $2',
+      [req.params.acrescimoId, req.params.id]
+    );
+    if (acr.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Acréscimo não encontrado' });
+    }
+
+    const chargeId = acr.rows[0].charge_id;
+    await client.query('DELETE FROM acrescimos WHERE id = $1', [req.params.acrescimoId]);
+
+    // Recalcula
+    const totalAcrescimos = await client.query(
+      'SELECT COALESCE(SUM(valor), 0) as total FROM acrescimos WHERE charge_id = $1', [chargeId]
+    );
+    const totalAbatimentos = await client.query(
+      'SELECT COALESCE(SUM(valor), 0) as total FROM abatimentos WHERE charge_id = $1 AND aprovado = true', [chargeId]
+    );
+    const charge = await client.query('SELECT * FROM weekly_charges WHERE id = $1', [chargeId]);
+
+    if (charge.rows.length > 0) {
+      const c = charge.rows[0];
+      const valorFinal = parseFloat(c.valor_base) - parseFloat(totalAbatimentos.rows[0].total)
+        + parseFloat(c.credito_anterior) + parseFloat(c.multa) + parseFloat(totalAcrescimos.rows[0].total);
+      await client.query('UPDATE weekly_charges SET valor_final = $1, updated_at = NOW() WHERE id = $2',
+        [Math.max(valorFinal, 0), chargeId]);
+    }
+
+    await client.query('COMMIT');
+    res.json({ message: 'Acréscimo removido' });
+  } catch (err) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: 'Erro interno' });
   } finally {
     client.release();

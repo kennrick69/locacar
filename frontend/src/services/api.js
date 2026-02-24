@@ -34,6 +34,7 @@ export default api;
 // ========== AUTH ==========
 export const authAPI = {
   login: (data) => api.post('/auth/login', data),
+  tokenLogin: (token) => api.post('/auth/token-login', { token }),
   register: (data) => api.post('/auth/register', data),
   me: () => api.get('/auth/me'),
 };
@@ -83,12 +84,15 @@ export const driversAPI = {
   // Admin
   list: (status) => api.get('/drivers', { params: { status } }),
   get: (id) => api.get(`/drivers/${id}`),
+  adminCreate: (data) => api.post('/drivers/admin-create', data),
   approve: (id, data) => api.patch(`/drivers/${id}/approve`, data),
   reject: (id, data) => api.patch(`/drivers/${id}/reject`, data),
   activate: (id) => api.patch(`/drivers/${id}/activate`),
   confirmContract: (id) => api.patch(`/drivers/${id}/confirm-contract`),
   createCharge: (driverId, data) => api.post(`/drivers/${driverId}/charges`, data),
   approveAbatimento: (driverId, abatId) => api.patch(`/drivers/${driverId}/abatimentos/${abatId}/approve`),
+  addAcrescimo: (driverId, data) => api.post(`/drivers/${driverId}/acrescimos`, data),
+  removeAcrescimo: (driverId, acrescimoId) => api.delete(`/drivers/${driverId}/acrescimos/${acrescimoId}`),
   settlement: (driverId, data) => api.post(`/drivers/${driverId}/settlement`, data),
 };
 

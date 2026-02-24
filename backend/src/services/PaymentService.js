@@ -38,7 +38,7 @@ class PaymentService {
   /**
    * Cria pagamento (Pix ou Cartão) — integrado com Mercado Pago real
    */
-  static async criarPagamento({ userId, driverId, chargeId, tipo, metodo, valor, parcelas = 1 }) {
+  static async criarPagamento({ userId, driverId, chargeId, tipo, metodo, valor, parcelas = 1, justificativa = null }) {
     const calculo = await this.calcularValorComJuros(valor, parcelas);
     const mp = getMercadoPago();
 
@@ -48,10 +48,10 @@ class PaymentService {
 
     // Cria registro de pagamento no banco
     const result = await pool.query(`
-      INSERT INTO payments (user_id, driver_id, charge_id, tipo, metodo, valor, parcelas, juros, valor_total, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pendente')
+      INSERT INTO payments (user_id, driver_id, charge_id, tipo, metodo, valor, parcelas, juros, valor_total, status, justificativa)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pendente', $10)
       RETURNING *
-    `, [userId, driverId, chargeId, tipo, metodo, calculo.valor_base, parcelas, calculo.taxa_percentual, calculo.valor_total]);
+    `, [userId, driverId, chargeId, tipo, metodo, calculo.valor_base, parcelas, calculo.taxa_percentual, calculo.valor_total, justificativa]);
 
     const payment = result.rows[0];
     const descricao = tipo === 'caucao' ? 'LocaCar - Caução' : `LocaCar - Semana ${chargeId}`;
@@ -240,12 +240,22 @@ class PaymentService {
           await this.confirmarCaucao(payment.driver_id);
         }
 
-        // Se é semanal, marca cobrança
+        // Se é semanal, verifica se totalmente pago
         if (payment.tipo === 'semanal' && payment.charge_id) {
-          await pool.query(`
-            UPDATE weekly_charges SET pago = true, data_pagamento = NOW(), updated_at = NOW()
-            WHERE id = $1
-          `, [payment.charge_id]);
+          const totalPago = await pool.query(
+            "SELECT COALESCE(SUM(valor), 0) as total FROM payments WHERE charge_id = $1 AND status = 'pago'",
+            [payment.charge_id]
+          );
+          const chargeRes = await pool.query('SELECT valor_final FROM weekly_charges WHERE id = $1', [payment.charge_id]);
+          if (chargeRes.rows.length > 0) {
+            const pago = parseFloat(totalPago.rows[0].total) + parseFloat(payment.valor);
+            if (pago >= parseFloat(chargeRes.rows[0].valor_final) - 0.01) {
+              await pool.query(`
+                UPDATE weekly_charges SET pago = true, data_pagamento = NOW(), updated_at = NOW()
+                WHERE id = $1
+              `, [payment.charge_id]);
+            }
+          }
         }
 
         console.log(`[WEBHOOK] Pagamento ${payment.id} confirmado via MP!`);

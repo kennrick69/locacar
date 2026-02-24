@@ -45,6 +45,10 @@ export default function AdminDriverDetail() {
     debitos_pendentes: 0, multas_acumuladas: 0, danos: 0, outros_descontos: 0, observacoes: ''
   });
 
+  // Acréscimo
+  const [acrescimoChargeId, setAcrescimoChargeId] = useState(null);
+  const [acrescimoForm, setAcrescimoForm] = useState({ descricao: '', valor: '' });
+
   const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
@@ -149,6 +153,35 @@ export default function AdminDriverDetail() {
     try {
       await driversAPI.approveAbatimento(id, abatId);
       toast.success('Abatimento aprovado!');
+      await loadData();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Erro');
+    }
+  };
+
+  const handleAddAcrescimo = async () => {
+    if (!acrescimoForm.descricao || !acrescimoForm.valor) {
+      return toast.warning('Preencha descrição e valor');
+    }
+    try {
+      await driversAPI.addAcrescimo(id, {
+        charge_id: acrescimoChargeId,
+        descricao: acrescimoForm.descricao,
+        valor: parseFloat(acrescimoForm.valor)
+      });
+      toast.success('Acréscimo adicionado!');
+      setAcrescimoChargeId(null);
+      setAcrescimoForm({ descricao: '', valor: '' });
+      await loadData();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Erro');
+    }
+  };
+
+  const handleRemoveAcrescimo = async (acrescimoId) => {
+    try {
+      await driversAPI.removeAcrescimo(id, acrescimoId);
+      toast.success('Acréscimo removido!');
       await loadData();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Erro');
@@ -341,10 +374,15 @@ export default function AdminDriverDetail() {
           </div>
 
           {driver.charges && driver.charges.length > 0 ? (
-            <div className="space-y-2 max-h-96 overflow-auto">
+            <div className="space-y-2 max-h-[500px] overflow-auto">
               {driver.charges.map(charge => {
                 const abats = charge.abatimentos_lista || [];
                 const pendingAbats = abats.filter(a => !a.aprovado);
+                const acrescimos = charge.acrescimos_lista || [];
+                const totalAcrescimos = acrescimos.reduce((s, a) => s + parseFloat(a.valor), 0);
+                const totalPago = parseFloat(charge.total_pago || 0);
+                const restante = parseFloat(charge.valor_final) - totalPago;
+                const isParcial = !charge.pago && totalPago > 0;
                 return (
                   <div key={charge.id} className="bg-gray-50 rounded-lg p-3">
                     <div className="flex items-center justify-between">
@@ -356,15 +394,73 @@ export default function AdminDriverDetail() {
                           Base: R$ {fmt(charge.valor_base)}
                           {parseFloat(charge.abatimentos) > 0 && ` | Abat: -R$ ${fmt(charge.abatimentos)}`}
                           {parseFloat(charge.multa) > 0 && ` | Multa: +R$ ${fmt(charge.multa)}`}
+                          {totalAcrescimos > 0 && ` | Acrés: +R$ ${fmt(totalAcrescimos)}`}
+                          {totalPago > 0 && ` | Pago: R$ ${fmt(totalPago)}`}
                         </p>
                       </div>
                       <div className="text-right">
                         <p className="font-bold text-sm">R$ {fmt(charge.valor_final)}</p>
-                        <span className={`text-xs ${charge.pago ? 'text-green-600' : 'text-red-600'}`}>
-                          {charge.pago ? '✓ Pago' : '● Pendente'}
+                        <span className={`text-xs ${charge.pago ? 'text-green-600' : isParcial ? 'text-yellow-600' : 'text-red-600'}`}>
+                          {charge.pago ? '✓ Pago' : isParcial ? `◐ Parcial (falta R$ ${fmt(restante)})` : '● Pendente'}
                         </span>
                       </div>
                     </div>
+
+                    {/* Acréscimos existentes */}
+                    {acrescimos.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-gray-200 space-y-1">
+                        <p className="text-xs font-medium text-red-700">Acréscimos:</p>
+                        {acrescimos.map(acr => (
+                          <div key={acr.id} className="flex items-center justify-between bg-red-50 rounded px-2 py-1">
+                            <span className="text-xs text-gray-700">{acr.descricao} — <strong>+R$ {fmt(acr.valor)}</strong></span>
+                            {!charge.pago && (
+                              <button onClick={() => handleRemoveAcrescimo(acr.id)}
+                                className="text-xs text-red-500 hover:text-red-700 px-1">✕</button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Botão adicionar acréscimo */}
+                    {!charge.pago && (
+                      <div className="mt-2">
+                        {acrescimoChargeId === charge.id ? (
+                          <div className="bg-white rounded-lg p-2 border border-gray-200 space-y-2">
+                            <select value={acrescimoForm.descricao}
+                              onChange={e => setAcrescimoForm({ ...acrescimoForm, descricao: e.target.value })}
+                              className="input-field text-xs py-1.5">
+                              <option value="">Tipo do acréscimo...</option>
+                              <option value="Multa de trânsito">Multa de trânsito</option>
+                              <option value="Danos ao veículo">Danos ao veículo</option>
+                              <option value="Guincho / Reboque">Guincho / Reboque</option>
+                              <option value="Manutenção">Manutenção</option>
+                              <option value="Seguro">Seguro</option>
+                              <option value="Outro">Outro</option>
+                            </select>
+                            {acrescimoForm.descricao === 'Outro' && (
+                              <input type="text" placeholder="Descreva..."
+                                onChange={e => setAcrescimoForm({ ...acrescimoForm, descricao: e.target.value })}
+                                className="input-field text-xs py-1.5" />
+                            )}
+                            <input type="number" step="0.01" placeholder="Valor R$" value={acrescimoForm.valor}
+                              onChange={e => setAcrescimoForm({ ...acrescimoForm, valor: e.target.value })}
+                              className="input-field text-xs py-1.5" />
+                            <div className="flex gap-2">
+                              <button onClick={handleAddAcrescimo}
+                                className="text-xs bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 flex-1">Adicionar</button>
+                              <button onClick={() => setAcrescimoChargeId(null)}
+                                className="text-xs bg-gray-200 text-gray-600 px-3 py-1 rounded hover:bg-gray-300">Cancelar</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button onClick={() => { setAcrescimoChargeId(charge.id); setAcrescimoForm({ descricao: '', valor: '' }); }}
+                            className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1">
+                            <Plus className="w-3 h-3" /> Adicionar acréscimo
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     {/* Abatimentos pendentes de aprovação */}
                     {pendingAbats.length > 0 && (

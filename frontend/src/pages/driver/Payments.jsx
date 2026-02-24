@@ -17,12 +17,15 @@ export default function DriverPayments() {
   const [expandedCharge, setExpandedCharge] = useState(null);
 
   // Payment modal state
-  const [payModal, setPayModal] = useState(null); // { type: 'caucao'|'weekly', chargeId, valor }
+  const [payModal, setPayModal] = useState(null); // { type, chargeId, valor, restante }
   const [payMethod, setPayMethod] = useState('pix');
   const [parcelas, setParcelas] = useState(1);
   const [simulacao, setSimulacao] = useState([]);
   const [paymentResult, setPaymentResult] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [valorCustom, setValorCustom] = useState('');
+  const [justificativa, setJustificativa] = useState('');
+  const [showParcial, setShowParcial] = useState(false);
 
   // Abatimento modal
   const [abatModal, setAbatModal] = useState(null); // chargeId
@@ -52,14 +55,18 @@ export default function DriverPayments() {
   };
 
   // ========== SIMULAÇÃO DE PARCELAS ==========
-  const openPayModal = async (type, chargeId, valor) => {
-    setPayModal({ type, chargeId, valor });
+  const openPayModal = async (type, chargeId, valor, totalPago = 0) => {
+    const restante = parseFloat(valor) - parseFloat(totalPago);
+    setPayModal({ type, chargeId, valor: restante, valorOriginal: valor, totalPago });
     setPayMethod('pix');
     setParcelas(1);
     setPaymentResult(null);
+    setValorCustom(restante.toFixed(2));
+    setJustificativa('');
+    setShowParcial(false);
 
     try {
-      const res = await paymentsAPI.simulate(valor);
+      const res = await paymentsAPI.simulate(restante);
       setSimulacao(res.data);
     } catch (err) {
       console.error('Erro na simulação:', err);
@@ -69,6 +76,13 @@ export default function DriverPayments() {
   // ========== PROCESSAR PAGAMENTO ==========
   const processPayment = async () => {
     if (!payModal) return;
+    const valorPagar = showParcial ? parseFloat(valorCustom) : payModal.valor;
+    if (!valorPagar || valorPagar <= 0) return toast.warning('Informe um valor válido');
+    if (valorPagar > payModal.valor + 0.01) return toast.warning(`Valor máximo: R$ ${fmt(payModal.valor)}`);
+    if (showParcial && !justificativa.trim()) {
+      return toast.warning('Informe uma justificativa para pagamento parcial');
+    }
+
     setProcessing(true);
 
     try {
@@ -76,7 +90,12 @@ export default function DriverPayments() {
       if (payModal.type === 'caucao') {
         res = await paymentsAPI.payCaucao({ metodo: payMethod, parcelas });
       } else {
-        res = await paymentsAPI.payWeekly(payModal.chargeId, { metodo: payMethod, parcelas });
+        res = await paymentsAPI.payWeekly(payModal.chargeId, {
+          metodo: payMethod,
+          parcelas,
+          valor_pago: showParcial ? valorPagar : undefined,
+          justificativa: showParcial ? justificativa : undefined,
+        });
       }
 
       setPaymentResult(res.data);
@@ -203,6 +222,9 @@ export default function DriverPayments() {
             const isOpen = expandedCharge === charge.id;
             const abatList = charge.abatimentos_lista || [];
             const isPaid = charge.pago;
+            const totalPago = parseFloat(charge.total_pago || 0);
+            const restante = parseFloat(charge.valor_final) - totalPago;
+            const isParcial = !isPaid && totalPago > 0;
 
             return (
               <div key={charge.id} className="card">
@@ -213,10 +235,12 @@ export default function DriverPayments() {
                 >
                   <div className="flex items-center gap-3">
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                      isPaid ? 'bg-green-100' : 'bg-red-100'
+                      isPaid ? 'bg-green-100' : isParcial ? 'bg-yellow-100' : 'bg-red-100'
                     }`}>
                       {isPaid ? (
                         <CheckCircle2 className="w-4 h-4 text-green-600" />
+                      ) : isParcial ? (
+                        <AlertCircle className="w-4 h-4 text-yellow-600" />
                       ) : (
                         <Clock className="w-4 h-4 text-red-600" />
                       )}
@@ -225,8 +249,8 @@ export default function DriverPayments() {
                       <p className="text-sm font-medium">
                         Semana {new Date(charge.semana_ref).toLocaleDateString('pt-BR')}
                       </p>
-                      <p className={`text-xs ${isPaid ? 'text-green-600' : 'text-red-600'}`}>
-                        {isPaid ? 'Pago' : 'Pendente'}
+                      <p className={`text-xs ${isPaid ? 'text-green-600' : isParcial ? 'text-yellow-600' : 'text-red-600'}`}>
+                        {isPaid ? 'Pago' : isParcial ? `Parcial — falta R$ ${fmt(restante)}` : 'Pendente'}
                       </p>
                     </div>
                   </div>
@@ -272,6 +296,20 @@ export default function DriverPayments() {
                         <span>Total</span>
                         <span>R$ {fmt(charge.valor_final)}</span>
                       </div>
+
+                      {totalPago > 0 && (
+                        <div className="flex justify-between text-green-600 text-sm">
+                          <span>Já pago</span>
+                          <span>- R$ {fmt(totalPago)}</span>
+                        </div>
+                      )}
+
+                      {!isPaid && totalPago > 0 && (
+                        <div className="flex justify-between font-bold text-red-600 pt-1 border-t border-gray-100">
+                          <span>Restante</span>
+                          <span>R$ {fmt(restante)}</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Lista de abatimentos */}
@@ -294,10 +332,10 @@ export default function DriverPayments() {
                     {!isPaid && (
                       <div className="flex gap-2 pt-2">
                         <button
-                          onClick={() => openPayModal('weekly', charge.id, charge.valor_final)}
+                          onClick={() => openPayModal('weekly', charge.id, charge.valor_final, totalPago)}
                           className="btn-primary flex-1 flex items-center justify-center gap-2 text-sm"
                         >
-                          <CreditCard className="w-4 h-4" /> Pagar
+                          <CreditCard className="w-4 h-4" /> {isParcial ? 'Pagar Restante' : 'Pagar'}
                         </button>
                         <button
                           onClick={() => setAbatModal(charge.id)}
@@ -346,6 +384,9 @@ export default function DriverPayments() {
                     <p className="text-xs text-gray-400">
                       {p.metodo?.toUpperCase()} {p.parcelas > 1 ? `· ${p.parcelas}x` : ''} · {new Date(p.created_at).toLocaleDateString('pt-BR')}
                     </p>
+                    {p.justificativa && (
+                      <p className="text-xs text-yellow-600 italic mt-0.5">"{p.justificativa}"</p>
+                    )}
                   </div>
                 </div>
                 <div className="text-right">
@@ -387,8 +428,8 @@ export default function DriverPayments() {
                 <>
                   {/* Valor */}
                   <div className="bg-gray-50 rounded-lg p-4 text-center">
-                    <p className="text-sm text-gray-500">Valor</p>
-                    <p className="text-3xl font-bold text-gray-800">R$ {fmt(payModal.valor)}</p>
+                    <p className="text-sm text-gray-500">{showParcial ? 'Valor total devido' : 'Valor a pagar'}</p>
+                    <p className="text-3xl font-bold text-gray-800">R$ {fmt(showParcial ? payModal.valor : payModal.valor)}</p>
                   </div>
 
                   {/* Método */}
@@ -447,11 +488,11 @@ export default function DriverPayments() {
                     </div>
                   )}
 
-                  {/* Resumo */}
-                  {selectedSim && payMethod === 'cartao' && (
+                  {/* Resumo cartão */}
+                  {selectedSim && payMethod === 'cartao' && !showParcial && (
                     <div className="bg-yellow-50 rounded-lg p-3 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Valor original</span>
+                        <span className="text-gray-600">Valor</span>
                         <span>R$ {fmt(payModal.valor)}</span>
                       </div>
                       {selectedSim.taxa_percentual > 0 && (
@@ -467,10 +508,26 @@ export default function DriverPayments() {
                     </div>
                   )}
 
+                  {/* Resumo pagamento parcial */}
+                  {showParcial && parseFloat(valorCustom) > 0 && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Pagando agora</span>
+                        <span className="font-bold">R$ {fmt(valorCustom)}</span>
+                      </div>
+                      {parseFloat(valorCustom) < payModal.valor && (
+                        <div className="flex justify-between text-yellow-700">
+                          <span>Restante para depois</span>
+                          <span>R$ {fmt(payModal.valor - parseFloat(valorCustom))}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Botão pagar */}
                   <button
                     onClick={processPayment}
-                    disabled={processing}
+                    disabled={processing || (showParcial && (!valorCustom || parseFloat(valorCustom) <= 0))}
                     className="btn-primary w-full py-3 flex items-center justify-center gap-2"
                   >
                     {processing ? (
@@ -478,10 +535,69 @@ export default function DriverPayments() {
                     ) : (
                       <>
                         <ArrowRight className="w-4 h-4" />
-                        {payMethod === 'pix' ? 'Gerar QR Code Pix' : `Pagar ${parcelas}x no Cartão`}
+                        {showParcial && parseFloat(valorCustom) > 0
+                          ? `Pagar R$ ${fmt(valorCustom)}`
+                          : payMethod === 'pix' ? 'Gerar QR Code Pix' : `Pagar ${parcelas}x no Cartão`
+                        }
                       </>
                     )}
                   </button>
+
+                  {/* Link pagamento parcial (exceção) */}
+                  {payModal.type !== 'caucao' && (
+                    <div className="pt-1">
+                      {!showParcial ? (
+                        <button
+                          onClick={() => { setShowParcial(true); setValorCustom(''); }}
+                          className="text-xs text-gray-400 hover:text-brand-600 underline w-full text-center"
+                        >
+                          Não consigo pagar o valor total
+                        </button>
+                      ) : (
+                        <div className="bg-gray-50 rounded-lg p-3 space-y-3 border border-gray-200">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-medium text-gray-700">Pagamento parcial</p>
+                            <button onClick={() => { setShowParcial(false); setValorCustom(payModal.valor.toFixed(2)); setJustificativa(''); }}
+                              className="text-xs text-gray-400 hover:text-gray-600 underline">Cancelar</button>
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Valor que consigo pagar</label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">R$</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                max={payModal.valor}
+                                value={valorCustom}
+                                onChange={e => {
+                                  setValorCustom(e.target.value);
+                                  const val = parseFloat(e.target.value);
+                                  if (val > 0) paymentsAPI.simulate(val).then(r => setSimulacao(r.data)).catch(() => {});
+                                }}
+                                className="input-field pl-10 font-bold"
+                                placeholder="0,00"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Justificativa *</label>
+                            <textarea
+                              value={justificativa}
+                              onChange={e => setJustificativa(e.target.value)}
+                              className="input-field text-sm"
+                              rows={2}
+                              placeholder="Ex: Semana fraca, pago o restante na próxima..."
+                            />
+                          </div>
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-2.5 text-xs text-red-700 flex gap-2">
+                            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                            <span>O valor restante continuará pendente e poderá gerar <strong>juros e multa por atraso</strong>. Quite o saldo o mais rápido possível para evitar encargos adicionais.</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               ) : (
                 <>

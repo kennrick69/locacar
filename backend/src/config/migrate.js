@@ -172,6 +172,7 @@ const migrate = async () => {
         mp_ticket_url       VARCHAR(500),
         mp_expiration       TIMESTAMP,
         data_pagamento      TIMESTAMP,
+        justificativa       TEXT,
         created_at          TIMESTAMP DEFAULT NOW(),
         updated_at          TIMESTAMP DEFAULT NOW()
       );
@@ -196,6 +197,18 @@ const migrate = async () => {
         taxa_percentual DECIMAL(5,2) NOT NULL,
         ativo           BOOLEAN DEFAULT true,
         updated_at      TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    // ========== TABELA: acrescimos (acréscimos nas cobranças) ==========
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS acrescimos (
+        id          SERIAL PRIMARY KEY,
+        charge_id   INTEGER REFERENCES weekly_charges(id) ON DELETE CASCADE,
+        driver_id   INTEGER REFERENCES driver_profiles(id) ON DELETE CASCADE,
+        descricao   VARCHAR(255) NOT NULL,
+        valor       DECIMAL(10,2) NOT NULL,
+        created_at  TIMESTAMP DEFAULT NOW()
       );
     `);
 

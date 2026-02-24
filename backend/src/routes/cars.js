@@ -22,7 +22,10 @@ router.get('/', async (req, res) => {
 
     query += ' ORDER BY marca, modelo';
     const result = await pool.query(query, params);
-    res.json(result.rows);
+    
+    // Remove placa do endpoint público
+    const carsPublic = result.rows.map(({ placa, ...rest }) => rest);
+    res.json(carsPublic);
   } catch (err) {
     console.error('Erro ao listar carros:', err);
     res.status(500).json({ error: 'Erro interno' });
