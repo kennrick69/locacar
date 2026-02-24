@@ -118,11 +118,11 @@ async function start() {
         await client.query(`CREATE TABLE IF NOT EXISTS driver_profiles (
           id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
           car_id INTEGER REFERENCES cars(id) ON DELETE SET NULL, status VARCHAR(30) DEFAULT 'pendente',
-          cnh_url TEXT, comprovante_url TEXT, selfie_url TEXT, contrato_url TEXT,
+          cnh_url TEXT, comprovante_url TEXT, selfie_url TEXT, contrato_url TEXT, perfil_app_url TEXT,
           contrato_confirmado BOOLEAN DEFAULT false, caucao_pago BOOLEAN DEFAULT false,
           token_externo VARCHAR(20), cadastro_externo BOOLEAN DEFAULT false,
           data_inicio TIMESTAMP, data_rescisao TIMESTAMP, motivo_reprovacao TEXT,
-          dia_cobranca VARCHAR(20) DEFAULT 'segunda',
+          dia_cobranca VARCHAR(20) DEFAULT 'segunda', rg VARCHAR(30), endereco_completo TEXT,
           created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW()
         )`);
 
@@ -178,7 +178,7 @@ async function start() {
           id SERIAL PRIMARY KEY, driver_id INTEGER REFERENCES driver_profiles(id),
           debitos_pendentes DECIMAL(10,2) DEFAULT 0, multas_acumuladas DECIMAL(10,2) DEFAULT 0,
           danos DECIMAL(10,2) DEFAULT 0, outros_descontos DECIMAL(10,2) DEFAULT 0,
-          valor_caucao DECIMAL(10,2) DEFAULT 0, saldo_final DECIMAL(10,2) DEFAULT 0,
+          valor_caucao DECIMAL(10,2) DEFAULT 0, renavam VARCHAR(30), saldo_final DECIMAL(10,2) DEFAULT 0,
           observacoes TEXT, pdf_url TEXT, created_at TIMESTAMP DEFAULT NOW()
         )`);
 
@@ -204,6 +204,10 @@ async function start() {
         await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS data_inicio TIMESTAMP`);
         await pool.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS justificativa TEXT`);
         await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS dia_cobranca VARCHAR(20) DEFAULT 'segunda'`);
+        await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS perfil_app_url TEXT`);
+        await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS rg VARCHAR(30)`);
+        await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS endereco_completo TEXT`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS renavam VARCHAR(30)`);
 
         // Backfill: preenche token_externo para motoristas que não têm
         await pool.query(`
@@ -239,6 +243,12 @@ async function start() {
       ['multa_diferida', 'true', 'Multa diferida'],
       ['evento_cadastro_externo', 'caucao_pago', 'Evento cadastro externo'],
       ['mp_webhook_url', '', 'Webhook MP'],
+      ['locador_nome', '', 'Nome do locador'],
+      ['locador_rg', '', 'RG do locador'],
+      ['locador_cpf', '', 'CPF do locador'],
+      ['locador_endereco', '', 'Endereço do locador'],
+      ['locador_email', '', 'Email do locador'],
+      ['locador_cidade', '', 'Cidade/Comarca'],
     ];
     for (const [c, v, d] of defaults) {
       await pool.query('INSERT INTO settings (chave, valor, descricao) VALUES ($1, $2, $3) ON CONFLICT (chave) DO NOTHING', [c, v, d]);

@@ -26,10 +26,11 @@ const DIAS_SEMANA = [
 ];
 
 const DOC_TYPES = [
-  { tipo: 'cnh', label: 'CNH' },
+  { tipo: 'cnh', label: 'CNH-e (Digital)' },
   { tipo: 'comprovante', label: 'Comprovante End.' },
   { tipo: 'selfie', label: 'Selfie c/ Doc' },
-  { tipo: 'contrato', label: 'Contrato' },
+  { tipo: 'perfil_app', label: 'Print Uber/99' },
+  { tipo: 'contrato', label: 'Contrato Locação' },
   { tipo: 'nota_fiscal', label: 'Nota Fiscal' },
   { tipo: 'outro', label: 'Outro Doc' },
 ];
@@ -72,6 +73,11 @@ export default function AdminDriverDetail() {
   const docInputRef = useRef(null);
   const [uploadTipo, setUploadTipo] = useState('');
 
+  // Contract generation
+  const [contractModal, setContractModal] = useState(false);
+  const [contractForm, setContractForm] = useState({});
+  const [generatingContract, setGeneratingContract] = useState(false);
+
   const [processing, setProcessing] = useState(false);
 
   useEffect(() => { loadData(); }, [id]);
@@ -99,6 +105,7 @@ export default function AdminDriverDetail() {
   const initEditForm = (d) => {
     setEditForm({
       nome: d.nome || '', cpf: d.cpf || '', telefone: d.telefone || '', email: d.email || '',
+      rg: d.rg || '', endereco_completo: d.endereco_completo || '',
       car_id: d.car_id || '', dia_cobranca: d.dia_cobranca || 'segunda', observacoes: d.motivo_reprovacao || '',
     });
   };
@@ -109,6 +116,7 @@ export default function AdminDriverDetail() {
     try {
       await driversAPI.updateDriver(id, {
         nome: editForm.nome, cpf: editForm.cpf, telefone: editForm.telefone, email: editForm.email,
+        rg: editForm.rg, endereco_completo: editForm.endereco_completo,
         car_id: editForm.car_id || null, dia_cobranca: editForm.dia_cobranca, observacoes: editForm.observacoes,
       });
       toast.success('Dados atualizados!');
@@ -138,6 +146,37 @@ export default function AdminDriverDetail() {
   };
 
   const handleSettlement = async () => { setProcessing(true); try { await fetch(`/api/drivers/${id}/settlement`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('locacar_token')}` }, body: JSON.stringify(settlementForm) }); toast.success('Rescisão processada!'); setSettlementModal(false); await loadData(); } catch (e) { toast.error('Erro na rescisão'); } finally { setProcessing(false); } };
+
+  const openContractModal = () => {
+    setContractForm({
+      locatario_rg: driver.rg || '',
+      locatario_endereco: driver.endereco_completo || '',
+      valor_semanal_extenso: '',
+      valor_caucao_extenso: '',
+      data_contrato: new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }),
+    });
+    setContractModal(true);
+  };
+
+  const handleGenerateContract = async () => {
+    setGeneratingContract(true);
+    try {
+      const res = await driversAPI.generateContract(id, contractForm);
+      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `contrato_${driver.nome?.replace(/\s+/g, '_')}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Contrato gerado e baixado!');
+      setContractModal(false);
+    } catch (err) {
+      toast.error('Erro ao gerar contrato');
+    } finally {
+      setGeneratingContract(false);
+    }
+  };
 
   // Carros disponíveis = disponíveis + o carro atual do motorista
   const availableCars = allCars.filter(c => c.disponivel || (driver && c.id === driver.car_id));
@@ -177,12 +216,20 @@ export default function AdminDriverDetail() {
               <input type="text" value={editForm.cpf} onChange={e => setEditForm({...editForm, cpf: e.target.value})} className="input-field" />
             </div>
             <div>
+              <label className="block text-xs text-gray-500 mb-1">RG</label>
+              <input type="text" value={editForm.rg} onChange={e => setEditForm({...editForm, rg: e.target.value})} className="input-field" placeholder="0000000 SSP/SC" />
+            </div>
+            <div>
               <label className="block text-xs text-gray-500 mb-1">Telefone</label>
               <input type="text" value={editForm.telefone} onChange={e => setEditForm({...editForm, telefone: e.target.value})} className="input-field" placeholder="(00) 00000-0000" />
             </div>
-            <div>
+            <div className="sm:col-span-2">
               <label className="block text-xs text-gray-500 mb-1">Email</label>
               <input type="email" value={editForm.email} onChange={e => setEditForm({...editForm, email: e.target.value})} className="input-field" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs text-gray-500 mb-1">Endereço completo</label>
+              <input type="text" value={editForm.endereco_completo} onChange={e => setEditForm({...editForm, endereco_completo: e.target.value})} className="input-field" placeholder="Rua, nº, Bairro, Cidade, CEP" />
             </div>
           </div>
 
@@ -246,11 +293,12 @@ export default function AdminDriverDetail() {
           <div className="flex items-center gap-2 mb-2"><Shield className="w-4 h-4 text-brand-600" /><h3 className="font-semibold text-gray-700 text-sm">Progresso</h3></div>
           <div className="space-y-1 text-xs">
             {[
-              { ok: driver.cnh_url, label: 'CNH' },
+              { ok: driver.cnh_url, label: 'CNH-e' },
               { ok: driver.comprovante_url, label: 'Comprovante' },
               { ok: driver.selfie_url, label: 'Selfie' },
+              { ok: driver.perfil_app_url, label: 'Print Uber/99' },
+              { ok: driver.contrato_url, label: 'Contrato' },
               { ok: driver.caucao_pago, label: 'Caução' },
-              { ok: driver.contrato_confirmado, label: 'Contrato' },
             ].map((item, i) => (
               <div key={i} className="flex items-center gap-1.5">
                 {item.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> : <XCircle className="w-3.5 h-3.5 text-gray-300" />}
@@ -293,7 +341,7 @@ export default function AdminDriverDetail() {
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
           {DOC_TYPES.map(doc => {
-            const urlField = { cnh: 'cnh_url', comprovante: 'comprovante_url', selfie: 'selfie_url', contrato: 'contrato_url' };
+            const urlField = { cnh: 'cnh_url', comprovante: 'comprovante_url', selfie: 'selfie_url', perfil_app: 'perfil_app_url', contrato: 'contrato_url' };
             const hasFile = urlField[doc.tipo] ? driver[urlField[doc.tipo]] : false;
             return (
               <div key={doc.tipo} className={`rounded-lg border p-2.5 text-center ${hasFile ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
@@ -330,6 +378,21 @@ export default function AdminDriverDetail() {
           </details>
         )}
       </div>
+
+      {/* ========== GERAR CONTRATO ========== */}
+      {driver.car_marca && (
+        <div className="card border border-purple-200 bg-purple-50/30">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-gray-800 flex items-center gap-2"><FileText className="w-4 h-4 text-purple-600" /> Contrato de Locação</h3>
+              <p className="text-sm text-gray-500 mt-1">Gera o contrato DOCX automaticamente com os dados do motorista e veículo</p>
+            </div>
+            <button onClick={openContractModal} className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 flex items-center gap-2">
+              <FileText className="w-4 h-4" /> Gerar Contrato
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ========== COBRANÇAS ========== */}
       {(driver.status === 'ativo' || driver.status === 'inadimplente' || driver.charges?.length > 0) && (
@@ -536,6 +599,61 @@ export default function AdminDriverDetail() {
             <div className="flex gap-3 mt-4">
               <button onClick={() => setSettlementModal(false)} className="btn-secondary flex-1">Cancelar</button>
               <button onClick={handleSettlement} disabled={processing} className="btn-danger flex-1">Processar Rescisão</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Gerar Contrato */}
+      {contractModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setContractModal(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><FileText className="w-5 h-5 text-purple-600" /> Gerar Contrato de Locação</h3>
+
+            <div className="bg-gray-50 rounded-lg p-3 mb-4 text-sm space-y-1">
+              <p><strong>Motorista:</strong> {driver.nome} — CPF: {driver.cpf}</p>
+              <p><strong>Veículo:</strong> {driver.car_marca} {driver.car_modelo} — {driver.car_placa}</p>
+              <p><strong>Valor semanal:</strong> R$ {fmt(driver.car_valor_semanal)} | <strong>Caução:</strong> R$ {fmt(driver.car_valor_caucao || 0)}</p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">RG do locatário</label>
+                  <input type="text" value={contractForm.locatario_rg} onChange={e => setContractForm({...contractForm, locatario_rg: e.target.value})} className="input-field" placeholder="0000000 SSP/SC" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Data do contrato</label>
+                  <input type="text" value={contractForm.data_contrato} onChange={e => setContractForm({...contractForm, data_contrato: e.target.value})} className="input-field" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Endereço completo do locatário</label>
+                <input type="text" value={contractForm.locatario_endereco} onChange={e => setContractForm({...contractForm, locatario_endereco: e.target.value})} className="input-field" placeholder="Rua, nº, Bairro, Cidade, CEP" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Valor semanal por extenso</label>
+                  <input type="text" value={contractForm.valor_semanal_extenso} onChange={e => setContractForm({...contractForm, valor_semanal_extenso: e.target.value})} className="input-field" placeholder="seiscentos e vinte e cinco reais" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Caução por extenso</label>
+                  <input type="text" value={contractForm.valor_caucao_extenso} onChange={e => setContractForm({...contractForm, valor_caucao_extenso: e.target.value})} className="input-field" placeholder="um mil e setecentos reais" />
+                </div>
+              </div>
+
+              <div className="bg-purple-50 rounded-lg p-3 text-xs text-purple-700">
+                Os dados do <strong>LOCADOR</strong> são puxados das Configurações (Admin → Config). Preencha lá seus dados (nome, RG, CPF, endereço).
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => setContractModal(false)} className="btn-secondary flex-1">Cancelar</button>
+              <button onClick={handleGenerateContract} disabled={generatingContract}
+                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 text-white flex-1 py-2.5 rounded-lg font-medium flex items-center justify-center gap-2">
+                {generatingContract ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Gerando...</>
+                  : <><Download className="w-4 h-4" /> Baixar Contrato DOCX</>}
+              </button>
             </div>
           </div>
         </div>

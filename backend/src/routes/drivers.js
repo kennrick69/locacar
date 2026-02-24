@@ -57,7 +57,7 @@ router.get('/me/documents', auth, driverOnly, async (req, res) => {
 /**
  * POST /api/drivers/me/documents
  * Upload de documento (CNH, comprovante, selfie, contrato)
- * Query: ?tipo=cnh|comprovante|selfie|contrato
+ * Query: ?tipo=cnh|comprovante|selfie|perfil_app|contrato
  */
 router.post('/me/documents',
   auth, driverOnly,
@@ -67,7 +67,7 @@ router.post('/me/documents',
     try {
       const tipo = req.query.tipo || req.body.tipo;
       if (!tipo) {
-        return res.status(400).json({ error: 'Tipo do documento é obrigatório (?tipo=cnh|comprovante|selfie|contrato)' });
+        return res.status(400).json({ error: 'Tipo do documento é obrigatório (?tipo=cnh|comprovante|selfie|perfil_app|contrato)' });
       }
 
       if (!req.file) {
@@ -88,6 +88,7 @@ router.post('/me/documents',
         cnh: 'cnh_url',
         comprovante: 'comprovante_url',
         selfie: 'selfie_url',
+        perfil_app: 'perfil_app_url',
         contrato: 'contrato_url',
       };
 
@@ -100,13 +101,13 @@ router.post('/me/documents',
 
       // Se todos os docs obrigatórios foram enviados, atualiza status
       const profile = await pool.query(
-        'SELECT cnh_url, comprovante_url, selfie_url FROM driver_profiles WHERE user_id = $1',
+        'SELECT cnh_url, comprovante_url, selfie_url, perfil_app_url FROM driver_profiles WHERE user_id = $1',
         [req.user.id]
       );
 
       if (profile.rows[0]) {
         const p = profile.rows[0];
-        if (p.cnh_url && p.comprovante_url && p.selfie_url) {
+        if (p.cnh_url && p.comprovante_url && p.selfie_url && p.perfil_app_url) {
           await pool.query(`
             UPDATE driver_profiles SET status = 'em_analise', updated_at = NOW()
             WHERE user_id = $1 AND status = 'pendente'
@@ -517,7 +518,7 @@ router.patch('/:id/update', auth, adminOnly, async (req, res) => {
   try {
     await client.query('BEGIN');
     const driverId = req.params.id;
-    const { nome, cpf, telefone, email, car_id, dia_cobranca, observacoes } = req.body;
+    const { nome, cpf, telefone, email, car_id, dia_cobranca, observacoes, rg, endereco_completo } = req.body;
 
     // Busca driver
     const driverRes = await client.query('SELECT * FROM driver_profiles WHERE id = $1', [driverId]);
@@ -556,6 +557,8 @@ router.patch('/:id/update', auth, adminOnly, async (req, res) => {
       profileFields.push(`car_id = $${pIdx++}`); profileVals.push(car_id || null);
     }
     if (dia_cobranca !== undefined) { profileFields.push(`dia_cobranca = $${pIdx++}`); profileVals.push(dia_cobranca); }
+    if (rg !== undefined) { profileFields.push(`rg = $${pIdx++}`); profileVals.push(rg || null); }
+    if (endereco_completo !== undefined) { profileFields.push(`endereco_completo = $${pIdx++}`); profileVals.push(endereco_completo || null); }
     if (observacoes !== undefined) { profileFields.push(`motivo_reprovacao = $${pIdx++}`); profileVals.push(observacoes); }
 
     if (profileFields.length > 0) {
@@ -607,7 +610,7 @@ router.post('/:id/documents',
       const tipo = req.query.tipo || req.body.tipo;
 
       if (!tipo) {
-        return res.status(400).json({ error: 'Tipo do documento é obrigatório (?tipo=cnh|comprovante|selfie|contrato|outro)' });
+        return res.status(400).json({ error: 'Tipo do documento é obrigatório (?tipo=cnh|comprovante|selfie|perfil_app|contrato|nota_fiscal|outro)' });
       }
       if (!req.file) {
         return res.status(400).json({ error: 'Nenhum arquivo enviado' });
@@ -628,7 +631,7 @@ router.post('/:id/documents',
       `, [userId, tipo, req.file.originalname, caminho, req.file.mimetype, req.file.size]);
 
       // Atualiza URL no perfil
-      const fieldMap = { cnh: 'cnh_url', comprovante: 'comprovante_url', selfie: 'selfie_url', contrato: 'contrato_url' };
+      const fieldMap = { cnh: 'cnh_url', comprovante: 'comprovante_url', selfie: 'selfie_url', perfil_app: 'perfil_app_url', contrato: 'contrato_url' };
       if (fieldMap[tipo]) {
         await pool.query(`UPDATE driver_profiles SET ${fieldMap[tipo]} = $1, updated_at = NOW() WHERE id = $2`, [caminho, driverId]);
       }
@@ -1238,6 +1241,96 @@ ${observacoes ? '<h2>Observações</h2><p>' + observacoes + '</p>' : ''}
     res.status(500).json({ error: 'Erro interno' });
   } finally {
     client.release();
+  }
+});
+
+/**
+ * POST /api/drivers/:id/generate-contract - Admin: gerar contrato DOCX
+ */
+router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
+  try {
+    const driverId = req.params.id;
+    const extraData = req.body; // dados extras que o admin pode enviar
+
+    // Busca dados do motorista
+    const driverRes = await pool.query(`
+      SELECT dp.*, u.nome, u.email, u.cpf, u.telefone,
+        c.marca as car_marca, c.modelo as car_modelo, c.placa as car_placa,
+        c.cor as car_cor, c.ano as car_ano, c.valor_semanal, c.valor_caucao,
+        c.renavam as car_renavam
+      FROM driver_profiles dp
+      JOIN users u ON u.id = dp.user_id
+      LEFT JOIN cars c ON c.id = dp.car_id
+      WHERE dp.id = $1
+    `, [driverId]);
+
+    if (driverRes.rows.length === 0) return res.status(404).json({ error: 'Motorista não encontrado' });
+    const driver = driverRes.rows[0];
+
+    // Busca dados do locador (settings)
+    const settingsRes = await pool.query(
+      "SELECT chave, valor FROM settings WHERE chave LIKE 'locador_%'"
+    );
+    const settings = {};
+    settingsRes.rows.forEach(r => { settings[r.chave] = r.valor; });
+
+    // Monta dados do contrato
+    const { gerarContrato } = require('../services/ContratoService');
+
+    const valorSemanal = parseFloat(driver.valor_semanal || 0).toFixed(2).replace('.', ',');
+    const valorCaucao = parseFloat(driver.valor_caucao || 0).toFixed(2).replace('.', ',');
+
+    const data = {
+      locador_nome: extraData.locador_nome || settings.locador_nome || 'NOME DO LOCADOR',
+      locador_rg: extraData.locador_rg || settings.locador_rg || '_______________',
+      locador_cpf: extraData.locador_cpf || settings.locador_cpf || '_______________',
+      locador_endereco: extraData.locador_endereco || settings.locador_endereco || '_______________',
+      locador_email: extraData.locador_email || settings.locador_email || '_______________',
+      locatario_nome: driver.nome,
+      locatario_rg: extraData.locatario_rg || driver.rg || '_______________',
+      locatario_cpf: driver.cpf,
+      locatario_endereco: extraData.locatario_endereco || driver.endereco_completo || '_______________',
+      veiculo_marca_modelo: (driver.car_marca || '') + ' ' + (driver.car_modelo || ''),
+      veiculo_cor: driver.car_cor || '_______________',
+      veiculo_ano: driver.car_ano ? String(driver.car_ano) : '_______________',
+      veiculo_placa: driver.car_placa || '_______________',
+      veiculo_renavam: extraData.renavam || driver.car_renavam || '_______________',
+      valor_semanal: valorSemanal,
+      valor_semanal_extenso: extraData.valor_semanal_extenso || valorSemanal + ' reais',
+      dia_pagamento: extraData.dia_pagamento || driver.dia_cobranca || 'quinta',
+      valor_caucao: valorCaucao,
+      valor_caucao_extenso: extraData.valor_caucao_extenso || valorCaucao + ' reais',
+      cidade_comarca: extraData.cidade_comarca || settings.locador_cidade || 'JARAGUÁ DO SUL - SC',
+      data_contrato: extraData.data_contrato || new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }),
+    };
+
+    const buffer = await gerarContrato(data);
+
+    // Salva o contrato como arquivo
+    const fs = require('fs');
+    const path = require('path');
+    const uploadsDir = path.join(__dirname, '..', '..', 'uploads', 'contracts');
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+    const fileName = `contrato_${driverId}_${Date.now()}.docx`;
+    const filePath = path.join(uploadsDir, fileName);
+    fs.writeFileSync(filePath, buffer);
+
+    const caminho = `/uploads/contracts/${fileName}`;
+
+    // Salva na tabela documents
+    await pool.query(`
+      INSERT INTO documents (user_id, tipo, nome_arquivo, caminho, mime_type, tamanho)
+      VALUES ($1, 'contrato_gerado', $2, $3, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', $4)
+    `, [driver.user_id, fileName, caminho, buffer.length]);
+
+    // Envia o arquivo
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('Erro ao gerar contrato:', err);
+    res.status(500).json({ error: err.message || 'Erro interno' });
   }
 });
 

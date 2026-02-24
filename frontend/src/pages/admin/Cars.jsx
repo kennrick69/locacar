@@ -119,7 +119,7 @@ function Autocomplete({ label, value, onChange, options, placeholder, disabled }
 }
 
 // ==========================================================
-const EMPTY_CAR = { marca: '', modelo: '', ano: '', placa: '', cor: '', valor_semanal: '', valor_caucao: '', observacoes: '' };
+const EMPTY_CAR = { marca: '', modelo: '', ano: '', placa: '', cor: '', valor_semanal: '', valor_caucao: '', renavam: '', observacoes: '' };
 
 export default function AdminCars() {
   const [cars, setCars] = useState([]);
@@ -150,7 +150,7 @@ export default function AdminCars() {
     setForm({
       marca: car.marca || '', modelo: car.modelo || '', ano: car.ano || '',
       placa: car.placa || '', cor: car.cor || '', valor_semanal: car.valor_semanal || '',
-      valor_caucao: car.valor_caucao || '', observacoes: car.observacoes || '', disponivel: car.disponivel,
+      valor_caucao: car.valor_caucao || '', renavam: car.renavam || '', observacoes: car.observacoes || '', disponivel: car.disponivel,
     });
     setModal(car);
   };
@@ -350,6 +350,11 @@ export default function AdminCars() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Caução (R$)</label>
                   <input type="number" step="0.01" value={form.valor_caucao} onChange={set('valor_caucao')} className="input-field" placeholder="2000.00" />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Renavam</label>
+                <input type="text" value={form.renavam} onChange={set('renavam')} className="input-field" placeholder="00000000000" />
               </div>
 
               <div>

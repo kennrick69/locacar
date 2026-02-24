@@ -205,6 +205,41 @@ export default function AdminSettings() {
         </div>
       </div>
 
+      {/* Dados do Locador (para contrato) */}
+      <div className="card">
+        <div className="flex items-center gap-2 mb-4">
+          <CreditCard className="w-5 h-5 text-purple-600" />
+          <h2 className="font-semibold text-gray-800">Dados do Locador (Contrato)</h2>
+        </div>
+        <p className="text-xs text-gray-400 mb-3">Esses dados são usados para gerar o contrato de locação automaticamente.</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nome completo</label>
+            <input type="text" value={settings.locador_nome || ''} onChange={e => updateSetting('locador_nome', e.target.value)} className="input-field" placeholder="JOSÉ RICARDO DOERNER NETO" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">CPF</label>
+            <input type="text" value={settings.locador_cpf || ''} onChange={e => updateSetting('locador_cpf', e.target.value)} className="input-field" placeholder="000.000.000-00" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">RG</label>
+            <input type="text" value={settings.locador_rg || ''} onChange={e => updateSetting('locador_rg', e.target.value)} className="input-field" placeholder="0000000 SSP/SC" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input type="text" value={settings.locador_email || ''} onChange={e => updateSetting('locador_email', e.target.value)} className="input-field" placeholder="email@exemplo.com" />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Endereço completo</label>
+            <input type="text" value={settings.locador_endereco || ''} onChange={e => updateSetting('locador_endereco', e.target.value)} className="input-field" placeholder="Rua ..., nº, Bairro, Cidade, CEP" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Cidade / Comarca</label>
+            <input type="text" value={settings.locador_cidade || ''} onChange={e => updateSetting('locador_cidade', e.target.value)} className="input-field" placeholder="JARAGUÁ DO SUL - SC" />
+          </div>
+        </div>
+      </div>
+
       {/* Plataforma externa */}
       <div className="card">
         <div className="flex items-center gap-2 mb-4">
