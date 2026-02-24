@@ -3,16 +3,129 @@ import { carsAPI } from '../../services/api';
 import { toast } from 'react-toastify';
 import {
   Car, Plus, Pencil, Trash2, X, Upload, Search,
-  CheckCircle2, XCircle, Image
+  CheckCircle2, XCircle, Image, ChevronDown
 } from 'lucide-react';
 
+// ========== BANCO DE MARCAS/MODELOS (BR) ==========
+const CAR_DATA = {
+  'Fiat': ['Mobi', 'Argo', 'Cronos', 'Pulse', 'Fastback', 'Strada', 'Toro', 'Uno', 'Palio', 'Siena', 'Grand Siena', 'Punto', 'Linea', 'Bravo', 'Doblo', 'Fiorino', 'Ducato', 'Marea', 'Stilo', 'Idea', 'Weekend'],
+  'Volkswagen': ['Gol', 'Voyage', 'Polo', 'Virtus', 'T-Cross', 'Nivus', 'Taos', 'Tiguan', 'Jetta', 'Saveiro', 'Amarok', 'Fox', 'Up!', 'Golf', 'Passat', 'Fusca', 'Kombi', 'SpaceFox', 'CrossFox'],
+  'Chevrolet': ['Onix', 'Onix Plus', 'Tracker', 'Spin', 'S10', 'Montana', 'Equinox', 'Trailblazer', 'Cruze', 'Joy', 'Prisma', 'Cobalt', 'Celta', 'Classic', 'Corsa', 'Vectra', 'Astra', 'Agile', 'Captiva', 'Blazer'],
+  'Hyundai': ['HB20', 'HB20S', 'HB20X', 'Creta', 'Tucson', 'Santa Fe', 'i30', 'Azera', 'IX35', 'Veloster', 'Elantra', 'Sonata', 'HR'],
+  'Toyota': ['Corolla', 'Corolla Cross', 'Hilux', 'SW4', 'Yaris', 'Yaris Sedan', 'RAV4', 'Camry', 'Prius', 'Etios', 'Etios Sedan', 'Land Cruiser'],
+  'Honda': ['Civic', 'City', 'HR-V', 'ZR-V', 'CR-V', 'Fit', 'WR-V', 'Accord'],
+  'Renault': ['Kwid', 'Sandero', 'Logan', 'Stepway', 'Duster', 'Oroch', 'Captur', 'Kardian', 'Master', 'Kangoo', 'Clio', 'Megane', 'Fluence'],
+  'Nissan': ['Kicks', 'Versa', 'Sentra', 'Frontier', 'March', 'X-Trail', 'Leaf'],
+  'Jeep': ['Renegade', 'Compass', 'Commander', 'Wrangler', 'Cherokee', 'Grand Cherokee'],
+  'Ford': ['Ka', 'Ka Sedan', 'EcoSport', 'Ranger', 'Territory', 'Bronco Sport', 'Maverick', 'Fiesta', 'Focus', 'Fusion', 'Edge'],
+  'Peugeot': ['208', '2008', '3008', '5008', '508', '207', '206', '308', '408', 'Partner', 'Boxer'],
+  'Citroën': ['C3', 'C4 Cactus', 'C3 Aircross', 'C4 Lounge', 'Berlingo', 'Jumpy', 'C5 Aircross'],
+  'Mitsubishi': ['L200 Triton', 'Outlander', 'Eclipse Cross', 'ASX', 'Pajero', 'Pajero Sport', 'Lancer'],
+  'Kia': ['Sportage', 'Cerato', 'Seltos', 'Sorento', 'Carnival', 'Soul', 'Stinger', 'Picanto'],
+  'BMW': ['320i', '330i', '520i', 'X1', 'X3', 'X5', 'X6', 'Z4', 'M3', 'M4', 'i4', 'iX'],
+  'Mercedes-Benz': ['A200', 'C180', 'C200', 'C300', 'E300', 'GLA 200', 'GLC 300', 'GLE', 'Sprinter', 'Vito'],
+  'Audi': ['A3', 'A4', 'A5', 'Q3', 'Q5', 'Q7', 'Q8', 'TT', 'RS3', 'e-tron'],
+  'Volvo': ['XC40', 'XC60', 'XC90', 'S60', 'V60', 'C40'],
+  'Caoa Chery': ['Tiggo 2', 'Tiggo 3X', 'Tiggo 5X', 'Tiggo 7', 'Tiggo 8', 'Arrizo 5', 'Arrizo 6'],
+  'RAM': ['Rampage', '1500', '2500', '3500'],
+  'GWM': ['Haval H6', 'Haval H6 GT', 'Ora 03'],
+  'BYD': ['Dolphin', 'Dolphin Mini', 'Song Plus', 'Yuan Plus', 'Seal', 'Tan', 'Han', 'King'],
+  'Suzuki': ['Jimny', 'Vitara', 'S-Cross', 'Swift'],
+  'Subaru': ['Forester', 'XV', 'Impreza', 'Outback', 'WRX'],
+  'Land Rover': ['Defender', 'Discovery', 'Discovery Sport', 'Range Rover Evoque', 'Range Rover Sport', 'Range Rover Velar'],
+  'Porsche': ['Cayenne', 'Macan', '911', 'Panamera', 'Taycan'],
+  'JAC': ['T40', 'T50', 'T60', 'T80', 'E-JS1'],
+  'Troller': ['T4'],
+};
+
+const ALL_MARCAS = Object.keys(CAR_DATA).sort();
+const CORES = ['Branco', 'Prata', 'Preto', 'Cinza', 'Vermelho', 'Azul', 'Marrom', 'Bege', 'Verde', 'Amarelo', 'Laranja', 'Dourado', 'Vinho', 'Champagne'];
+
+// ========== COMPONENTE AUTOCOMPLETE ==========
+function Autocomplete({ label, value, onChange, options, placeholder, disabled }) {
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState('');
+  const ref = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const searchTerm = (filter || value || '').toLowerCase();
+  const filtered = options.filter(o => o.toLowerCase().includes(searchTerm));
+
+  const handleInputChange = (e) => {
+    setFilter(e.target.value);
+    onChange(e.target.value);
+    if (!open) setOpen(true);
+  };
+
+  const handleSelect = (item) => {
+    onChange(item);
+    setFilter('');
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <div className="relative">
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={handleInputChange}
+          onFocus={() => setOpen(true)}
+          className="input-field pr-8"
+          placeholder={placeholder}
+          disabled={disabled}
+          autoComplete="off"
+        />
+        <button
+          type="button"
+          onClick={() => { setOpen(!open); inputRef.current?.focus(); }}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          disabled={disabled}
+        >
+          <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-auto">
+          {filtered.map(item => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => handleSelect(item)}
+              className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 hover:text-blue-700 transition-colors ${
+                item === value ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+              }`}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      )}
+      {open && filtered.length === 0 && (value || filter) && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-sm text-gray-400 text-center">
+          Sem sugestões — digite livremente
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==========================================================
 const EMPTY_CAR = { marca: '', modelo: '', ano: '', placa: '', cor: '', valor_semanal: '', valor_caucao: '', observacoes: '' };
 
 export default function AdminCars() {
   const [cars, setCars] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [modal, setModal] = useState(null); // null | 'new' | car object (edit)
+  const [modal, setModal] = useState(null);
   const [form, setForm] = useState(EMPTY_CAR);
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -31,22 +144,13 @@ export default function AdminCars() {
     }
   };
 
-  const openNew = () => {
-    setForm(EMPTY_CAR);
-    setModal('new');
-  };
+  const openNew = () => { setForm(EMPTY_CAR); setModal('new'); };
 
   const openEdit = (car) => {
     setForm({
-      marca: car.marca || '',
-      modelo: car.modelo || '',
-      ano: car.ano || '',
-      placa: car.placa || '',
-      cor: car.cor || '',
-      valor_semanal: car.valor_semanal || '',
-      valor_caucao: car.valor_caucao || '',
-      observacoes: car.observacoes || '',
-      disponivel: car.disponivel,
+      marca: car.marca || '', modelo: car.modelo || '', ano: car.ano || '',
+      placa: car.placa || '', cor: car.cor || '', valor_semanal: car.valor_semanal || '',
+      valor_caucao: car.valor_caucao || '', observacoes: car.observacoes || '', disponivel: car.disponivel,
     });
     setModal(car);
   };
@@ -55,14 +159,12 @@ export default function AdminCars() {
     if (!form.marca || !form.modelo || !form.placa || !form.valor_semanal) {
       return toast.warning('Preencha os campos obrigatórios');
     }
-
     setSaving(true);
     try {
       const formData = new FormData();
       Object.entries(form).forEach(([key, val]) => {
         if (val !== '' && val !== undefined) formData.append(key, val);
       });
-
       const file = fileRef.current?.files?.[0];
       if (file) formData.append('foto', file);
 
@@ -73,7 +175,6 @@ export default function AdminCars() {
         await carsAPI.update(modal.id, formData);
         toast.success('Carro atualizado!');
       }
-
       setModal(null);
       await loadCars();
     } catch (err) {
@@ -96,6 +197,16 @@ export default function AdminCars() {
 
   const set = (field) => (e) => setForm({ ...form, [field]: e.target.value });
   const fmt = (v) => parseFloat(v || 0).toFixed(2).replace('.', ',');
+
+  const modelosDisponiveis = CAR_DATA[form.marca] || [];
+
+  const handleMarcaChange = (val) => {
+    setForm(prev => ({
+      ...prev,
+      marca: val,
+      modelo: CAR_DATA[val]?.includes(prev.modelo) ? prev.modelo : ''
+    }));
+  };
 
   const filtered = cars.filter(c =>
     `${c.marca} ${c.modelo} ${c.placa} ${c.cor}`.toLowerCase().includes(search.toLowerCase())
@@ -121,19 +232,12 @@ export default function AdminCars() {
         </button>
       </div>
 
-      {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="input-field pl-10"
-          placeholder="Buscar por marca, modelo, placa..."
-        />
+        <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+          className="input-field pl-10" placeholder="Buscar por marca, modelo, placa..." />
       </div>
 
-      {/* Lista */}
       {filtered.length === 0 ? (
         <div className="card text-center py-10 text-gray-400">
           <Car className="w-10 h-10 mx-auto mb-3 opacity-40" />
@@ -143,14 +247,12 @@ export default function AdminCars() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map(car => (
             <div key={car.id} className="card">
-              {/* Foto */}
               <div className="aspect-video bg-gray-100 rounded-lg mb-3 flex items-center justify-center overflow-hidden relative">
                 {car.foto_url ? (
                   <img src={car.foto_url} alt={`${car.marca} ${car.modelo}`} className="w-full h-full object-cover" />
                 ) : (
                   <Car className="w-10 h-10 text-gray-300" />
                 )}
-                {/* Status badge */}
                 <span className={`absolute top-2 right-2 text-xs px-2 py-0.5 rounded-full font-medium ${
                   car.disponivel ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
                 }`}>
@@ -176,7 +278,6 @@ export default function AdminCars() {
                 <p className="text-xs text-purple-600 mt-2">{car.motoristas_ativos} motorista(s) ativo(s)</p>
               )}
 
-              {/* Ações */}
               <div className="flex gap-2 mt-3">
                 <button onClick={() => openEdit(car)} className="btn-secondary flex-1 text-sm flex items-center justify-center gap-1">
                   <Pencil className="w-3.5 h-3.5" /> Editar
@@ -205,14 +306,21 @@ export default function AdminCars() {
 
             <div className="p-4 space-y-4">
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Marca *</label>
-                  <input type="text" value={form.marca} onChange={set('marca')} className="input-field" placeholder="Ex: Fiat" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Modelo *</label>
-                  <input type="text" value={form.modelo} onChange={set('modelo')} className="input-field" placeholder="Ex: Mobi" />
-                </div>
+                <Autocomplete
+                  label="Marca *"
+                  value={form.marca}
+                  onChange={handleMarcaChange}
+                  options={ALL_MARCAS}
+                  placeholder="Digite a marca..."
+                />
+                <Autocomplete
+                  label="Modelo *"
+                  value={form.modelo}
+                  onChange={(val) => setForm({ ...form, modelo: val })}
+                  options={modelosDisponiveis}
+                  placeholder={form.marca ? 'Digite o modelo...' : 'Escolha a marca'}
+                  disabled={!form.marca}
+                />
               </div>
 
               <div className="grid grid-cols-3 gap-3">
@@ -224,10 +332,13 @@ export default function AdminCars() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Placa *</label>
                   <input type="text" value={form.placa} onChange={set('placa')} className="input-field" placeholder="ABC-1234" />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cor</label>
-                  <input type="text" value={form.cor} onChange={set('cor')} className="input-field" placeholder="Branco" />
-                </div>
+                <Autocomplete
+                  label="Cor"
+                  value={form.cor}
+                  onChange={(val) => setForm({ ...form, cor: val })}
+                  options={CORES}
+                  placeholder="Selecione..."
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -248,13 +359,10 @@ export default function AdminCars() {
 
               {modal !== 'new' && (
                 <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="disponivel"
+                  <input type="checkbox" id="disponivel"
                     checked={form.disponivel !== false}
                     onChange={e => setForm({ ...form, disponivel: e.target.checked })}
-                    className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-                  />
+                    className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
                   <label htmlFor="disponivel" className="text-sm text-gray-700">Disponível para locação</label>
                 </div>
               )}
