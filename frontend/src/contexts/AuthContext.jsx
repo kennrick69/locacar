@@ -30,6 +30,14 @@ export function AuthProvider({ children }) {
     return res.data.user;
   };
 
+  const tokenLogin = async (tokenCode) => {
+    const res = await authAPI.tokenLogin(tokenCode);
+    localStorage.setItem('locacar_token', res.data.token);
+    localStorage.setItem('locacar_user', JSON.stringify(res.data.user));
+    setUser(res.data.user);
+    return res.data.user;
+  };
+
   const register = async (data) => {
     const res = await authAPI.register(data);
     localStorage.setItem('locacar_token', res.data.token);
@@ -55,7 +63,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, login, register, logout, refreshUser,
+      user, loading, login, tokenLogin, register, logout, refreshUser,
       isAdmin: user?.role === 'admin',
       isDriver: user?.role === 'motorista',
       isAuthenticated: !!user,

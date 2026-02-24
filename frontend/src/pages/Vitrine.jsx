@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { carsAPI, authAPI } from '../services/api';
+import { carsAPI } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import { Car, Calendar, DollarSign, ArrowRight, Lock, User, KeyRound, AlertCircle } from 'lucide-react';
 
 export default function Vitrine() {
@@ -10,6 +11,7 @@ export default function Vitrine() {
   const [tokenError, setTokenError] = useState('');
   const [tokenLoading, setTokenLoading] = useState(false);
   const navigate = useNavigate();
+  const { tokenLogin } = useAuth();
 
   useEffect(() => {
     carsAPI.list()
@@ -30,9 +32,7 @@ export default function Vitrine() {
 
     setTokenLoading(true);
     try {
-      const res = await authAPI.tokenLogin(cleaned);
-      localStorage.setItem('locacar_token', res.data.token);
-      localStorage.setItem('locacar_user', JSON.stringify(res.data.user));
+      await tokenLogin(cleaned);
       navigate('/motorista');
     } catch (err) {
       setTokenError(err.response?.data?.error || 'Token não encontrado');
