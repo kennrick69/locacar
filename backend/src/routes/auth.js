@@ -12,42 +12,54 @@ const router = express.Router();
  */
 router.post('/register', async (req, res) => {
   try {
-    const { nome, email, senha, cpf, telefone } = req.body;
+    const { nome, email, senha, cpf, telefone, endereco } = req.body;
 
-    if (!nome || !email || !senha) {
-      return res.status(400).json({ error: 'Nome, email e senha são obrigatórios' });
+    if (!nome || !cpf) {
+      return res.status(400).json({ error: 'Nome e CPF são obrigatórios' });
     }
 
-    // Verifica se email já existe
-    const exists = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-    if (exists.rows.length > 0) {
+    const cpfClean = cpf.replace(/\D/g, '');
+    if (cpfClean.length < 11) {
+      return res.status(400).json({ error: 'CPF deve ter 11 dígitos' });
+    }
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email é obrigatório' });
+    }
+
+    if (!telefone) {
+      return res.status(400).json({ error: 'Telefone é obrigatório' });
+    }
+
+    // Verifica CPF
+    const cpfExists = await pool.query('SELECT id FROM users WHERE cpf = $1', [cpfClean]);
+    if (cpfExists.rows.length > 0) {
+      return res.status(409).json({ error: 'CPF já cadastrado' });
+    }
+
+    // Verifica email
+    const emailExists = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (emailExists.rows.length > 0) {
       return res.status(409).json({ error: 'Email já cadastrado' });
     }
 
-    // Verifica CPF se fornecido
-    if (cpf) {
-      const cpfExists = await pool.query('SELECT id FROM users WHERE cpf = $1', [cpf]);
-      if (cpfExists.rows.length > 0) {
-        return res.status(409).json({ error: 'CPF já cadastrado' });
-      }
-    }
-
-    const senhaHash = await bcrypt.hash(senha, 10);
+    // Senha = token = 6 primeiros do CPF (motorista não precisa de senha)
+    const tokenExterno = cpfClean.substring(0, 6);
+    const senhaHash = await bcrypt.hash(senha || tokenExterno, 10);
 
     const result = await pool.query(`
       INSERT INTO users (nome, email, senha_hash, cpf, telefone, role)
       VALUES ($1, $2, $3, $4, $5, 'motorista')
       RETURNING id, nome, email, cpf, telefone, role, created_at
-    `, [nome, email, senhaHash, cpf || null, telefone || null]);
+    `, [nome, email, senhaHash, cpfClean, telefone]);
 
     const user = result.rows[0];
 
     // Cria perfil de motorista automaticamente
-    const tokenExterno = cpf ? cpf.replace(/\D/g, '').substring(0, 6) : null;
     await pool.query(`
-      INSERT INTO driver_profiles (user_id, token_externo)
-      VALUES ($1, $2)
-    `, [user.id, tokenExterno]);
+      INSERT INTO driver_profiles (user_id, token_externo, endereco_completo)
+      VALUES ($1, $2, $3)
+    `, [user.id, tokenExterno, endereco || null]);
 
     // Gera JWT
     const token = jwt.sign(
