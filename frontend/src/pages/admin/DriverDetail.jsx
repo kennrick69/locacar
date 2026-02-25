@@ -6,7 +6,8 @@ import {
   ArrowLeft, CheckCircle2, XCircle, Clock, Car, FileText,
   Eye, X, Shield, UserCheck, AlertCircle, Plus, Banknote,
   Check, Download, Upload, Pencil, Save, Calendar, User, Trash2,
-  RefreshCw, ArrowRightLeft, History, DollarSign, ChevronDown, ChevronUp
+  RefreshCw, ArrowRightLeft, History, DollarSign, ChevronDown, ChevronUp,
+  Lock, Unlock
 } from 'lucide-react';
 
 const STATUS_BADGE = {
@@ -38,6 +39,7 @@ export default function AdminDriverDetail() {
   const navigate = useNavigate();
   const [driver, setDriver] = useState(null);
   const [allCars, setAllCars] = useState([]);
+  const [adminDocs, setAdminDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [processing, setProcessing] = useState(false);
@@ -115,6 +117,11 @@ export default function AdminDriverDetail() {
           multas_acumuladas: pending.reduce((s, c) => s + parseFloat(c.multa || 0), 0).toFixed(2),
         }));
       }
+      // Carregar documentos com status fixado
+      try {
+        const docsRes = await driversAPI.getDocuments(id);
+        setAdminDocs(docsRes.data);
+      } catch (e) { /* fallback: docs já vêm no driver.documents */ }
     } catch (err) {
       toast.error('Erro ao carregar motorista');
       navigate('/admin/motoristas');
@@ -150,6 +157,13 @@ export default function AdminDriverDetail() {
   const handleReject = async () => { setProcessing(true); try { await driversAPI.reject(id, { motivo: rejectReason }); toast.success('Reprovado'); setRejectModal(false); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } finally { setProcessing(false); } };
   const handleConfirmContract = async () => { try { await driversAPI.confirmContract(id); toast.success('Contrato confirmado!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
   const handleActivate = async () => { try { await driversAPI.activate(id); toast.success('Ativado!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
+  const handleLockDoc = async (docId, fixado) => {
+    try {
+      await driversAPI.lockDocument(id, docId, fixado);
+      toast.success(fixado ? 'Documento fixado!' : 'Documento desfixado');
+      await loadData();
+    } catch (e) { toast.error('Erro ao fixar documento'); }
+  };
   const handleCreateCharge = async () => { if (!chargeForm.semana_ref || !chargeForm.valor_base) return toast.warning('Preencha semana e valor'); setProcessing(true); try { await driversAPI.createCharge(id, chargeForm); toast.success('Cobrança criada!'); setChargeModal(false); setChargeForm({ semana_ref: '', valor_base: '', observacoes: '' }); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } finally { setProcessing(false); } };
   const handleApproveAbatimento = async (abatId) => { try { await driversAPI.approveAbatimento(id, abatId); toast.success('Abatimento aprovado!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
   const handleAddAcrescimo = async () => { if (!acrescimoForm.descricao || !acrescimoForm.valor) return toast.warning('Preencha'); try { await driversAPI.addAcrescimo(id, { charge_id: acrescimoChargeId, descricao: acrescimoForm.descricao, valor: parseFloat(acrescimoForm.valor) }); toast.success('Acréscimo adicionado!'); setAcrescimoChargeId(null); setAcrescimoForm({ descricao: '', valor: '' }); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
@@ -428,29 +442,55 @@ export default function AdminDriverDetail() {
           {DOC_TYPES.map(doc => {
             const urlField = { cnh: 'cnh_url', comprovante: 'comprovante_url', selfie: 'selfie_url', perfil_app: 'perfil_app_url', contrato: 'contrato_url' };
             const hasFile = urlField[doc.tipo] ? driver[urlField[doc.tipo]] : false;
+            // Verificar se o último doc deste tipo está fixado
+            const latestDoc = adminDocs.find(d => d.tipo === doc.tipo);
+            const isFixed = latestDoc?.fixado;
             return (
-              <div key={doc.tipo} className={`rounded-lg border p-2.5 text-center ${hasFile ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
-                <p className="text-xs font-medium text-gray-700 mb-1.5">{doc.label}</p>
-                <div className="flex items-center justify-center gap-1">
-                  {hasFile && (<button onClick={() => setPreviewUrl(driver[urlField[doc.tipo]])} className="text-[11px] bg-white border text-brand-600 px-1.5 py-0.5 rounded flex items-center gap-0.5"><Eye className="w-3 h-3" /> Ver</button>)}
+              <div key={doc.tipo} className={`rounded-lg border p-2.5 text-center ${isFixed ? 'border-amber-300 bg-amber-50' : hasFile ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'}`}>
+                <p className="text-xs font-medium text-gray-700 mb-1">{doc.label}</p>
+                {isFixed && <span className="text-[9px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full font-medium">🔒 Fixado</span>}
+                <div className="flex items-center justify-center gap-1 mt-1">
+                  {hasFile && (
+                    <button onClick={() => setPreviewUrl(driver[urlField[doc.tipo]])} className="text-[11px] bg-white border text-brand-600 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                      <Eye className="w-3 h-3" /> Ver
+                    </button>
+                  )}
                   <button onClick={() => triggerDocUpload(doc.tipo)} disabled={uploading}
                     className={`text-[11px] px-1.5 py-0.5 rounded flex items-center gap-0.5 ${hasFile ? 'bg-white border text-gray-500' : 'bg-brand-600 text-white'}`}>
                     <Upload className="w-3 h-3" /> {hasFile ? 'Trocar' : 'Enviar'}
                   </button>
+                  {hasFile && latestDoc && (
+                    <button onClick={() => handleLockDoc(latestDoc.id, !isFixed)}
+                      title={isFixed ? 'Desfixar documento' : 'Fixar documento (impede motorista de substituir)'}
+                      className={`text-[11px] px-1.5 py-0.5 rounded flex items-center gap-0.5 ${isFixed ? 'bg-amber-200 text-amber-800 hover:bg-amber-300' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                      {isFixed ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                      {isFixed ? 'Desfixar' : 'Fixar'}
+                    </button>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
         {uploading && <p className="text-sm text-brand-600 animate-pulse mb-2">Enviando...</p>}
-        {driver.documents?.length > 0 && (
+        {(adminDocs.length > 0 || driver.documents?.length > 0) && (
           <details className="text-sm">
-            <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">Histórico ({driver.documents.length} arquivos)</summary>
-            <div className="mt-2 divide-y divide-gray-100 max-h-40 overflow-auto">
-              {driver.documents.map(doc => (
+            <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">Histórico ({(adminDocs.length || driver.documents?.length || 0)} arquivos)</summary>
+            <div className="mt-2 divide-y divide-gray-100 max-h-48 overflow-auto">
+              {(adminDocs.length > 0 ? adminDocs : driver.documents || []).map(doc => (
                 <div key={doc.id} className="flex items-center justify-between py-1.5">
-                  <span className="text-xs text-gray-600">{doc.tipo.toUpperCase()} — {doc.nome_arquivo} · {fmtDate(doc.created_at)}</span>
-                  <button onClick={() => setPreviewUrl(doc.caminho)} className="text-brand-600"><Eye className="w-3.5 h-3.5" /></button>
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className="text-xs text-gray-600 truncate">{doc.tipo.toUpperCase()} — {doc.nome_arquivo} · {fmtDate(doc.created_at)}</span>
+                    {doc.fixado && <span className="text-[9px] bg-amber-200 text-amber-800 px-1 py-0.5 rounded shrink-0">🔒</span>}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => setPreviewUrl(doc.caminho)} className="text-brand-600"><Eye className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleLockDoc(doc.id, !doc.fixado)}
+                      title={doc.fixado ? 'Desfixar' : 'Fixar'}
+                      className={`${doc.fixado ? 'text-amber-600' : 'text-gray-400 hover:text-gray-600'}`}>
+                      {doc.fixado ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -637,8 +677,15 @@ export default function AdminDriverDetail() {
           <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-3 border-b"><span className="text-sm font-medium">Documento</span><button onClick={() => setPreviewUrl(null)}><X className="w-5 h-5" /></button></div>
             <div className="p-2">
-              {previewUrl.toLowerCase().endsWith('.pdf') ? (
-                <iframe src={previewUrl} className="w-full rounded" style={{ height: '75vh' }} title="PDF" />
+              {previewUrl.toLowerCase().endsWith('.pdf') || previewUrl.toLowerCase().includes('.pdf') ? (
+                <div className="p-8 text-center space-y-3">
+                  <FileText className="w-12 h-12 text-red-500 mx-auto" />
+                  <p className="text-gray-700 font-medium">Arquivo PDF</p>
+                  <a href={previewUrl} download target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700">
+                    <Download className="w-4 h-4" /> Baixar PDF
+                  </a>
+                </div>
               ) : (
                 <img src={previewUrl} alt="Doc" className="w-full rounded" onError={e => { e.target.onerror=null; e.target.parentNode.innerHTML='<div class="p-8 text-center text-gray-400"><p>Não foi possível exibir. <a href="'+previewUrl+'" target="_blank" class="text-brand-600 underline">Abrir em nova aba</a></p></div>'; }} />
               )}

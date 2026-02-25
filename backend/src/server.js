@@ -257,6 +257,9 @@ async function start() {
         await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS valor_pago_total DECIMAL(10,2) DEFAULT 0`);
         await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS saldo_devedor DECIMAL(10,2) DEFAULT 0`);
 
+        // Fixação de documentos pelo admin
+        await pool.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS fixado BOOLEAN DEFAULT false`);
+
         // Backfill: preenche token_externo para motoristas que não têm
         await pool.query(`
           UPDATE driver_profiles dp

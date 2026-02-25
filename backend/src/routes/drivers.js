@@ -74,6 +74,15 @@ router.post('/me/documents',
         return res.status(400).json({ error: 'Nenhum arquivo enviado' });
       }
 
+      // Verificar se existe documento fixado desse tipo (admin travou)
+      const fixadoCheck = await pool.query(
+        'SELECT id FROM documents WHERE user_id = $1 AND tipo = $2 AND fixado = true LIMIT 1',
+        [req.user.id, tipo]
+      );
+      if (fixadoCheck.rows.length > 0) {
+        return res.status(403).json({ error: 'Este documento foi fixado pelo administrador e não pode ser substituído.' });
+      }
+
       const caminho = `/uploads/documents/${req.file.filename}`;
 
       // Salva na tabela documents
@@ -140,6 +149,15 @@ router.post('/me/contrato',
 
       if (req.file.mimetype !== 'application/pdf') {
         return res.status(400).json({ error: 'O contrato deve ser um arquivo PDF' });
+      }
+
+      // Verificar se contrato está fixado
+      const fixadoCheck = await pool.query(
+        'SELECT id FROM documents WHERE user_id = $1 AND tipo = $2 AND fixado = true LIMIT 1',
+        [req.user.id, 'contrato']
+      );
+      if (fixadoCheck.rows.length > 0) {
+        return res.status(403).json({ error: 'O contrato foi fixado pelo administrador e não pode ser substituído.' });
       }
 
       const caminho = `/uploads/contratos/${req.file.filename}`;
@@ -1385,6 +1403,43 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
   } catch (err) {
     console.error('Erro ao gerar contrato:', err);
     res.status(500).json({ error: err.message || 'Erro interno' });
+  }
+});
+
+// ========== DOCUMENT LOCK (FIXAR) ==========
+
+/**
+ * PUT /api/drivers/:driverId/documents/:docId/lock - Admin: fixar/desfixar documento
+ */
+router.put('/:driverId/documents/:docId/lock', auth, adminOnly, async (req, res) => {
+  try {
+    const { docId } = req.params;
+    const { fixado } = req.body;
+    await pool.query('UPDATE documents SET fixado = $1 WHERE id = $2', [fixado !== false, docId]);
+    res.json({ message: fixado !== false ? 'Documento fixado' : 'Documento desfixado' });
+  } catch (err) {
+    console.error('Erro ao fixar documento:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
+ * GET /api/drivers/:driverId/documents - Admin: listar documentos de um motorista (com fixado)
+ */
+router.get('/:driverId/documents', auth, adminOnly, async (req, res) => {
+  try {
+    const { driverId } = req.params;
+    // Buscar user_id do driver
+    const dpRes = await pool.query('SELECT user_id FROM driver_profiles WHERE id = $1', [driverId]);
+    if (!dpRes.rows.length) return res.status(404).json({ error: 'Motorista não encontrado' });
+    const userId = dpRes.rows[0].user_id;
+    const docs = await pool.query(
+      'SELECT * FROM documents WHERE user_id = $1 ORDER BY created_at DESC', [userId]
+    );
+    res.json(docs.rows);
+  } catch (err) {
+    console.error('Erro ao listar documentos:', err);
+    res.status(500).json({ error: 'Erro interno' });
   }
 });
 

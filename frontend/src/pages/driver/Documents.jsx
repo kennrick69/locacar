@@ -3,7 +3,8 @@ import { driversAPI } from '../../services/api';
 import { toast } from 'react-toastify';
 import {
   FileText, Upload, CheckCircle2, Clock, Image,
-  CreditCard, Home, Camera, AlertCircle, Eye, X, Smartphone, FileCheck
+  CreditCard, Home, Camera, AlertCircle, Eye, X, Smartphone, FileCheck,
+  Lock, Download
 } from 'lucide-react';
 
 const DOC_CADASTRO = [
@@ -111,6 +112,8 @@ export default function DriverDocuments() {
     const isUploaded = !!profile?.[doc.field];
     const isUploading = uploading[doc.tipo];
     const isDragHere = dragOver === doc.tipo;
+    // Verificar se o documento está fixado pelo admin
+    const isFixed = documents.some(d => d.tipo === doc.tipo && d.fixado);
     const ringColor = colorScheme === 'purple' ? 'ring-purple-500 bg-purple-50' : 'ring-brand-500 bg-brand-50';
     const dropBorder = colorScheme === 'purple' ? 'border-purple-400' : 'border-brand-400';
     const dropBg = colorScheme === 'purple' ? 'bg-purple-50/50' : 'bg-brand-50/50';
@@ -120,26 +123,27 @@ export default function DriverDocuments() {
     return (
       <div
         key={doc.tipo}
-        className={`card transition-all duration-200 ${isDragHere ? `ring-2 ${ringColor} scale-[1.01]` : ''}`}
-        onDragOver={(e) => handleDragOver(e, doc.tipo)}
-        onDragEnter={(e) => handleDragOver(e, doc.tipo)}
+        className={`card transition-all duration-200 ${isDragHere && !isFixed ? `ring-2 ${ringColor} scale-[1.01]` : ''}`}
+        onDragOver={(e) => !isFixed && handleDragOver(e, doc.tipo)}
+        onDragEnter={(e) => !isFixed && handleDragOver(e, doc.tipo)}
         onDragLeave={handleDragLeave}
-        onDrop={(e) => handleDrop(e, doc.tipo)}
+        onDrop={(e) => !isFixed && handleDrop(e, doc.tipo)}
       >
         <div className="flex items-start gap-4">
           <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-            isUploaded ? 'bg-green-100' : colorScheme === 'purple' ? 'bg-purple-100' : 'bg-gray-100'
+            isFixed ? 'bg-amber-100' : isUploaded ? 'bg-green-100' : colorScheme === 'purple' ? 'bg-purple-100' : 'bg-gray-100'
           }`}>
-            {isUploaded ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Icon className={`w-5 h-5 ${colorScheme === 'purple' ? 'text-purple-600' : 'text-gray-400'}`} />}
+            {isFixed ? <Lock className="w-5 h-5 text-amber-600" /> : isUploaded ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Icon className={`w-5 h-5 ${colorScheme === 'purple' ? 'text-purple-600' : 'text-gray-400'}`} />}
           </div>
 
           <div className="flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <p className="font-medium text-gray-800">{doc.label}</p>
-              {isUploaded && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Enviado</span>}
+              {isFixed && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full flex items-center gap-1"><Lock className="w-3 h-3" /> Fixado</span>}
+              {!isFixed && isUploaded && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Enviado</span>}
               {!isUploaded && doc.required !== false && <span className="text-xs text-red-400">*obrigatório</span>}
             </div>
-            <p className="text-sm text-gray-500 mt-0.5">{doc.desc}</p>
+            <p className="text-sm text-gray-500 mt-0.5">{isFixed ? 'Documento verificado pelo administrador — não pode ser alterado' : doc.desc}</p>
             {isUploaded && profile[doc.field] && (
               <button onClick={() => setPreviewUrl(profile[doc.field])}
                 className="text-xs text-brand-600 hover:text-brand-700 mt-1 flex items-center gap-1">
@@ -148,33 +152,35 @@ export default function DriverDocuments() {
             )}
           </div>
 
-          <div>
-            <input type="file" ref={el => fileInputs.current[doc.tipo] = el}
-              accept="image/*,application/pdf" className="hidden"
-              onChange={() => handleFileInput(doc.tipo)} />
-            <button onClick={() => fileInputs.current[doc.tipo]?.click()}
-              disabled={isUploading}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                isUploaded ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  : colorScheme === 'purple' ? 'bg-purple-600 text-white hover:bg-purple-700'
-                  : 'bg-brand-600 text-white hover:bg-brand-700'
-              }`}>
-              {isUploading
-                ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                : <Upload className="w-4 h-4" />}
-              {isUploaded ? 'Reenviar' : 'Enviar'}
-            </button>
-          </div>
+          {!isFixed && (
+            <div>
+              <input type="file" ref={el => fileInputs.current[doc.tipo] = el}
+                accept="image/*,application/pdf" className="hidden"
+                onChange={() => handleFileInput(doc.tipo)} />
+              <button onClick={() => fileInputs.current[doc.tipo]?.click()}
+                disabled={isUploading}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isUploaded ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    : colorScheme === 'purple' ? 'bg-purple-600 text-white hover:bg-purple-700'
+                    : 'bg-brand-600 text-white hover:bg-brand-700'
+                }`}>
+                {isUploading
+                  ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : <Upload className="w-4 h-4" />}
+                {isUploaded ? 'Reenviar' : 'Enviar'}
+              </button>
+            </div>
+          )}
         </div>
 
-        {isDragHere && (
+        {!isFixed && isDragHere && (
           <div className={`mt-3 border-2 border-dashed ${dropBorder} rounded-lg p-4 text-center ${dropBg} pointer-events-none`}>
             <Upload className={`w-6 h-6 ${dropIcon} mx-auto mb-1`} />
             <p className={`text-sm font-medium ${dropText}`}>Solte o arquivo aqui</p>
           </div>
         )}
 
-        {!isDragHere && !isUploaded && !isUploading && (
+        {!isFixed && !isDragHere && !isUploaded && !isUploading && (
           <div className="mt-3 border border-dashed border-gray-200 rounded-lg p-3 text-center">
             <p className="text-xs text-gray-400">Arraste um arquivo aqui ou clique em Enviar</p>
           </div>
@@ -255,33 +261,37 @@ export default function DriverDocuments() {
           )}
 
           {/* Upload contrato assinado */}
+          {(() => {
+            const isContratoFixed = documents.some(d => d.tipo === 'contrato' && d.fixado);
+            return (
           <div
             className={`card transition-all duration-200 ${
-              dragOver === 'contrato' ? 'ring-2 ring-purple-500 bg-purple-50 scale-[1.01]' : ''
+              !isContratoFixed && dragOver === 'contrato' ? 'ring-2 ring-purple-500 bg-purple-50 scale-[1.01]' : ''
             }`}
-            onDragOver={(e) => handleDragOver(e, 'contrato')}
-            onDragEnter={(e) => handleDragOver(e, 'contrato')}
+            onDragOver={(e) => !isContratoFixed && handleDragOver(e, 'contrato')}
+            onDragEnter={(e) => !isContratoFixed && handleDragOver(e, 'contrato')}
             onDragLeave={handleDragLeave}
-            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(null); const f = e.dataTransfer?.files?.[0]; if (f) handleContratoUpload(f); }}
+            onDrop={(e) => { if (isContratoFixed) return e.preventDefault(); e.preventDefault(); e.stopPropagation(); setDragOver(null); const f = e.dataTransfer?.files?.[0]; if (f) handleContratoUpload(f); }}
           >
             <div className="flex items-start gap-4">
               <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                profile?.contrato_url ? 'bg-green-100' : 'bg-purple-100'
+                isContratoFixed ? 'bg-amber-100' : profile?.contrato_url ? 'bg-green-100' : 'bg-purple-100'
               }`}>
-                {profile?.contrato_url ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <FileText className="w-5 h-5 text-purple-600" />}
+                {isContratoFixed ? <Lock className="w-5 h-5 text-amber-600" /> : profile?.contrato_url ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <FileText className="w-5 h-5 text-purple-600" />}
               </div>
 
               <div className="flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="font-medium text-gray-800">Contrato de Locação Assinado</p>
-                  {profile?.contrato_url && (
+                  {isContratoFixed && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full flex items-center gap-1"><Lock className="w-3 h-3" /> Fixado</span>}
+                  {!isContratoFixed && profile?.contrato_url && (
                     <span className={`text-xs px-2 py-0.5 rounded-full ${
                       profile.contrato_confirmado ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
                     }`}>{profile.contrato_confirmado ? 'Confirmado pelo admin' : 'Aguardando confirmação'}</span>
                   )}
                   {!profile?.contrato_url && <span className="text-xs text-red-400">*obrigatório</span>}
                 </div>
-                <p className="text-sm text-gray-500 mt-0.5">Upload do contrato assinado (PDF ou imagem)</p>
+                <p className="text-sm text-gray-500 mt-0.5">{isContratoFixed ? 'Contrato verificado pelo administrador — não pode ser alterado' : 'Upload do contrato assinado (PDF ou imagem)'}</p>
                 {profile?.contrato_url && (
                   <button onClick={() => setPreviewUrl(profile.contrato_url)}
                     className="text-xs text-brand-600 hover:text-brand-700 mt-1 flex items-center gap-1">
@@ -290,6 +300,7 @@ export default function DriverDocuments() {
                 )}
               </div>
 
+              {!isContratoFixed && (
               <div>
                 <input type="file" accept="image/*,application/pdf" className="hidden" id="contrato-input"
                   onChange={(e) => { if (e.target.files?.[0]) handleContratoUpload(e.target.files[0]); }} />
@@ -303,21 +314,24 @@ export default function DriverDocuments() {
                   {profile?.contrato_url ? 'Reenviar' : 'Enviar'}
                 </label>
               </div>
+              )}
             </div>
 
-            {dragOver === 'contrato' && (
+            {!isContratoFixed && dragOver === 'contrato' && (
               <div className="mt-3 border-2 border-dashed border-purple-400 rounded-lg p-4 text-center bg-purple-50/50 pointer-events-none">
                 <Upload className="w-6 h-6 text-purple-500 mx-auto mb-1" />
                 <p className="text-sm font-medium text-purple-600">Solte o contrato aqui</p>
               </div>
             )}
 
-            {dragOver !== 'contrato' && !profile?.contrato_url && !uploading.contrato && (
+            {!isContratoFixed && dragOver !== 'contrato' && !profile?.contrato_url && !uploading.contrato && (
               <div className="mt-3 border border-dashed border-gray-200 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-400">Arraste o contrato aqui ou clique em Enviar</p>
               </div>
             )}
           </div>
+            );
+          })()}
 
           {/* Selfie com documento */}
           {renderDocCard(
@@ -360,8 +374,17 @@ export default function DriverDocuments() {
               <button onClick={() => setPreviewUrl(null)} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-4">
-              {previewUrl.endsWith('.pdf')
-                ? <iframe src={previewUrl} className="w-full h-[70vh] rounded" title="PDF" />
+              {previewUrl.toLowerCase().endsWith('.pdf') || previewUrl.toLowerCase().includes('.pdf')
+                ? (
+                  <div className="p-8 text-center space-y-3">
+                    <FileText className="w-12 h-12 text-red-500 mx-auto" />
+                    <p className="text-gray-700 font-medium">Arquivo PDF</p>
+                    <a href={previewUrl} download target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700">
+                      <Download className="w-4 h-4" /> Baixar PDF
+                    </a>
+                  </div>
+                )
                 : <img src={previewUrl} alt="Documento" className="w-full rounded" />}
             </div>
           </div>

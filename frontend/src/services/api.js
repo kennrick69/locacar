@@ -112,6 +112,8 @@ export const driversAPI = {
   addAcrescimo: (driverId, data) => api.post(`/drivers/${driverId}/acrescimos`, data),
   removeAcrescimo: (driverId, acrescimoId) => api.delete(`/drivers/${driverId}/acrescimos/${acrescimoId}`),
   settlement: (driverId, data) => api.post(`/drivers/${driverId}/settlement`, data),
+  lockDocument: (driverId, docId, fixado) => api.put(`/drivers/${driverId}/documents/${docId}/lock`, { fixado }),
+  getDocuments: (driverId) => api.get(`/drivers/${driverId}/documents`),
 };
 
 // ========== PAYMENTS ==========
