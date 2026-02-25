@@ -107,7 +107,8 @@ router.post('/me/documents',
 
       if (profile.rows[0]) {
         const p = profile.rows[0];
-        if (p.cnh_url && p.comprovante_url && p.selfie_url && p.perfil_app_url) {
+        // Selfie é enviada na fase do contrato, não no cadastro
+        if (p.cnh_url && p.comprovante_url && p.perfil_app_url) {
           await pool.query(`
             UPDATE driver_profiles SET status = 'em_analise', updated_at = NOW()
             WHERE user_id = $1 AND status = 'pendente'

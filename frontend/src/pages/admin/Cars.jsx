@@ -134,6 +134,9 @@ export default function AdminCars() {
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const fileRef = useRef(null);
+  const extraPhotoRef = useRef(null);
+  const [extraPhotos, setExtraPhotos] = useState([]);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   useEffect(() => { loadCars(); }, []);
 
@@ -148,7 +151,7 @@ export default function AdminCars() {
     }
   };
 
-  const openNew = () => { setForm(EMPTY_CAR); setModal('new'); };
+  const openNew = () => { setForm(EMPTY_CAR); setExtraPhotos([]); setModal('new'); };
 
   const openEdit = (car) => {
     setForm({
@@ -160,7 +163,29 @@ export default function AdminCars() {
       direcao: car.direcao || 'Hidráulica', consumo_medio: car.consumo_medio || '',
       portas: car.portas || '4', descricao: car.descricao || '',
     });
+    try { setExtraPhotos(JSON.parse(car.fotos_extras || '[]')); } catch { setExtraPhotos([]); }
     setModal(car);
+  };
+
+  const handleUploadExtraPhoto = async (file) => {
+    if (!file || modal === 'new') return;
+    setUploadingPhoto(true);
+    try {
+      const fd = new FormData();
+      fd.append('foto', file);
+      const res = await carsAPI.addPhoto(modal.id, fd);
+      setExtraPhotos(res.data.fotos);
+      toast.success('Foto adicionada!');
+    } catch (e) { toast.error('Erro ao enviar foto'); }
+    finally { setUploadingPhoto(false); if (extraPhotoRef.current) extraPhotoRef.current.value = ''; }
+  };
+
+  const handleRemoveExtraPhoto = async (url) => {
+    try {
+      const res = await carsAPI.removePhoto(modal.id, url);
+      setExtraPhotos(res.data.fotos);
+      toast.success('Foto removida');
+    } catch (e) { toast.error('Erro ao remover'); }
   };
 
   const handleSave = async () => {
@@ -413,9 +438,44 @@ export default function AdminCars() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Foto</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Foto principal</label>
                 <input type="file" ref={fileRef} accept="image/*" className="input-field text-sm" />
+                {modal !== 'new' && modal?.foto_url && (
+                  <div className="mt-2 w-20 h-14 rounded-lg overflow-hidden border">
+                    <img src={modal.foto_url} alt="Atual" className="w-full h-full object-cover" />
+                  </div>
+                )}
               </div>
+
+              {/* Fotos extras (só no editar) */}
+              {modal !== 'new' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fotos adicionais</label>
+                  {extraPhotos.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {extraPhotos.map((url, i) => (
+                        <div key={i} className="relative w-20 h-14 rounded-lg overflow-hidden border group">
+                          <img src={url} alt={`Extra ${i+1}`} className="w-full h-full object-cover" />
+                          <button onClick={() => handleRemoveExtraPhoto(url)}
+                            className="absolute top-0.5 right-0.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <input type="file" ref={extraPhotoRef} accept="image/*" className="hidden"
+                      onChange={(e) => { if (e.target.files[0]) handleUploadExtraPhoto(e.target.files[0]); }} />
+                    <button type="button" onClick={() => extraPhotoRef.current?.click()} disabled={uploadingPhoto}
+                      className="text-sm bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-200 flex items-center gap-1">
+                      {uploadingPhoto ? <div className="w-4 h-4 border-2 border-gray-300 border-t-brand-600 rounded-full animate-spin" />
+                        : <><Plus className="w-3.5 h-3.5" /> Adicionar foto</>}
+                    </button>
+                    <span className="text-xs text-gray-400">{extraPhotos.length} foto(s) extra(s)</span>
+                  </div>
+                </div>
+              )}
 
               {modal !== 'new' && (
                 <div className="flex items-center gap-2">

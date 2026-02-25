@@ -24,9 +24,9 @@ function validarCPF(cpf) {
 }
 
 const DOCS = [
-  { tipo: 'cnh', label: 'CNH-e (Digital)', icon: CreditCard, desc: 'Carteira Nacional de Habilitação Digital — baixe pelo app Gov.br' },
-  { tipo: 'comprovante', label: 'Comprovante de Endereço', icon: Home, desc: 'Conta de luz, água ou telefone (últimos 3 meses)' },
-  { tipo: 'perfil_app', label: 'Print Perfil Uber/99', icon: Smartphone, desc: 'Screenshot do perfil mostrando nota e avaliações' },
+  { tipo: 'cnh', label: 'CNH-e (Digital)', icon: CreditCard, desc: 'Carteira Nacional de Habilitação Digital — baixe pelo app Gov.br', multi: false },
+  { tipo: 'comprovante', label: 'Comprovante de Endereço', icon: Home, desc: 'Conta de luz, água ou telefone (últimos 3 meses)', multi: false },
+  { tipo: 'perfil_app', label: 'Print Perfil Uber/99', icon: Smartphone, desc: 'Screenshots do perfil mostrando nota e avaliações', multi: true },
 ];
 
 export default function Register() {
@@ -45,7 +45,7 @@ export default function Register() {
   const [cepLoading, setCepLoading] = useState(false);
   const [token, setToken] = useState('');
   const [authToken, setAuthToken] = useState('');
-  const [uploads, setUploads] = useState({});
+  const [uploads, setUploads] = useState({}); // { tipo: 'filename' } or { tipo: ['file1','file2'] } for multi
   const [uploading, setUploading] = useState({});
   const [dragOver, setDragOver] = useState(null);
   const fileInputs = useRef({});
@@ -130,7 +130,7 @@ export default function Register() {
     } finally { setLoading(false); }
   };
 
-  const uploadDoc = async (tipo, file) => {
+  const uploadDoc = async (tipo, file, isMulti = false) => {
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) return toast.error('Arquivo muito grande (máx 10MB)');
     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
@@ -143,7 +143,11 @@ export default function Register() {
       await api.post(`/drivers/me/documents?tipo=${tipo}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${authToken}` }
       });
-      setUploads(prev => ({ ...prev, [tipo]: file.name }));
+      if (isMulti) {
+        setUploads(prev => ({ ...prev, [tipo]: [...(prev[tipo] || []), file.name] }));
+      } else {
+        setUploads(prev => ({ ...prev, [tipo]: file.name }));
+      }
       toast.success('Documento enviado!');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Erro no upload');
@@ -152,13 +156,20 @@ export default function Register() {
     }
   };
 
-  const handleDrop = (e, tipo) => {
+  const handleDrop = (e, tipo, isMulti = false) => {
     e.preventDefault(); e.stopPropagation(); setDragOver(null);
     const file = e.dataTransfer?.files?.[0];
-    if (file) uploadDoc(tipo, file);
+    if (file) uploadDoc(tipo, file, isMulti);
   };
 
-  const allDocsUploaded = DOCS.every(d => uploads[d.tipo]);
+  const getDocDone = (doc) => {
+    const val = uploads[doc.tipo];
+    if (!val) return false;
+    if (doc.multi) return Array.isArray(val) && val.length > 0;
+    return !!val;
+  };
+
+  const allDocsUploaded = DOCS.every(d => getDocDone(d));
   const handleFinish = () => setStep(3);
 
   if (carLoading) return (
@@ -305,39 +316,60 @@ export default function Register() {
                 <div className="mt-2 flex items-center justify-center gap-2">
                   <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden max-w-xs">
                     <div className="h-full bg-brand-500 rounded-full transition-all duration-500"
-                      style={{ width: `${(Object.keys(uploads).length / DOCS.length) * 100}%` }} />
+                      style={{ width: `${(DOCS.filter(d => getDocDone(d)).length / DOCS.length) * 100}%` }} />
                   </div>
-                  <span className="text-sm font-bold text-gray-700">{Object.keys(uploads).length}/{DOCS.length}</span>
+                  <span className="text-sm font-bold text-gray-700">{DOCS.filter(d => getDocDone(d)).length}/{DOCS.length}</span>
                 </div>
               </div>
               {DOCS.map((doc) => {
                 const Icon = doc.icon;
-                const isDone = !!uploads[doc.tipo];
+                const isDone = getDocDone(doc);
                 const isLoading = uploading[doc.tipo];
                 const isDrag = dragOver === doc.tipo;
+                const multiFiles = doc.multi ? (uploads[doc.tipo] || []) : [];
                 return (
                   <div key={doc.tipo}
                     className={`border rounded-xl p-3 transition-all ${isDone ? 'border-green-300 bg-green-50/50' : isDrag ? 'border-brand-400 bg-brand-50 ring-2 ring-brand-300' : 'border-gray-200'}`}
                     onDragOver={(e) => { e.preventDefault(); setDragOver(doc.tipo); }}
                     onDragLeave={() => setDragOver(null)}
-                    onDrop={(e) => handleDrop(e, doc.tipo)}>
+                    onDrop={(e) => handleDrop(e, doc.tipo, doc.multi)}>
                     <div className="flex items-center gap-3">
                       <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${isDone ? 'bg-green-100' : 'bg-gray-100'}`}>
                         {isDone ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Icon className="w-4 h-4 text-gray-400" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-800 text-sm">{doc.label}</p>
-                        <p className="text-xs text-gray-500 truncate">{isDone ? uploads[doc.tipo] : doc.desc}</p>
+                        {doc.multi ? (
+                          <p className="text-xs text-gray-500 truncate">
+                            {multiFiles.length > 0 ? `${multiFiles.length} arquivo(s) enviado(s)` : doc.desc}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-gray-500 truncate">{isDone ? uploads[doc.tipo] : doc.desc}</p>
+                        )}
                       </div>
                       <input type="file" ref={el => fileInputs.current[doc.tipo] = el}
                         accept="image/*,application/pdf" className="hidden"
-                        onChange={(e) => { if (e.target.files[0]) uploadDoc(doc.tipo, e.target.files[0]); e.target.value = ''; }} />
+                        onChange={(e) => { if (e.target.files[0]) uploadDoc(doc.tipo, e.target.files[0], doc.multi); e.target.value = ''; }} />
                       <button onClick={() => fileInputs.current[doc.tipo]?.click()} disabled={isLoading}
-                        className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium ${isDone ? 'bg-green-100 text-green-700' : 'bg-brand-600 text-white hover:bg-brand-700'}`}>
-                        {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : isDone ? <CheckCircle2 className="w-4 h-4" /> : <Upload className="w-4 h-4" />}
-                        {isDone ? 'OK' : 'Enviar'}
+                        className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium ${
+                          isDone && !doc.multi ? 'bg-green-100 text-green-700' : 'bg-brand-600 text-white hover:bg-brand-700'
+                        }`}>
+                        {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> :
+                          isDone && !doc.multi ? <CheckCircle2 className="w-4 h-4" /> : <Upload className="w-4 h-4" />}
+                        {isDone && !doc.multi ? 'OK' : doc.multi && multiFiles.length > 0 ? '+ Mais' : 'Enviar'}
                       </button>
                     </div>
+                    {/* Multi-file list */}
+                    {doc.multi && multiFiles.length > 0 && (
+                      <div className="mt-2 pl-12 space-y-1">
+                        {multiFiles.map((f, i) => (
+                          <div key={i} className="flex items-center gap-2 text-xs text-green-700 bg-green-50 rounded px-2 py-1">
+                            <CheckCircle2 className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{f}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}

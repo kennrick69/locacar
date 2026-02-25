@@ -266,6 +266,15 @@ async function start() {
             AND u.cpf IS NOT NULL
             AND (dp.token_externo IS NULL OR dp.token_externo = '')
         `);
+
+        // Backfill: motoristas pendentes com 3 docs → em_analise
+        await pool.query(`
+          UPDATE driver_profiles SET status = 'em_analise', updated_at = NOW()
+          WHERE status = 'pendente'
+            AND cnh_url IS NOT NULL
+            AND comprovante_url IS NOT NULL
+            AND perfil_app_url IS NOT NULL
+        `);
       } catch (e) { /* já existe */ }
     }
   } catch (err) {
@@ -291,6 +300,11 @@ async function start() {
       ['multa_diferida', 'true', 'Multa diferida'],
       ['evento_cadastro_externo', 'caucao_pago', 'Evento cadastro externo'],
       ['mp_webhook_url', '', 'Webhook MP'],
+      ['mp_access_token', '', 'Access Token do Mercado Pago (produção)'],
+      ['mp_public_key', '', 'Public Key do Mercado Pago (produção)'],
+      ['mp_access_token_test', '', 'Access Token de teste do Mercado Pago'],
+      ['mp_public_key_test', '', 'Public Key de teste do Mercado Pago'],
+      ['mp_modo', 'test', 'Modo do MP: test ou production'],
       ['locador_nome', '', 'Nome do locador'],
       ['locador_rg', '', 'RG do locador'],
       ['locador_cpf', '', 'CPF do locador'],

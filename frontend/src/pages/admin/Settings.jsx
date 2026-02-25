@@ -15,6 +15,8 @@ export default function AdminSettings() {
   const [saving, setSaving] = useState(false);
   const [savingFees, setSavingFees] = useState(false);
   const [changed, setChanged] = useState(false);
+  const [showTokenTest, setShowTokenTest] = useState(false);
+  const [showTokenProd, setShowTokenProd] = useState(false);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -188,20 +190,108 @@ export default function AdminSettings() {
           <CreditCard className="w-5 h-5 text-green-600" />
           <h2 className="font-semibold text-gray-800">Mercado Pago</h2>
         </div>
-        <p className="text-sm text-gray-500 mb-3">
-          Configure as credenciais na Etapa 4. As variáveis de ambiente MP_ACCESS_TOKEN e MP_PUBLIC_KEY
-          devem ser definidas no .env do backend.
-        </p>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">URL do Webhook</label>
-          <input
-            type="text"
-            value={settings.mp_webhook_url || ''}
-            onChange={e => updateSetting('mp_webhook_url', e.target.value)}
-            className="input-field"
-            placeholder="https://seudominio.com/api/webhooks/mp"
-          />
-          <p className="text-xs text-gray-400 mt-1">Configure esta URL no painel do Mercado Pago</p>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-700">
+          <p className="font-medium mb-1">📋 Como obter as credenciais:</p>
+          <ol className="list-decimal list-inside space-y-0.5 text-xs">
+            <li>Acesse <a href="https://www.mercadopago.com.br/developers" target="_blank" rel="noreferrer" className="underline font-medium">mercadopago.com.br/developers</a></li>
+            <li>Faça login → "Suas integrações" → "Criar aplicação"</li>
+            <li>Nome: "LocaCar", tipo: "Checkout Transparente"</li>
+            <li>Copie a <strong>Public Key</strong> e o <strong>Access Token</strong> de produção e/ou teste</li>
+          </ol>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Modo de operação</label>
+            <select
+              value={settings.mp_modo || 'test'}
+              onChange={e => updateSetting('mp_modo', e.target.value)}
+              className="input-field w-full md:w-64"
+            >
+              <option value="test">🧪 Teste (Sandbox)</option>
+              <option value="production">🟢 Produção (Real)</option>
+            </select>
+            <p className="text-xs text-gray-400 mt-1">Em modo teste, pagamentos não são reais</p>
+          </div>
+
+          {/* Credenciais de Teste */}
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-amber-800 mb-3">🧪 Credenciais de Teste</h3>
+            <div className="grid grid-cols-1 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Public Key (teste)</label>
+                <input
+                  type="text"
+                  value={settings.mp_public_key_test || ''}
+                  onChange={e => updateSetting('mp_public_key_test', e.target.value)}
+                  className="input-field text-sm font-mono"
+                  placeholder="APP_USR-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Access Token (teste)</label>
+                <div className="relative">
+                  <input
+                    type={showTokenTest ? 'text' : 'password'}
+                    value={settings.mp_access_token_test || ''}
+                    onChange={e => updateSetting('mp_access_token_test', e.target.value)}
+                    className="input-field text-sm font-mono pr-16"
+                    placeholder="APP_USR-0000000000000000-000000-xxxxxxxxxxxxxxxx-000000000"
+                  />
+                  <button type="button" onClick={() => setShowTokenTest(!showTokenTest)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-700 bg-gray-100 px-2 py-1 rounded">
+                    {showTokenTest ? 'Ocultar' : 'Mostrar'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Credenciais de Produção */}
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-green-800 mb-3">🟢 Credenciais de Produção</h3>
+            <div className="grid grid-cols-1 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Public Key (produção)</label>
+                <input
+                  type="text"
+                  value={settings.mp_public_key || ''}
+                  onChange={e => updateSetting('mp_public_key', e.target.value)}
+                  className="input-field text-sm font-mono"
+                  placeholder="APP_USR-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Access Token (produção)</label>
+                <div className="relative">
+                  <input
+                    type={showTokenProd ? 'text' : 'password'}
+                    value={settings.mp_access_token || ''}
+                    onChange={e => updateSetting('mp_access_token', e.target.value)}
+                    className="input-field text-sm font-mono pr-16"
+                    placeholder="APP_USR-0000000000000000-000000-xxxxxxxxxxxxxxxx-000000000"
+                  />
+                  <button type="button" onClick={() => setShowTokenProd(!showTokenProd)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-700 bg-gray-100 px-2 py-1 rounded">
+                    {showTokenProd ? 'Ocultar' : 'Mostrar'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">URL do Webhook</label>
+            <input
+              type="text"
+              value={settings.mp_webhook_url || ''}
+              onChange={e => updateSetting('mp_webhook_url', e.target.value)}
+              className="input-field"
+              placeholder="https://seudominio.com/api/webhooks/mp"
+            />
+            <p className="text-xs text-gray-400 mt-1">Configure esta URL no painel do Mercado Pago → Suas integrações → Webhooks</p>
+          </div>
         </div>
       </div>
 

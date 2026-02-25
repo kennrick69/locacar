@@ -636,7 +636,13 @@ export default function AdminDriverDetail() {
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setPreviewUrl(null)}>
           <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-3 border-b"><span className="text-sm font-medium">Documento</span><button onClick={() => setPreviewUrl(null)}><X className="w-5 h-5" /></button></div>
-            <div className="p-2"><img src={previewUrl} alt="Doc" className="w-full rounded" onError={e => { e.target.style.display='none'; }} /></div>
+            <div className="p-2">
+              {previewUrl.toLowerCase().endsWith('.pdf') ? (
+                <iframe src={previewUrl} className="w-full rounded" style={{ height: '75vh' }} title="PDF" />
+              ) : (
+                <img src={previewUrl} alt="Doc" className="w-full rounded" onError={e => { e.target.onerror=null; e.target.parentNode.innerHTML='<div class="p-8 text-center text-gray-400"><p>Não foi possível exibir. <a href="'+previewUrl+'" target="_blank" class="text-brand-600 underline">Abrir em nova aba</a></p></div>'; }} />
+              )}
+            </div>
           </div>
         </div>
       )}
