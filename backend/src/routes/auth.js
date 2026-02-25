@@ -209,4 +209,22 @@ router.post('/token-login', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/auth/cep/:cep
+ * Proxy para ViaCEP (evita bloqueio de CSP no frontend)
+ */
+router.get('/cep/:cep', async (req, res) => {
+  try {
+    const cep = req.params.cep.replace(/\D/g, '');
+    if (cep.length !== 8) return res.status(400).json({ error: 'CEP inválido' });
+
+    const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    console.error('Erro ao buscar CEP:', err);
+    res.status(500).json({ error: 'Erro ao buscar CEP' });
+  }
+});
+
 module.exports = router;

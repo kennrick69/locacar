@@ -2,7 +2,24 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-toastify';
-import { Car, KeyRound, Loader2, Search } from 'lucide-react';
+import { Car, KeyRound, Loader2, Search, CheckCircle2, XCircle } from 'lucide-react';
+import api from '../services/api';
+
+function validarCPF(cpf) {
+  const nums = cpf.replace(/\D/g, '');
+  if (nums.length !== 11) return null; // incompleto
+  if (/^(\d)\1{10}$/.test(nums)) return false; // todos iguais
+  let soma = 0;
+  for (let i = 0; i < 9; i++) soma += parseInt(nums[i]) * (10 - i);
+  let resto = (soma * 10) % 11;
+  if (resto === 10) resto = 0;
+  if (resto !== parseInt(nums[9])) return false;
+  soma = 0;
+  for (let i = 0; i < 10; i++) soma += parseInt(nums[i]) * (11 - i);
+  resto = (soma * 10) % 11;
+  if (resto === 10) resto = 0;
+  return resto === parseInt(nums[10]);
+}
 
 export default function Register() {
   const [form, setForm] = useState({
@@ -15,6 +32,8 @@ export default function Register() {
   const [token, setToken] = useState('');
   const { register, tokenLogin } = useAuth();
   const navigate = useNavigate();
+
+  const cpfStatus = validarCPF(form.cpf); // null=incompleto, true=válido, false=inválido
 
   const set = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
@@ -36,8 +55,7 @@ export default function Register() {
 
     setCepLoading(true);
     try {
-      const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-      const data = await res.json();
+      const { data } = await api.get(`/auth/cep/${cep}`);
       if (data.erro) {
         toast.warning('CEP não encontrado');
         return;
@@ -86,6 +104,7 @@ export default function Register() {
 
     const cpfClean = cpf.replace(/\D/g, '');
     if (cpfClean.length < 11) return toast.warning('CPF deve ter 11 dígitos');
+    if (!validarCPF(cpf)) return toast.error('CPF inválido! Verifique os números');
 
     setLoading(true);
     try {
@@ -149,9 +168,17 @@ export default function Register() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">CPF *</label>
-                  <input type="text" value={form.cpf}
-                    onChange={(e) => setForm({ ...form, cpf: formatCPF(e.target.value) })}
-                    className="input-field" placeholder="000.000.000-00" maxLength={14} />
+                  <div className="relative">
+                    <input type="text" value={form.cpf}
+                      onChange={(e) => setForm({ ...form, cpf: formatCPF(e.target.value) })}
+                      className={`input-field pr-10 ${cpfStatus === true ? 'ring-2 ring-green-400 border-green-400' : cpfStatus === false ? 'ring-2 ring-red-400 border-red-400' : ''}`}
+                      placeholder="000.000.000-00" maxLength={14} />
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      {cpfStatus === true && <CheckCircle2 className="w-5 h-5 text-green-500" />}
+                      {cpfStatus === false && <XCircle className="w-5 h-5 text-red-500" />}
+                    </div>
+                  </div>
+                  {cpfStatus === false && <p className="text-xs text-red-500 mt-1">CPF inválido</p>}
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
