@@ -9,7 +9,6 @@ import {
 const DOC_CADASTRO = [
   { tipo: 'cnh', label: 'CNH-e (Digital)', icon: CreditCard, desc: 'Carteira Nacional de Habilitação Digital — baixe pelo app Gov.br', field: 'cnh_url' },
   { tipo: 'comprovante', label: 'Comprovante de Endereço', icon: Home, desc: 'Conta de luz, água ou telefone (últimos 3 meses)', field: 'comprovante_url' },
-  { tipo: 'selfie', label: 'Selfie com Documento', icon: Camera, desc: 'Foto segurando a CNH ao lado do rosto', field: 'selfie_url' },
   { tipo: 'perfil_app', label: 'Print Perfil Uber/99', icon: Smartphone, desc: 'Screenshot do perfil de motorista mostrando nota e avaliações', field: 'perfil_app_url' },
 ];
 
@@ -242,13 +241,20 @@ export default function DriverDocuments() {
           </h2>
 
           {!profile?.contrato_url && (
-            <div className="card border-l-4 border-purple-400 bg-purple-50">
+            <div className="card border-l-4 border-purple-400 bg-purple-50 space-y-2">
               <p className="text-sm text-purple-800">
-                Seu cadastro foi aprovado! Agora faça o upload do <strong>contrato de locação assinado</strong> para finalizar a ativação.
+                Seu cadastro foi aprovado! Siga os passos abaixo para ativar sua conta:
               </p>
+              <ol className="text-sm text-purple-700 list-decimal list-inside space-y-1">
+                <li>Baixe o contrato já preenchido com seus dados</li>
+                <li>Assine digitalmente pelo <strong>Gov.br</strong></li>
+                <li>Faça upload do contrato assinado</li>
+                <li>Envie a selfie segurando o documento</li>
+              </ol>
             </div>
           )}
 
+          {/* Upload contrato assinado */}
           <div
             className={`card transition-all duration-200 ${
               dragOver === 'contrato' ? 'ring-2 ring-purple-500 bg-purple-50 scale-[1.01]' : ''
@@ -312,6 +318,12 @@ export default function DriverDocuments() {
               </div>
             )}
           </div>
+
+          {/* Selfie com documento */}
+          {renderDocCard(
+            { tipo: 'selfie', label: 'Selfie com Documento', icon: Camera, desc: 'Foto segurando a CNH ao lado do rosto — para validação de identidade', field: 'selfie_url' },
+            'purple'
+          )}
         </div>
       )}
 

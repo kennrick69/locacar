@@ -488,10 +488,12 @@ router.get('/', auth, adminOnly, async (req, res) => {
     const { status } = req.query;
     let query = `
       SELECT dp.*, u.nome, u.email, u.cpf, u.telefone,
-        c.marca as car_marca, c.modelo as car_modelo, c.placa as car_placa
+        c.marca as car_marca, c.modelo as car_modelo, c.placa as car_placa,
+        ci.marca as interesse_marca, ci.modelo as interesse_modelo
       FROM driver_profiles dp
       JOIN users u ON u.id = dp.user_id
       LEFT JOIN cars c ON c.id = dp.car_id
+      LEFT JOIN cars ci ON ci.id = dp.car_interesse_id
     `;
     const params = [];
 
@@ -652,10 +654,12 @@ router.get('/:id', auth, adminOnly, async (req, res) => {
     const result = await pool.query(`
       SELECT dp.*, u.nome, u.email, u.cpf, u.telefone,
         c.marca as car_marca, c.modelo as car_modelo, c.placa as car_placa,
-        c.valor_semanal as car_valor_semanal, c.valor_caucao as car_valor_caucao
+        c.valor_semanal as car_valor_semanal, c.valor_caucao as car_valor_caucao,
+        ci.marca as interesse_marca, ci.modelo as interesse_modelo, ci.id as interesse_car_id
       FROM driver_profiles dp
       JOIN users u ON u.id = dp.user_id
       LEFT JOIN cars c ON c.id = dp.car_id
+      LEFT JOIN cars ci ON ci.id = dp.car_interesse_id
       WHERE dp.id = $1
     `, [req.params.id]);
 
@@ -674,9 +678,10 @@ router.get('/:id', auth, adminOnly, async (req, res) => {
       SELECT wc.*,
         COALESCE((SELECT json_agg(a.*) FROM abatimentos a WHERE a.charge_id = wc.id), '[]') as abatimentos_lista,
         COALESCE((SELECT json_agg(ac.*) FROM acrescimos ac WHERE ac.charge_id = wc.id), '[]') as acrescimos_lista,
-        COALESCE((SELECT SUM(p.valor) FROM payments p WHERE p.charge_id = wc.id AND p.status = 'pago'), 0) as total_pago
+        COALESCE((SELECT SUM(p.valor) FROM payments p WHERE p.charge_id = wc.id AND p.status = 'pago'), 0) as total_pago,
+        COALESCE((SELECT json_agg(pe.* ORDER BY pe.data_pagamento) FROM payment_entries pe WHERE pe.charge_id = wc.id), '[]') as pagamentos_manuais
       FROM weekly_charges wc WHERE wc.driver_id = $1
-      ORDER BY wc.semana_ref DESC LIMIT 20
+      ORDER BY wc.semana_ref DESC LIMIT 50
     `, [req.params.id]);
 
     // Pagamentos
@@ -685,10 +690,18 @@ router.get('/:id', auth, adminOnly, async (req, res) => {
       [req.params.id]
     );
 
+    // Car swap history
+    const swaps = await pool.query(`
+      SELECT cs.*, ca.marca || ' ' || ca.modelo as carro_anterior, cn.marca || ' ' || cn.modelo as carro_novo
+      FROM car_swaps cs LEFT JOIN cars ca ON ca.id = cs.car_anterior_id LEFT JOIN cars cn ON cn.id = cs.car_novo_id
+      WHERE cs.driver_id = $1 ORDER BY cs.created_at DESC
+    `, [req.params.id]);
+
     const driver = result.rows[0];
     driver.documents = docs.rows;
     driver.charges = charges.rows;
     driver.payments = payments.rows;
+    driver.car_swaps = swaps.rows;
 
     res.json(driver);
   } catch (err) {
@@ -1371,6 +1384,310 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
   } catch (err) {
     console.error('Erro ao gerar contrato:', err);
     res.status(500).json({ error: err.message || 'Erro interno' });
+  }
+});
+
+// ========== CAR SWAP ==========
+
+/**
+ * POST /api/drivers/:id/swap-car - Admin: trocar carro do motorista
+ */
+router.post('/:id/swap-car', auth, adminOnly, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { new_car_id, motivo } = req.body;
+    if (!new_car_id) return res.status(400).json({ error: 'Novo carro é obrigatório' });
+
+    const driver = await pool.query('SELECT * FROM driver_profiles WHERE id = $1', [id]);
+    if (driver.rows.length === 0) return res.status(404).json({ error: 'Motorista não encontrado' });
+
+    const oldCarId = driver.rows[0].car_id;
+
+    // Libera carro antigo
+    if (oldCarId) {
+      await pool.query('UPDATE cars SET disponivel = true WHERE id = $1', [oldCarId]);
+    }
+
+    // Atribui novo carro
+    await pool.query('UPDATE driver_profiles SET car_id = $1, updated_at = NOW() WHERE id = $2', [new_car_id, id]);
+    await pool.query('UPDATE cars SET disponivel = false WHERE id = $1', [new_car_id]);
+
+    // Registra troca
+    await pool.query(`
+      INSERT INTO car_swaps (driver_id, car_anterior_id, car_novo_id, motivo)
+      VALUES ($1, $2, $3, $4)
+    `, [id, oldCarId, new_car_id, motivo || null]);
+
+    res.json({ message: 'Carro trocado com sucesso' });
+  } catch (err) {
+    console.error('Erro ao trocar carro:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
+ * GET /api/drivers/:id/swap-history - Admin: histórico de trocas
+ */
+router.get('/:id/swap-history', auth, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT cs.*, 
+        ca.marca || ' ' || ca.modelo as carro_anterior,
+        cn.marca || ' ' || cn.modelo as carro_novo
+      FROM car_swaps cs
+      LEFT JOIN cars ca ON ca.id = cs.car_anterior_id
+      LEFT JOIN cars cn ON cn.id = cs.car_novo_id
+      WHERE cs.driver_id = $1
+      ORDER BY cs.created_at DESC
+    `, [req.params.id]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Erro:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+// ========== MANUAL PAYMENT ENTRIES ==========
+
+/**
+ * POST /api/drivers/:id/generate-charges - Admin: gerar cobranças retroativas
+ * Gera charges proporcionais desde data_inicio até hoje
+ */
+router.post('/:id/generate-charges', auth, adminOnly, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data_inicio, dia_cobranca, valor_semanal, juros_diario } = req.body;
+
+    if (!data_inicio || !dia_cobranca || !valor_semanal) {
+      return res.status(400).json({ error: 'data_inicio, dia_cobranca e valor_semanal são obrigatórios' });
+    }
+
+    const diasMap = { 'domingo': 0, 'segunda': 1, 'terca': 2, 'quarta': 3, 'quinta': 4, 'sexta': 5, 'sabado': 6 };
+    const diaAlvo = diasMap[dia_cobranca];
+    if (diaAlvo === undefined) return res.status(400).json({ error: 'dia_cobranca inválido' });
+
+    // Atualiza perfil
+    await pool.query(`
+      UPDATE driver_profiles SET dia_cobranca = $1, data_inicio = $2, updated_at = NOW() WHERE id = $3
+    `, [dia_cobranca, data_inicio, id]);
+
+    const inicio = new Date(data_inicio + 'T00:00:00');
+    const hoje = new Date();
+    hoje.setHours(23, 59, 59);
+
+    const valorBase = parseFloat(valor_semanal);
+    const taxaJuros = parseFloat(juros_diario || 0.5) / 100; // padrão 0.5% ao dia
+
+    // Encontra primeiro vencimento a partir da data de início
+    let currentDate = new Date(inicio);
+    while (currentDate.getDay() !== diaAlvo) {
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    // Primeira semana proporcional
+    const diasPrimeiraWeek = Math.ceil((currentDate - inicio) / (1000 * 60 * 60 * 24));
+    const charges = [];
+
+    if (diasPrimeiraWeek > 0 && diasPrimeiraWeek < 7) {
+      const valorProporcional = Math.round((valorBase / 7) * diasPrimeiraWeek * 100) / 100;
+      charges.push({
+        semana_ref: currentDate.toISOString().split('T')[0],
+        valor_base: valorProporcional,
+        proporcional: true,
+        dias: diasPrimeiraWeek
+      });
+    } else {
+      charges.push({
+        semana_ref: currentDate.toISOString().split('T')[0],
+        valor_base: valorBase,
+        proporcional: false,
+        dias: 7
+      });
+    }
+
+    // Próximas semanas
+    currentDate.setDate(currentDate.getDate() + 7);
+    while (currentDate <= hoje) {
+      charges.push({
+        semana_ref: currentDate.toISOString().split('T')[0],
+        valor_base: valorBase,
+        proporcional: false,
+        dias: 7
+      });
+      currentDate.setDate(currentDate.getDate() + 7);
+    }
+
+    // Insere no banco
+    const client = await pool.connect();
+    let geradas = 0;
+    try {
+      await client.query('BEGIN');
+      for (const charge of charges) {
+        const exists = await client.query(
+          'SELECT id FROM weekly_charges WHERE driver_id = $1 AND semana_ref = $2',
+          [id, charge.semana_ref]
+        );
+        if (exists.rows.length > 0) continue;
+
+        const obs = charge.proporcional ? `Proporcional: ${charge.dias} dias` : 'Gerada retroativamente';
+        await client.query(`
+          INSERT INTO weekly_charges (driver_id, semana_ref, valor_base, valor_final, saldo_devedor, observacoes)
+          VALUES ($1, $2, $3, $3, $3, $4)
+        `, [id, charge.semana_ref, charge.valor_base, obs]);
+        geradas++;
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+
+    res.json({ message: `${geradas} cobranças geradas`, total: charges.length, geradas });
+  } catch (err) {
+    console.error('Erro ao gerar cobranças:', err);
+    res.status(500).json({ error: err.message || 'Erro interno' });
+  }
+});
+
+/**
+ * POST /api/drivers/:id/charges/:chargeId/payment-entry - Admin: registrar pagamento manual
+ */
+router.post('/:id/charges/:chargeId/payment-entry', auth, adminOnly, async (req, res) => {
+  try {
+    const { chargeId } = req.params;
+    const { valor_pago, data_pagamento, observacoes } = req.body;
+
+    if (!valor_pago || !data_pagamento) {
+      return res.status(400).json({ error: 'valor_pago e data_pagamento são obrigatórios' });
+    }
+
+    // Insere entrada de pagamento
+    await pool.query(`
+      INSERT INTO payment_entries (charge_id, driver_id, valor_pago, data_pagamento, observacoes)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [chargeId, req.params.id, valor_pago, data_pagamento, observacoes || null]);
+
+    // Recalcula totais da cobrança
+    const entries = await pool.query('SELECT SUM(valor_pago) as total FROM payment_entries WHERE charge_id = $1', [chargeId]);
+    const totalPago = parseFloat(entries.rows[0].total || 0);
+
+    const charge = await pool.query('SELECT * FROM weekly_charges WHERE id = $1', [chargeId]);
+    if (charge.rows.length === 0) return res.status(404).json({ error: 'Cobrança não encontrada' });
+
+    const valorFinal = parseFloat(charge.rows[0].valor_final);
+    const saldo = Math.max(valorFinal - totalPago, 0);
+    const pago = saldo <= 0.01; // tolerância de centavo
+
+    await pool.query(`
+      UPDATE weekly_charges SET valor_pago_total = $1, saldo_devedor = $2, pago = $3,
+        data_pagamento = CASE WHEN $3 THEN $4::TIMESTAMP ELSE NULL END, updated_at = NOW()
+      WHERE id = $5
+    `, [totalPago, saldo, pago, data_pagamento, chargeId]);
+
+    res.json({ total_pago: totalPago, saldo_devedor: saldo, pago });
+  } catch (err) {
+    console.error('Erro ao registrar pagamento:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
+ * GET /api/drivers/:id/charges/:chargeId/payment-entries - Admin: listar pagamentos de uma cobrança
+ */
+router.get('/:id/charges/:chargeId/payment-entries', auth, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM payment_entries WHERE charge_id = $1 ORDER BY data_pagamento',
+      [req.params.chargeId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Erro:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
+ * DELETE /api/drivers/:id/charges/:chargeId/payment-entries/:entryId
+ */
+router.delete('/:id/charges/:chargeId/payment-entries/:entryId', auth, adminOnly, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM payment_entries WHERE id = $1', [req.params.entryId]);
+
+    // Recalcula
+    const entries = await pool.query('SELECT SUM(valor_pago) as total FROM payment_entries WHERE charge_id = $1', [req.params.chargeId]);
+    const totalPago = parseFloat(entries.rows[0].total || 0);
+    const charge = await pool.query('SELECT valor_final FROM weekly_charges WHERE id = $1', [req.params.chargeId]);
+    const valorFinal = parseFloat(charge.rows[0]?.valor_final || 0);
+    const saldo = Math.max(valorFinal - totalPago, 0);
+
+    await pool.query(`
+      UPDATE weekly_charges SET valor_pago_total = $1, saldo_devedor = $2, pago = $3, updated_at = NOW()
+      WHERE id = $4
+    `, [totalPago, saldo, saldo <= 0.01, req.params.chargeId]);
+
+    res.json({ message: 'Pagamento removido' });
+  } catch (err) {
+    console.error('Erro:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
+ * POST /api/drivers/:id/recalculate-interest - Admin: recalcular juros
+ * Pega saldo devedor de cada semana e acumula juros nas próximas
+ */
+router.post('/:id/recalculate-interest', auth, adminOnly, async (req, res) => {
+  try {
+    const { juros_diario } = req.body;
+    const taxa = parseFloat(juros_diario || 0.5) / 100;
+
+    const charges = await pool.query(
+      'SELECT * FROM weekly_charges WHERE driver_id = $1 ORDER BY semana_ref ASC',
+      [req.params.id]
+    );
+
+    let jurosPendente = 0;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (let i = 0; i < charges.rows.length; i++) {
+        const ch = charges.rows[i];
+        const valorBase = parseFloat(ch.valor_base);
+        const valorFinal = valorBase + jurosPendente;
+        const totalPago = parseFloat(ch.valor_pago_total || 0);
+        const saldo = Math.max(valorFinal - totalPago, 0);
+        const pago = saldo <= 0.01;
+
+        await client.query(`
+          UPDATE weekly_charges SET juros_acumulados = $1, valor_final = $2, saldo_devedor = $3, pago = $4, updated_at = NOW()
+          WHERE id = $5
+        `, [jurosPendente, valorFinal, saldo, pago, ch.id]);
+
+        // Calcula juros para próxima semana baseado no saldo
+        if (saldo > 0 && i < charges.rows.length - 1) {
+          const nextRef = new Date(charges.rows[i + 1].semana_ref);
+          const thisRef = new Date(ch.semana_ref);
+          const diasAtraso = Math.max(Math.ceil((nextRef - thisRef) / (1000 * 60 * 60 * 24)), 0);
+          jurosPendente = Math.round(saldo * taxa * diasAtraso * 100) / 100;
+        } else {
+          jurosPendente = 0;
+        }
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+
+    res.json({ message: 'Juros recalculados' });
+  } catch (err) {
+    console.error('Erro ao recalcular juros:', err);
+    res.status(500).json({ error: 'Erro interno' });
   }
 });
 

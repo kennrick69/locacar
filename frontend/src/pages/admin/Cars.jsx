@@ -119,7 +119,11 @@ function Autocomplete({ label, value, onChange, options, placeholder, disabled }
 }
 
 // ==========================================================
-const EMPTY_CAR = { marca: '', modelo: '', ano: '', placa: '', cor: '', valor_semanal: '', valor_caucao: '', renavam: '', observacoes: '' };
+const EMPTY_CAR = {
+  marca: '', modelo: '', ano: '', placa: '', cor: '', valor_semanal: '', valor_caucao: '',
+  renavam: '', observacoes: '', ar_condicionado: false, combustivel: 'Flex',
+  transmissao: 'Manual', direcao: 'Hidráulica', consumo_medio: '', portas: '4', descricao: ''
+};
 
 export default function AdminCars() {
   const [cars, setCars] = useState([]);
@@ -150,7 +154,11 @@ export default function AdminCars() {
     setForm({
       marca: car.marca || '', modelo: car.modelo || '', ano: car.ano || '',
       placa: car.placa || '', cor: car.cor || '', valor_semanal: car.valor_semanal || '',
-      valor_caucao: car.valor_caucao || '', renavam: car.renavam || '', observacoes: car.observacoes || '', disponivel: car.disponivel,
+      valor_caucao: car.valor_caucao || '', renavam: car.renavam || '', observacoes: car.observacoes || '',
+      disponivel: car.disponivel, ar_condicionado: car.ar_condicionado || false,
+      combustivel: car.combustivel || 'Flex', transmissao: car.transmissao || 'Manual',
+      direcao: car.direcao || 'Hidráulica', consumo_medio: car.consumo_medio || '',
+      portas: car.portas || '4', descricao: car.descricao || '',
     });
     setModal(car);
   };
@@ -355,6 +363,53 @@ export default function AdminCars() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Renavam</label>
                 <input type="text" value={form.renavam} onChange={set('renavam')} className="input-field" placeholder="00000000000" />
+              </div>
+
+              {/* Especificações */}
+              <div className="border-t pt-4">
+                <p className="text-sm font-semibold text-gray-700 mb-3">Especificações</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Combustível</label>
+                    <select value={form.combustivel} onChange={set('combustivel')} className="input-field">
+                      <option>Flex</option><option>Gasolina</option><option>Etanol</option><option>Diesel</option><option>Elétrico</option><option>Híbrido</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Transmissão</label>
+                    <select value={form.transmissao} onChange={set('transmissao')} className="input-field">
+                      <option>Manual</option><option>Automático</option><option>CVT</option><option>Automatizado</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Direção</label>
+                    <select value={form.direcao} onChange={set('direcao')} className="input-field">
+                      <option>Hidráulica</option><option>Elétrica</option><option>Mecânica</option><option>Eletro-hidráulica</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Portas</label>
+                    <select value={form.portas} onChange={set('portas')} className="input-field">
+                      <option>2</option><option>4</option><option>5</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Consumo médio</label>
+                    <input type="text" value={form.consumo_medio} onChange={set('consumo_medio')} className="input-field" placeholder="12 km/l" />
+                  </div>
+                  <div className="flex items-end pb-1">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={form.ar_condicionado}
+                        onChange={e => setForm({ ...form, ar_condicionado: e.target.checked })}
+                        className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
+                      <span className="text-sm text-gray-700">Ar Condicionado</span>
+                    </label>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Descrição do veículo</label>
+                  <textarea value={form.descricao} onChange={set('descricao')} className="input-field" rows={3} placeholder="Detalhes sobre o carro, estado de conservação, acessórios..." />
+                </div>
               </div>
 
               <div>

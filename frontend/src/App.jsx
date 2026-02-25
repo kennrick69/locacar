@@ -9,6 +9,7 @@ import Loading from './components/Loading';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Vitrine from './pages/Vitrine';
+import CarDetail from './pages/CarDetail';
 
 // Páginas motorista (Etapa 2)
 import DriverDashboard from './pages/driver/Dashboard';
@@ -41,16 +42,13 @@ export default function App() {
     <Routes>
       {/* Públicas */}
       <Route path="/" element={<Vitrine />} />
+      <Route path="/carro/:id" element={<CarDetail />} />
       <Route path="/login" element={
         isAuthenticated
           ? <Navigate to={user?.role === 'admin' ? '/admin' : '/motorista'} />
           : <Login />
       } />
-      <Route path="/register" element={
-        isAuthenticated
-          ? <Navigate to="/motorista" />
-          : <Register />
-      } />
+      <Route path="/register" element={<Register />} />
 
       {/* Motorista (Etapa 2) */}
       <Route path="/motorista" element={

@@ -50,6 +50,10 @@ export const carsAPI = {
   update: (id, formData) => api.put(`/cars/${id}`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
+  addPhoto: (id, formData) => api.post(`/cars/${id}/photos`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  removePhoto: (id, url) => api.delete(`/cars/${id}/photos`, { data: { url } }),
   delete: (id) => api.delete(`/cars/${id}`),
 };
 
@@ -92,6 +96,13 @@ export const driversAPI = {
   autoGenerateCharges: (data) => api.post('/drivers/charges/auto-generate', data),
   generateContract: (driverId, data) => api.post(`/drivers/${driverId}/generate-contract`, data, { responseType: 'blob' }),
   deleteDriver: (driverId) => api.delete(`/drivers/${driverId}`),
+  swapCar: (driverId, data) => api.post(`/drivers/${driverId}/swap-car`, data),
+  swapHistory: (driverId) => api.get(`/drivers/${driverId}/swap-history`),
+  generateCharges: (driverId, data) => api.post(`/drivers/${driverId}/generate-charges`, data),
+  addPaymentEntry: (driverId, chargeId, data) => api.post(`/drivers/${driverId}/charges/${chargeId}/payment-entry`, data),
+  getPaymentEntries: (driverId, chargeId) => api.get(`/drivers/${driverId}/charges/${chargeId}/payment-entries`),
+  deletePaymentEntry: (driverId, chargeId, entryId) => api.delete(`/drivers/${driverId}/charges/${chargeId}/payment-entries/${entryId}`),
+  recalculateInterest: (driverId, data) => api.post(`/drivers/${driverId}/recalculate-interest`, data),
   approve: (id, data) => api.patch(`/drivers/${id}/approve`, data),
   reject: (id, data) => api.patch(`/drivers/${id}/reject`, data),
   activate: (id) => api.patch(`/drivers/${id}/activate`),

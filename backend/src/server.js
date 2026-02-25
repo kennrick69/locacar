@@ -112,12 +112,17 @@ async function start() {
           ano INTEGER, placa VARCHAR(20) UNIQUE NOT NULL, cor VARCHAR(50), foto_url TEXT,
           valor_semanal DECIMAL(10,2) NOT NULL, valor_caucao DECIMAL(10,2) DEFAULT 0,
           disponivel BOOLEAN DEFAULT true, observacoes TEXT,
+          ar_condicionado BOOLEAN DEFAULT false, combustivel VARCHAR(30) DEFAULT 'Flex',
+          transmissao VARCHAR(30) DEFAULT 'Manual', direcao VARCHAR(30) DEFAULT 'Hidráulica',
+          consumo_medio VARCHAR(30), portas INTEGER DEFAULT 4, descricao TEXT,
+          fotos_extras TEXT DEFAULT '[]', renavam VARCHAR(30),
           created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW()
         )`);
 
         await client.query(`CREATE TABLE IF NOT EXISTS driver_profiles (
           id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-          car_id INTEGER REFERENCES cars(id) ON DELETE SET NULL, status VARCHAR(30) DEFAULT 'pendente',
+          car_id INTEGER REFERENCES cars(id) ON DELETE SET NULL, car_interesse_id INTEGER REFERENCES cars(id),
+          status VARCHAR(30) DEFAULT 'pendente',
           cnh_url TEXT, comprovante_url TEXT, selfie_url TEXT, contrato_url TEXT, perfil_app_url TEXT,
           contrato_confirmado BOOLEAN DEFAULT false, caucao_pago BOOLEAN DEFAULT false,
           token_externo VARCHAR(20), cadastro_externo BOOLEAN DEFAULT false,
@@ -137,6 +142,8 @@ async function start() {
           semana_ref DATE NOT NULL, valor_base DECIMAL(10,2) NOT NULL, abatimentos DECIMAL(10,2) DEFAULT 0,
           credito_anterior DECIMAL(10,2) DEFAULT 0, multa DECIMAL(10,2) DEFAULT 0,
           valor_final DECIMAL(10,2) NOT NULL, pago BOOLEAN DEFAULT false, data_pagamento TIMESTAMP,
+          juros_acumulados DECIMAL(10,2) DEFAULT 0, valor_pago_total DECIMAL(10,2) DEFAULT 0,
+          saldo_devedor DECIMAL(10,2) DEFAULT 0,
           observacoes TEXT, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW()
         )`);
 
@@ -182,6 +189,19 @@ async function start() {
           observacoes TEXT, pdf_url TEXT, created_at TIMESTAMP DEFAULT NOW()
         )`);
 
+        await client.query(`CREATE TABLE IF NOT EXISTS car_swaps (
+          id SERIAL PRIMARY KEY, driver_id INTEGER REFERENCES driver_profiles(id) ON DELETE CASCADE,
+          car_anterior_id INTEGER REFERENCES cars(id), car_novo_id INTEGER REFERENCES cars(id),
+          motivo TEXT, created_at TIMESTAMP DEFAULT NOW()
+        )`);
+
+        await client.query(`CREATE TABLE IF NOT EXISTS payment_entries (
+          id SERIAL PRIMARY KEY, charge_id INTEGER REFERENCES weekly_charges(id) ON DELETE CASCADE,
+          driver_id INTEGER REFERENCES driver_profiles(id) ON DELETE CASCADE,
+          valor_pago DECIMAL(10,2) NOT NULL, data_pagamento DATE NOT NULL,
+          observacoes TEXT, created_at TIMESTAMP DEFAULT NOW()
+        )`);
+
         await client.query('COMMIT');
         console.log('✅ Tabelas criadas!');
       } catch (migErr) {
@@ -208,6 +228,34 @@ async function start() {
         await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS rg VARCHAR(30)`);
         await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS endereco_completo TEXT`);
         await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS renavam VARCHAR(30)`);
+        // Car specs
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS ar_condicionado BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS combustivel VARCHAR(30) DEFAULT 'Flex'`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS transmissao VARCHAR(30) DEFAULT 'Manual'`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS direcao VARCHAR(30) DEFAULT 'Hidráulica'`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS consumo_medio VARCHAR(30)`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS portas INTEGER DEFAULT 4`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS descricao TEXT`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS fotos_extras TEXT DEFAULT '[]'`);
+        // Driver car interest
+        await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS car_interesse_id INTEGER REFERENCES cars(id)`);
+        // Car swap history
+        await pool.query(`CREATE TABLE IF NOT EXISTS car_swaps (
+          id SERIAL PRIMARY KEY, driver_id INTEGER REFERENCES driver_profiles(id) ON DELETE CASCADE,
+          car_anterior_id INTEGER REFERENCES cars(id), car_novo_id INTEGER REFERENCES cars(id),
+          motivo TEXT, created_at TIMESTAMP DEFAULT NOW()
+        )`);
+        // Manual payment entries (multiple per charge)
+        await pool.query(`CREATE TABLE IF NOT EXISTS payment_entries (
+          id SERIAL PRIMARY KEY, charge_id INTEGER REFERENCES weekly_charges(id) ON DELETE CASCADE,
+          driver_id INTEGER REFERENCES driver_profiles(id) ON DELETE CASCADE,
+          valor_pago DECIMAL(10,2) NOT NULL, data_pagamento DATE NOT NULL,
+          observacoes TEXT, created_at TIMESTAMP DEFAULT NOW()
+        )`);
+        // Juros column on weekly_charges
+        await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS juros_acumulados DECIMAL(10,2) DEFAULT 0`);
+        await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS valor_pago_total DECIMAL(10,2) DEFAULT 0`);
+        await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS saldo_devedor DECIMAL(10,2) DEFAULT 0`);
 
         // Backfill: preenche token_externo para motoristas que não têm
         await pool.query(`

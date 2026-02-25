@@ -12,7 +12,7 @@ const router = express.Router();
  */
 router.post('/register', async (req, res) => {
   try {
-    const { nome, email, senha, cpf, telefone, endereco } = req.body;
+    const { nome, email, senha, cpf, telefone, endereco, car_interesse_id } = req.body;
 
     if (!nome || !cpf) {
       return res.status(400).json({ error: 'Nome e CPF são obrigatórios' });
@@ -57,9 +57,9 @@ router.post('/register', async (req, res) => {
 
     // Cria perfil de motorista automaticamente
     await pool.query(`
-      INSERT INTO driver_profiles (user_id, token_externo, endereco_completo)
-      VALUES ($1, $2, $3)
-    `, [user.id, tokenExterno, endereco || null]);
+      INSERT INTO driver_profiles (user_id, token_externo, endereco_completo, car_interesse_id)
+      VALUES ($1, $2, $3, $4)
+    `, [user.id, tokenExterno, endereco || null, car_interesse_id || null]);
 
     // Gera JWT
     const token = jwt.sign(
@@ -213,18 +213,25 @@ router.post('/token-login', async (req, res) => {
  * GET /api/auth/cep/:cep
  * Proxy para ViaCEP (evita bloqueio de CSP no frontend)
  */
-router.get('/cep/:cep', async (req, res) => {
-  try {
-    const cep = req.params.cep.replace(/\D/g, '');
-    if (cep.length !== 8) return res.status(400).json({ error: 'CEP inválido' });
+router.get('/cep/:cep', (req, res) => {
+  const cep = req.params.cep.replace(/\D/g, '');
+  if (cep.length !== 8) return res.status(400).json({ error: 'CEP inválido' });
 
-    const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-    const data = await response.json();
-    res.json(data);
-  } catch (err) {
+  const https = require('https');
+  https.get(`https://viacep.com.br/ws/${cep}/json/`, (response) => {
+    let data = '';
+    response.on('data', (chunk) => { data += chunk; });
+    response.on('end', () => {
+      try {
+        res.json(JSON.parse(data));
+      } catch {
+        res.status(500).json({ error: 'Erro ao processar CEP' });
+      }
+    });
+  }).on('error', (err) => {
     console.error('Erro ao buscar CEP:', err);
     res.status(500).json({ error: 'Erro ao buscar CEP' });
-  }
+  });
 });
 
 module.exports = router;
