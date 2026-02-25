@@ -91,6 +91,7 @@ export const driversAPI = {
   updateDriver: (driverId, data) => api.patch(`/drivers/${driverId}/update`, data),
   autoGenerateCharges: (data) => api.post('/drivers/charges/auto-generate', data),
   generateContract: (driverId, data) => api.post(`/drivers/${driverId}/generate-contract`, data, { responseType: 'blob' }),
+  deleteDriver: (driverId) => api.delete(`/drivers/${driverId}`),
   approve: (id, data) => api.patch(`/drivers/${id}/approve`, data),
   reject: (id, data) => api.patch(`/drivers/${id}/reject`, data),
   activate: (id) => api.patch(`/drivers/${id}/activate`),

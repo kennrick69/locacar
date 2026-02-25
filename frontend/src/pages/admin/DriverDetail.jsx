@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import {
   ArrowLeft, CheckCircle2, XCircle, Clock, Car, FileText,
   Eye, X, Shield, UserCheck, AlertCircle, Plus, Banknote,
-  Check, Download, Upload, Pencil, Save, Calendar, User
+  Check, Download, Upload, Pencil, Save, Calendar, User, Trash2
 } from 'lucide-react';
 
 const STATUS_BADGE = {
@@ -79,6 +79,7 @@ export default function AdminDriverDetail() {
   const [generatingContract, setGeneratingContract] = useState(false);
 
   const [processing, setProcessing] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   useEffect(() => { loadData(); }, [id]);
 
@@ -181,6 +182,20 @@ export default function AdminDriverDetail() {
   // Carros disponíveis = disponíveis + o carro atual do motorista
   const availableCars = allCars.filter(c => c.disponivel || (driver && c.id === driver.car_id));
 
+  const handleDeleteDriver = async () => {
+    setProcessing(true);
+    try {
+      await driversAPI.deleteDriver(id);
+      toast.success('Motorista excluído!');
+      navigate('/admin/motoristas');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Erro ao excluir');
+    } finally {
+      setProcessing(false);
+      setDeleteConfirm(false);
+    }
+  };
+
   if (loading) return <div className="flex justify-center items-center h-64"><div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" /></div>;
   if (!driver) return null;
 
@@ -197,9 +212,14 @@ export default function AdminDriverDetail() {
           <p className="text-sm text-gray-400">{driver.email} · CPF: {driver.cpf}{driver.telefone ? ` · Tel: ${driver.telefone}` : ''}</p>
           {driver.token_externo && <p className="text-xs text-brand-600 font-mono">Token: {driver.token_externo}</p>}
         </div>
-        <button onClick={() => { setEditing(!editing); if (editing) initEditForm(driver); }} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${editing ? 'bg-gray-200 text-gray-700' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'}`}>
-          {editing ? <><X className="w-4 h-4" /> Cancelar</> : <><Pencil className="w-4 h-4" /> Editar</>}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => { setEditing(!editing); if (editing) initEditForm(driver); }} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${editing ? 'bg-gray-200 text-gray-700' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'}`}>
+            {editing ? <><X className="w-4 h-4" /> Cancelar</> : <><Pencil className="w-4 h-4" /> Editar</>}
+          </button>
+          <button onClick={() => setDeleteConfirm(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* ========== EDIT FORM ========== */}
@@ -653,6 +673,28 @@ export default function AdminDriverDetail() {
                 className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 text-white flex-1 py-2.5 rounded-lg font-medium flex items-center justify-center gap-2">
                 {generatingContract ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Gerando...</>
                   : <><Download className="w-4 h-4" /> Baixar Contrato DOCX</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal Confirmar Exclusão */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setDeleteConfirm(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+            <div className="text-center">
+              <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-7 h-7 text-red-600" />
+              </div>
+              <h3 className="font-semibold text-lg text-gray-800 mb-2">Excluir motorista?</h3>
+              <p className="text-sm text-gray-500 mb-1">Tem certeza que deseja excluir <strong>{driver.nome}</strong>?</p>
+              <p className="text-xs text-red-500 mb-4">Todos os dados, cobranças, pagamentos e documentos serão removidos permanentemente.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteConfirm(false)} className="btn-secondary flex-1">Cancelar</button>
+              <button onClick={handleDeleteDriver} disabled={processing} className="btn-danger flex-1 flex items-center justify-center gap-2">
+                {processing ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                Excluir
               </button>
             </div>
           </div>

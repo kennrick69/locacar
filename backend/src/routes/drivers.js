@@ -1245,6 +1245,46 @@ ${observacoes ? '<h2>Observações</h2><p>' + observacoes + '</p>' : ''}
 });
 
 /**
+ * DELETE /api/drivers/:id - Admin: excluir motorista
+ */
+router.delete('/:id', auth, adminOnly, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const driverId = req.params.id;
+
+    // Busca driver
+    const driverRes = await client.query('SELECT * FROM driver_profiles WHERE id = $1', [driverId]);
+    if (driverRes.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Motorista não encontrado' }); }
+    const driver = driverRes.rows[0];
+
+    // Libera carro se tinha
+    if (driver.car_id) {
+      await client.query('UPDATE cars SET disponivel = true, updated_at = NOW() WHERE id = $1', [driver.car_id]);
+    }
+
+    // Deleta em cascata (driver_profiles → charges, abatimentos, acrescimos, payments, documents)
+    await client.query('DELETE FROM acrescimos WHERE driver_id = $1', [driverId]);
+    await client.query('DELETE FROM abatimentos WHERE driver_id = $1', [driverId]);
+    await client.query('DELETE FROM payments WHERE driver_id = $1', [driverId]);
+    await client.query('DELETE FROM weekly_charges WHERE driver_id = $1', [driverId]);
+    await client.query('DELETE FROM final_settlements WHERE driver_id = $1', [driverId]);
+    await client.query('DELETE FROM documents WHERE user_id = $1', [driver.user_id]);
+    await client.query('DELETE FROM driver_profiles WHERE id = $1', [driverId]);
+    await client.query('DELETE FROM users WHERE id = $1', [driver.user_id]);
+
+    await client.query('COMMIT');
+    res.json({ message: 'Motorista excluído com sucesso' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao excluir motorista:', err);
+    res.status(500).json({ error: err.message || 'Erro interno' });
+  } finally {
+    client.release();
+  }
+});
+
+/**
  * POST /api/drivers/:id/generate-contract - Admin: gerar contrato DOCX
  */
 router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
