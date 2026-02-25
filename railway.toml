@@ -7,3 +7,7 @@ healthcheckPath = "/api/health"
 healthcheckTimeout = 10
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
+
+[[mounts]]
+mountPath = "/app/uploads"
+name = "uploads"
