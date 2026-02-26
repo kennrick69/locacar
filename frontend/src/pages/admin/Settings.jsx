@@ -295,6 +295,22 @@ export default function AdminSettings() {
         </div>
       </div>
 
+      {/* Cláusulas do Contrato */}
+      <div className="card">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CreditCard className="w-5 h-5 text-purple-600" />
+            <div>
+              <h2 className="font-semibold text-gray-800">Cláusulas do Contrato</h2>
+              <p className="text-xs text-gray-400">Edite o texto das cláusulas, reordene ou desative</p>
+            </div>
+          </div>
+          <a href="/admin/contrato-clausulas" className="btn-primary text-sm flex items-center gap-1">
+            Editar Cláusulas →
+          </a>
+        </div>
+      </div>
+
       {/* Dados do Locador (para contrato) */}
       <div className="card">
         <div className="flex items-center gap-2 mb-4">

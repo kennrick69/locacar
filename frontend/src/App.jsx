@@ -22,6 +22,7 @@ import AdminCars from './pages/admin/Cars';
 import AdminDrivers from './pages/admin/Drivers';
 import AdminDriverDetail from './pages/admin/DriverDetail';
 import AdminSettings from './pages/admin/Settings';
+import ContractClauses from './pages/admin/ContractClauses';
 
 function PrivateRoute({ children, role }) {
   const { isAuthenticated, user, loading } = useAuth();
@@ -91,6 +92,11 @@ export default function App() {
       <Route path="/admin/config" element={
         <PrivateRoute role="admin">
           <Layout><AdminSettings /></Layout>
+        </PrivateRoute>
+      } />
+      <Route path="/admin/contrato-clausulas" element={
+        <PrivateRoute role="admin">
+          <Layout><ContractClauses /></Layout>
         </PrivateRoute>
       } />
 

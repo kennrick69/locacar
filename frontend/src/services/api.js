@@ -124,3 +124,12 @@ export const paymentsAPI = {
   confirm: (id) => api.post(`/payments/${id}/confirm`),
   installmentOptions: () => api.get('/payments/installment-options'),
 };
+
+// ========== CONTRACT CLAUSES ==========
+export const clausesAPI = {
+  list: () => api.get('/contract-clauses'),
+  update: (id, data) => api.put(`/contract-clauses/${id}`, data),
+  create: (data) => api.post('/contract-clauses', data),
+  remove: (id) => api.delete(`/contract-clauses/${id}`),
+  reorder: (items) => api.put('/contract-clauses/reorder/batch', { items }),
+};

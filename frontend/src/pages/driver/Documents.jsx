@@ -20,6 +20,7 @@ export default function DriverDocuments() {
   const [loading, setLoading] = useState(true);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [dragOver, setDragOver] = useState(null);
+  const [vistoriaDesc, setVistoriaDesc] = useState('');
   const fileInputs = useRef({});
 
   useEffect(() => { loadData(); }, []);
@@ -338,6 +339,107 @@ export default function DriverDocuments() {
             { tipo: 'selfie', label: 'Selfie com Documento', icon: Camera, desc: 'Foto segurando a CNH ao lado do rosto — para validação de identidade', field: 'selfie_url' },
             'purple'
           )}
+        </div>
+      )}
+
+      {/* ========== VISTORIA DE RETIRADA ========== */}
+      {(profile?.status === 'ativo' || profile?.status === 'aprovado' || profile?.status === 'inadimplente') && (
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
+            <Camera className="w-5 h-5 text-orange-600" /> Vistoria de Retirada do Veículo
+          </h2>
+
+          <div className="card border-l-4 border-red-500 bg-red-50">
+            <p className="text-sm text-red-800 font-bold flex items-center gap-2">⏰ PRAZO: 24 HORAS</p>
+            <p className="text-sm text-red-700 mt-1">
+              Você tem <strong>24 horas a partir da retirada do veículo</strong> para enviar todas as fotos dos detalhes pré-existentes.
+              Após esse prazo, qualquer dano encontrado na devolução será considerado de sua responsabilidade.
+            </p>
+          </div>
+
+          <div className="card border-l-4 border-orange-400 bg-orange-50">
+            <p className="text-sm text-orange-800 font-medium">O que fotografar:</p>
+            <p className="text-sm text-orange-700 mt-1">
+              Arranhões, riscos, avarias nos aros, rasgados nos estofamentos, manchas, defeitos no painel, vidros trincados, 
+              amassados na lataria, defeitos nos bancos, etc. <strong>Para cada foto, descreva o que é, onde está (lado, porta, 
+              para-choque), e o tamanho aproximado do dano.</strong>
+            </p>
+          </div>
+
+          {/* Fotos de vistoria existentes */}
+          {(() => {
+            const vistoriaDocs = documents.filter(d => d.tipo === 'vistoria_retirada');
+            const algumFixado = vistoriaDocs.some(d => d.fixado);
+            return (
+              <>
+                {vistoriaDocs.length > 0 && (
+                  <div className="card">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium text-gray-700">{vistoriaDocs.length} foto(s) de vistoria</p>
+                      {algumFixado && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full flex items-center gap-1"><Lock className="w-3 h-3" /> Fixadas pelo admin</span>}
+                    </div>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      {vistoriaDocs.map(doc => (
+                        <div key={doc.id} className="relative group">
+                          <img src={doc.caminho} alt={doc.descricao || 'Vistoria'} className="w-full h-24 object-cover rounded-lg border cursor-pointer"
+                            onClick={() => setPreviewUrl(doc.caminho)} />
+                          {doc.fixado && <span className="absolute top-1 right-1 bg-amber-500 text-white rounded-full p-0.5"><Lock className="w-3 h-3" /></span>}
+                          {doc.descricao && <p className="text-[10px] text-gray-500 mt-0.5 truncate">{doc.descricao}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Upload novas fotos (se nenhuma fixada) */}
+                {!algumFixado && (
+                  <div className="card">
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-orange-100">
+                        <Camera className="w-5 h-5 text-orange-600" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-gray-800">Enviar Fotos de Vistoria</p>
+                        <p className="text-sm text-gray-500">Uma foto por detalhe. Descreva cada dano abaixo antes de enviar.</p>
+                        <textarea placeholder="Descreva o dano: o que é, local (ex: porta traseira esquerda), lado do veículo, tamanho aproximado. Ex: Arranhão de 15cm na porta traseira esquerda, próximo à maçaneta" 
+                          value={vistoriaDesc}
+                          onChange={e => setVistoriaDesc(e.target.value)}
+                          className="input-field text-sm mt-2" rows={3} />
+                      </div>
+                      <div>
+                        <input type="file" accept="image/*" className="hidden" id="vistoria-input" multiple
+                          onChange={async (e) => {
+                            const files = Array.from(e.target.files || []);
+                            for (const file of files) {
+                              if (file.size > 10 * 1024 * 1024) { toast.error('Arquivo muito grande (max 10MB)'); continue; }
+                              setUploading(prev => ({ ...prev, vistoria: true }));
+                              try {
+                                const formData = new FormData();
+                                formData.append('arquivo', file);
+                                formData.append('descricao', vistoriaDesc || file.name);
+                                await driversAPI.uploadDocument('vistoria_retirada', formData);
+                                toast.success('Foto enviada!');
+                              } catch (err) { toast.error(err.response?.data?.error || 'Erro no upload'); }
+                            }
+                            setUploading(prev => ({ ...prev, vistoria: false }));
+                            setVistoriaDesc('');
+                            e.target.value = '';
+                            await loadData();
+                          }} />
+                        <label htmlFor="vistoria-input"
+                          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer bg-orange-600 text-white hover:bg-orange-700">
+                          {uploading.vistoria
+                            ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            : <Upload className="w-4 h-4" />}
+                          Enviar Fotos
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 

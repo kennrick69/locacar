@@ -180,7 +180,7 @@ export default function AdminDriverDetail() {
   const handleSettlement = async () => { setProcessing(true); try { await fetch(`/api/drivers/${id}/settlement`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('locacar_token')}` }, body: JSON.stringify(settlementForm) }); toast.success('Rescisão processada!'); setSettlementModal(false); await loadData(); } catch (e) { toast.error('Erro na rescisão'); } finally { setProcessing(false); } };
 
   const openContractModal = () => {
-    setContractForm({ locatario_rg: driver.rg || '', locatario_endereco: driver.endereco_completo || '', valor_semanal_extenso: '', valor_caucao_extenso: '', data_contrato: new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }) });
+    setContractForm({ locatario_rg: driver.rg || '', locatario_endereco: driver.endereco_completo || '', data_contrato: new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }) });
     setContractModal(true);
   };
 
@@ -188,10 +188,20 @@ export default function AdminDriverDetail() {
     setGeneratingContract(true);
     try {
       const res = await driversAPI.generateContract(id, contractForm);
-      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob); const a = document.createElement('a');
-      a.href = url; a.download = `contrato_${driver.nome?.replace(/\s+/g, '_')}.docx`; a.click();
-      URL.revokeObjectURL(url); toast.success('Contrato gerado!'); setContractModal(false);
+      a.href = url; a.download = `contrato_${driver.nome?.replace(/\s+/g, '_')}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+
+      // Abrir WhatsApp se disponível
+      const whatsLink = res.headers?.['x-whatsapp-link'];
+      if (whatsLink) {
+        toast.success('Contrato gerado! Abrindo WhatsApp...', { autoClose: 3000 });
+        setTimeout(() => window.open(whatsLink, '_blank'), 1500);
+      } else {
+        toast.success('Contrato PDF gerado e email enviado!');
+      }
+      setContractModal(false);
     } catch (err) { toast.error('Erro ao gerar contrato'); }
     finally { setGeneratingContract(false); }
   };
@@ -302,7 +312,7 @@ export default function AdminDriverDetail() {
           <p className="text-sm text-gray-400">{driver.email} · CPF: {driver.cpf}{driver.telefone ? ` · Tel: ${driver.telefone}` : ''}</p>
           {driver.token_externo && <p className="text-xs text-brand-600 font-mono">Token: {driver.token_externo}</p>}
           {driver.interesse_marca && !driver.car_id && (
-            <p className="text-xs text-amber-600 mt-0.5">⭐ Interesse: {driver.interesse_marca} {driver.interesse_modelo}</p>
+            <p className="text-xs text-amber-600 mt-0.5">⭐ Interesse: {driver.interesse_marca} {driver.interesse_modelo} {driver.interesse_ano} {driver.interesse_cor}{driver.interesse_placa ? ` (${driver.interesse_placa})` : ''}</p>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -497,6 +507,43 @@ export default function AdminDriverDetail() {
           </details>
         )}
       </div>
+
+      {/* ========== VISTORIA DE RETIRADA ========== */}
+      {(() => {
+        const vistoriaDocs = adminDocs.filter(d => d.tipo === 'vistoria_retirada');
+        if (vistoriaDocs.length === 0) return null;
+        return (
+          <div className="card">
+            <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <Eye className="w-4 h-4 text-orange-600" /> Vistoria de Retirada ({vistoriaDocs.length} fotos)
+            </h3>
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {vistoriaDocs.map(doc => (
+                <div key={doc.id} className="relative group">
+                  <img src={doc.caminho} alt={doc.descricao || 'Vistoria'} className="w-full h-20 object-cover rounded-lg border cursor-pointer hover:opacity-80"
+                    onClick={() => setPreviewUrl(doc.caminho)} />
+                  {doc.fixado && <span className="absolute top-1 right-1 bg-amber-500 text-white rounded-full p-0.5"><Lock className="w-2.5 h-2.5" /></span>}
+                  <div className="flex items-center justify-between mt-0.5">
+                    <p className="text-[9px] text-gray-500 truncate flex-1">{doc.descricao || doc.nome_arquivo}</p>
+                    <button onClick={() => handleLockDoc(doc.id, !doc.fixado)} title={doc.fixado ? 'Desfixar' : 'Fixar'}
+                      className={`${doc.fixado ? 'text-amber-600' : 'text-gray-400 hover:text-gray-600'}`}>
+                      {doc.fixado ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {!vistoriaDocs.some(d => d.fixado) && (
+              <button onClick={async () => {
+                for (const doc of vistoriaDocs) { await driversAPI.lockDocument(id, doc.id, true); }
+                toast.success('Todas fotos de vistoria fixadas!'); await loadData();
+              }} className="mt-2 text-xs bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg hover:bg-amber-200 flex items-center gap-1">
+                <Lock className="w-3 h-3" /> Fixar Todas as Fotos
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ========== GERAR CONTRATO ========== */}
       {driver.car_marca && (
@@ -701,7 +748,7 @@ export default function AdminDriverDetail() {
             <h3 className="font-semibold text-lg mb-4">Aprovar Motorista</h3>
             {driver.interesse_marca && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 mb-3 text-sm">
-                ⭐ Interesse: <strong>{driver.interesse_marca} {driver.interesse_modelo}</strong>
+                ⭐ Interesse: <strong>{driver.interesse_marca} {driver.interesse_modelo} {driver.interesse_ano} {driver.interesse_cor}{driver.interesse_placa ? ` (${driver.interesse_placa})` : ''}</strong>
               </div>
             )}
             <label className="block text-sm mb-1">Atribuir carro:</label>
@@ -933,17 +980,18 @@ export default function AdminDriverDetail() {
                 <div><label className="block text-xs text-gray-500 mb-1">Data do contrato</label><input type="text" value={contractForm.data_contrato} onChange={e => setContractForm({...contractForm, data_contrato: e.target.value})} className="input-field" /></div>
               </div>
               <div><label className="block text-xs text-gray-500 mb-1">Endereço completo do locatário</label><input type="text" value={contractForm.locatario_endereco} onChange={e => setContractForm({...contractForm, locatario_endereco: e.target.value})} className="input-field" /></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-xs text-gray-500 mb-1">Valor semanal por extenso</label><input type="text" value={contractForm.valor_semanal_extenso} onChange={e => setContractForm({...contractForm, valor_semanal_extenso: e.target.value})} className="input-field" placeholder="seiscentos e vinte e cinco reais" /></div>
-                <div><label className="block text-xs text-gray-500 mb-1">Caução por extenso</label><input type="text" value={contractForm.valor_caucao_extenso} onChange={e => setContractForm({...contractForm, valor_caucao_extenso: e.target.value})} className="input-field" /></div>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-700 space-y-1">
+                <p>✅ Valores por extenso gerados <strong>automaticamente</strong></p>
+                <p>✅ Dados do <strong>LOCADOR</strong> vêm das Configurações</p>
+                <p>📧 Contrato será enviado por <strong>email</strong> ao motorista</p>
+                <p>📱 Link do <strong>WhatsApp</strong> com instruções será aberto</p>
               </div>
-              <div className="bg-purple-50 rounded-lg p-3 text-xs text-purple-700">Os dados do <strong>LOCADOR</strong> vêm das Configurações (Admin → Config).</div>
             </div>
             <div className="flex gap-3 mt-4">
               <button onClick={() => setContractModal(false)} className="btn-secondary flex-1">Cancelar</button>
               <button onClick={handleGenerateContract} disabled={generatingContract}
                 className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 text-white flex-1 py-2.5 rounded-lg font-medium flex items-center justify-center gap-2">
-                {generatingContract ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Gerando...</> : <><Download className="w-4 h-4" /> Baixar DOCX</>}
+                {generatingContract ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Gerando...</> : <><Download className="w-4 h-4" /> Gerar PDF</>}
               </button>
             </div>
           </div>

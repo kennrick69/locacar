@@ -84,13 +84,14 @@ router.post('/me/documents',
       }
 
       const caminho = `/uploads/documents/${req.file.filename}`;
+      const descricao = req.body.descricao || null;
 
       // Salva na tabela documents
       const result = await pool.query(`
-        INSERT INTO documents (user_id, tipo, nome_arquivo, caminho, mime_type, tamanho)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO documents (user_id, tipo, nome_arquivo, caminho, mime_type, tamanho, descricao)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
-      `, [req.user.id, tipo, req.file.originalname, caminho, req.file.mimetype, req.file.size]);
+      `, [req.user.id, tipo, req.file.originalname, caminho, req.file.mimetype, req.file.size, descricao]);
 
       // Atualiza URL no perfil do motorista
       const fieldMap = {
@@ -508,7 +509,7 @@ router.get('/', auth, adminOnly, async (req, res) => {
     let query = `
       SELECT dp.*, u.nome, u.email, u.cpf, u.telefone,
         c.marca as car_marca, c.modelo as car_modelo, c.placa as car_placa,
-        ci.marca as interesse_marca, ci.modelo as interesse_modelo
+        ci.marca as interesse_marca, ci.modelo as interesse_modelo, ci.ano as interesse_ano, ci.cor as interesse_cor, ci.placa as interesse_placa
       FROM driver_profiles dp
       JOIN users u ON u.id = dp.user_id
       LEFT JOIN cars c ON c.id = dp.car_id
@@ -674,7 +675,7 @@ router.get('/:id', auth, adminOnly, async (req, res) => {
       SELECT dp.*, u.nome, u.email, u.cpf, u.telefone,
         c.marca as car_marca, c.modelo as car_modelo, c.placa as car_placa,
         c.valor_semanal as car_valor_semanal, c.valor_caucao as car_valor_caucao,
-        ci.marca as interesse_marca, ci.modelo as interesse_modelo, ci.id as interesse_car_id
+        ci.marca as interesse_marca, ci.modelo as interesse_modelo, ci.id as interesse_car_id, ci.ano as interesse_ano, ci.cor as interesse_cor, ci.placa as interesse_placa
       FROM driver_profiles dp
       JOIN users u ON u.id = dp.user_id
       LEFT JOIN cars c ON c.id = dp.car_id
@@ -1317,12 +1318,12 @@ router.delete('/:id', auth, adminOnly, async (req, res) => {
 });
 
 /**
- * POST /api/drivers/:id/generate-contract - Admin: gerar contrato DOCX
+ * POST /api/drivers/:id/generate-contract - Admin: gerar contrato PDF
  */
 router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
   try {
     const driverId = req.params.id;
-    const extraData = req.body; // dados extras que o admin pode enviar
+    const extraData = req.body;
 
     // Busca dados do motorista
     const driverRes = await pool.query(`
@@ -1346,18 +1347,21 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
     const settings = {};
     settingsRes.rows.forEach(r => { settings[r.chave] = r.valor; });
 
-    // Monta dados do contrato
+    // Auto-gerar extenso
+    const { valorPorExtenso } = require('../utils/numberToWords');
     const { gerarContrato } = require('../services/ContratoService');
 
-    const valorSemanal = parseFloat(driver.valor_semanal || 0).toFixed(2).replace('.', ',');
-    const valorCaucao = parseFloat(driver.valor_caucao || 0).toFixed(2).replace('.', ',');
+    const valorSemanal = parseFloat(driver.valor_semanal || 0);
+    const valorCaucao = parseFloat(driver.valor_caucao || 0);
+    const valorSemanalFmt = valorSemanal.toFixed(2).replace('.', ',');
+    const valorCaucaoFmt = valorCaucao.toFixed(2).replace('.', ',');
 
     const data = {
-      locador_nome: extraData.locador_nome || settings.locador_nome || 'NOME DO LOCADOR',
-      locador_rg: extraData.locador_rg || settings.locador_rg || '_______________',
-      locador_cpf: extraData.locador_cpf || settings.locador_cpf || '_______________',
-      locador_endereco: extraData.locador_endereco || settings.locador_endereco || '_______________',
-      locador_email: extraData.locador_email || settings.locador_email || '_______________',
+      locador_nome: settings.locador_nome || 'NOME DO LOCADOR',
+      locador_rg: settings.locador_rg || '_______________',
+      locador_cpf: settings.locador_cpf || '_______________',
+      locador_endereco: settings.locador_endereco || '_______________',
+      locador_email: settings.locador_email || '_______________',
       locatario_nome: driver.nome,
       locatario_rg: extraData.locatario_rg || driver.rg || '_______________',
       locatario_cpf: driver.cpf,
@@ -1366,25 +1370,30 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
       veiculo_cor: driver.car_cor || '_______________',
       veiculo_ano: driver.car_ano ? String(driver.car_ano) : '_______________',
       veiculo_placa: driver.car_placa || '_______________',
-      veiculo_renavam: extraData.renavam || driver.car_renavam || '_______________',
-      valor_semanal: valorSemanal,
-      valor_semanal_extenso: extraData.valor_semanal_extenso || valorSemanal + ' reais',
+      veiculo_renavam: driver.car_renavam || '_______________',
+      valor_semanal: valorSemanalFmt,
+      valor_semanal_extenso: valorPorExtenso(valorSemanal),
       dia_pagamento: extraData.dia_pagamento || driver.dia_cobranca || 'quinta',
-      valor_caucao: valorCaucao,
-      valor_caucao_extenso: extraData.valor_caucao_extenso || valorCaucao + ' reais',
-      cidade_comarca: extraData.cidade_comarca || settings.locador_cidade || 'JARAGUÁ DO SUL - SC',
+      valor_caucao: valorCaucaoFmt,
+      valor_caucao_extenso: valorPorExtenso(valorCaucao),
+      cidade_comarca: settings.locador_cidade || 'JARAGUA DO SUL - SC',
       data_contrato: extraData.data_contrato || new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }),
     };
 
-    const buffer = await gerarContrato(data);
+    // Buscar cláusulas ativas do banco
+    const clausesRes = await pool.query('SELECT titulo, conteudo FROM contract_clauses WHERE ativo = true ORDER BY ordem');
+    const clauses = clausesRes.rows;
 
-    // Salva o contrato como arquivo
+    const buffer = await gerarContrato(data, clauses);
+
+    // Salva o contrato como arquivo PDF
     const fs = require('fs');
     const path = require('path');
     const uploadsDir = path.join(__dirname, '..', '..', 'uploads', 'contracts');
     if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-    const fileName = `contrato_${driverId}_${Date.now()}.docx`;
+    const nomeArq = `contrato_${driver.nome?.replace(/\s+/g, '_')}.pdf`;
+    const fileName = `contrato_${driverId}_${Date.now()}.pdf`;
     const filePath = path.join(uploadsDir, fileName);
     fs.writeFileSync(filePath, buffer);
 
@@ -1393,12 +1402,79 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
     // Salva na tabela documents
     await pool.query(`
       INSERT INTO documents (user_id, tipo, nome_arquivo, caminho, mime_type, tamanho)
-      VALUES ($1, 'contrato_gerado', $2, $3, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', $4)
-    `, [driver.user_id, fileName, caminho, buffer.length]);
+      VALUES ($1, 'contrato_gerado', $2, $3, 'application/pdf', $4)
+    `, [driver.user_id, nomeArq, caminho, buffer.length]);
 
-    // Envia o arquivo
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    // Tentar enviar email com contrato
+    try {
+      const smtpUser = process.env.SMTP_USER;
+      const smtpPass = process.env.SMTP_PASS;
+      if (smtpUser && smtpPass && driver.email) {
+        const nodemailer = require('nodemailer');
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST || 'smtp.gmail.com',
+          port: parseInt(process.env.SMTP_PORT || '587'),
+          secure: false,
+          auth: { user: smtpUser, pass: smtpPass },
+        });
+
+        const veiculo = (driver.car_marca || '') + ' ' + (driver.car_modelo || '') + ' ' + (driver.car_placa || '');
+        await transporter.sendMail({
+          from: `"LocaCar" <${smtpUser}>`,
+          to: driver.email,
+          subject: 'LocaCar - Seu Contrato de Locacao',
+          html: `
+            <h2>Ola ${driver.nome}!</h2>
+            <p>Seu contrato de locacao do veiculo <strong>${veiculo}</strong> esta em anexo.</p>
+            <h3>Instrucoes para assinatura:</h3>
+            <ol>
+              <li>Baixe o PDF anexo</li>
+              <li>Acesse <a href="https://assinador.iti.br">assinador.iti.br</a> ou use o app <strong>Gov.br</strong></li>
+              <li>Faca login com sua conta Gov.br (nivel Prata ou Ouro)</li>
+              <li>Selecione o PDF do contrato e assine digitalmente</li>
+              <li>Acesse o LocaCar com seu token <strong>${driver.token || ''}</strong></li>
+              <li>Na area de Documentos, faca upload do contrato assinado</li>
+              <li>Envie tambem uma selfie segurando seu documento (CNH)</li>
+            </ol>
+            <p>Qualquer duvida, entre em contato!</p>
+            <p><strong>LocaCar</strong></p>
+          `,
+          attachments: [{
+            filename: nomeArq,
+            content: buffer,
+            contentType: 'application/pdf',
+          }],
+        });
+        console.log(`Email com contrato enviado para ${driver.email}`);
+      }
+    } catch (emailErr) {
+      console.error('Erro ao enviar email do contrato:', emailErr.message);
+      // Nao bloqueia a geracao do contrato
+    }
+
+    // Monta link WhatsApp
+    const telefone = (driver.telefone || '').replace(/\D/g, '');
+    let whatsappLink = null;
+    if (telefone.length >= 10) {
+      const tel = telefone.startsWith('55') ? telefone : '55' + telefone;
+      const msg = encodeURIComponent(
+        `Ola ${driver.nome}! Seu contrato de locacao do veiculo ${(driver.car_marca || '')} ${(driver.car_modelo || '')} esta pronto.\n\n` +
+        `*Instrucoes:*\n` +
+        `1. Baixe o PDF do contrato (enviado por email ou disponivel no sistema)\n` +
+        `2. Acesse assinador.iti.br ou use o app Gov.br\n` +
+        `3. Assine digitalmente o contrato\n` +
+        `4. Acesse o LocaCar com seu token: *${driver.token || ''}*\n` +
+        `5. Faca upload do contrato assinado\n` +
+        `6. Envie uma selfie segurando sua CNH\n\n` +
+        `Qualquer duvida, estou a disposicao!`
+      );
+      whatsappLink = `https://wa.me/${tel}?text=${msg}`;
+    }
+
+    // Envia o arquivo PDF + info extra
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${nomeArq}"`);
+    res.setHeader('X-WhatsApp-Link', whatsappLink || '');
     res.send(buffer);
   } catch (err) {
     console.error('Erro ao gerar contrato:', err);
