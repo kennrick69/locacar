@@ -12,8 +12,7 @@ import Vitrine from './pages/Vitrine';
 import CarDetail from './pages/CarDetail';
 
 // Páginas motorista (Etapa 2)
-import DriverDashboard from './pages/driver/Dashboard';
-import DriverDocuments from './pages/driver/Documents';
+import DriverJourney from './pages/driver/DriverJourney';
 import DriverPayments from './pages/driver/Payments';
 
 // Páginas admin (Etapa 3)
@@ -54,14 +53,10 @@ export default function App() {
       {/* Motorista (Etapa 2) */}
       <Route path="/motorista" element={
         <PrivateRoute role="motorista">
-          <Layout><DriverDashboard /></Layout>
+          <Layout><DriverJourney /></Layout>
         </PrivateRoute>
       } />
-      <Route path="/motorista/documentos" element={
-        <PrivateRoute role="motorista">
-          <Layout><DriverDocuments /></Layout>
-        </PrivateRoute>
-      } />
+      <Route path="/motorista/documentos" element={<Navigate to="/motorista" />} />
       <Route path="/motorista/pagamentos" element={
         <PrivateRoute role="motorista">
           <Layout><DriverPayments /></Layout>

@@ -337,26 +337,21 @@ async function start() {
       await pool.query('INSERT INTO installment_fees (parcelas, taxa_percentual) VALUES ($1, $2) ON CONFLICT (parcelas) DO NOTHING', [p, t]);
     }
 
-    // Seed cláusulas do contrato (só se tabela vazia)
+    // Seed cláusulas do contrato (re-seed se texto curto = versão antiga)
     const clauseCount = await pool.query('SELECT COUNT(*) FROM contract_clauses');
-    if (parseInt(clauseCount.rows[0].count) === 0) {
-      const clauses = [
-        [1, 'CLAUSULA 1a - DO OBJETO DO CONTRATO', '• O objeto do presente contrato e o seguinte veiculo automotor:\n• {VEICULO}\n• O veiculo, objeto deste contrato, e de uso exclusivo do LOCATARIO. Este se compromete a nao transferir ou ceder os direitos concedidos por este contrato a terceiros, nem permitir que o veiculo seja conduzido por outra pessoa sem a previa, inequivoca e expressa autorizacao do LOCADOR.\nNa eventualidade de o veiculo ser conduzido por terceiro sem a devida autorizacao do LOCADOR, o LOCATARIO estara sujeito a imediata rescisao deste contrato, sem prejuizo de uma multa no valor de R$ 550,00 (quinhentos e cinquenta reais) e assumira total responsabilidade por quaisquer danos causados ao veiculo.'],
-        [2, 'CLAUSULA 2a - DO HORARIO DO ALUGUEL E LOCAL DE COLETA E DEVOLUCAO DO VEICULO', '• O veiculo objeto do presente contrato permanecera na posse do locatario por periodo integral, de segunda a domingo. O LOCATARIO tem o direito de manter a posse e o uso exclusivo do veiculo 24 horas por dia, 7 dias por semana.\n• O LOCATARIO se compromete a disponibilizar o veiculo para vistoria pelo LOCADOR uma vez por semana.\nNa eventualidade de o LOCATARIO falhar por duas vezes em apresentar o veiculo para vistoria sem justificativa valida, tal omissao podera ser considerada violacao contratual.\nO LOCADOR, ao receber o automovel, tem o prazo de 24 horas para enviar para o LOCATARIO, via WhatsApp, fotos de todos os detalhes, imperfeicoes, riscos, avarias, defeitos no painel, defeitos nos bancos, etc.\n• Em caso de nao apresentacao do veiculo para vistoria, sera aplicada multa de R$ 50,00 por dia de atraso.'],
-        [3, 'CLAUSULA 3a - DAS OBRIGACOES DO LOCADOR E LOCATARIO', '3.1 O veiculo sera submetido a manutencoes periodicas, realizadas por profissional expressamente designado pelo LOCADOR.\n3.3 Custos de manutencao por mal uso serao 100% do LOCATARIO.\n• Danos na bomba de combustivel por negligencia: responsabilidade do LOCATARIO.\n• LOCADOR mantera Seguro contratado.\n• IPVA e Seguro: responsabilidade do LOCADOR.\n• Multas de transito: responsabilidade do LOCATARIO, pagamento imediato.\n• LOCATARIO concorda em ser indicado como condutor/infrator (art. 257 CTB).\n• Multas sem cadastro na CDT: pena de R$ 400,00.\n• Reboque por estacionamento irregular: todos custos + R$ 70,00/dia no deposito.\n• Vedado acionar seguro sem permissao: multa R$ 200,00.\n• LOCATARIO responsavel por acessorios do veiculo.\n• Vedado sair do Estado sem autorizacao: multa R$ 300,00.\n• Vedado reparos sem anuencia do LOCADOR.\n• Roubo/furto: avisar LOCADOR e registrar ocorrencia.\n• Sinistro sob alcool: arcar com valor FIPE se seguro negar.'],
-        [4, 'CLAUSULA 4a - DAS OBRIGACOES DECORRENTES DE COLISOES E AVARIAS', '• Reboque, taxas e reparos nao cobertos pelo seguro: responsabilidade do LOCATARIO.\n• Franquia do Seguro: integralmente do LOCATARIO.'],
-        [5, 'CLAUSULA 5a - DO PAGAMENTO EM RAZAO DA LOCACAO', '• O LOCATARIO pagara ao LOCADOR o valor de {VALOR_SEMANAL} semanalmente, ate as {DIA_PAGAMENTO}-feiras.\n• Atraso: acrescimo de R$ 30,00 por dia.\n• Comprovante deve ser enviado ate 23:59 da {DIA_PAGAMENTO}-feira.'],
-        [6, 'CLAUSULA 6a - DA QUANTIA CAUCAO', '• QUANTIA CAUCAO: {VALOR_CAUCAO}, integralizada na retirada do veiculo.\n• Restituicao em 40 dias uteis, conforme condicoes:\n  - Devolucao em perfeito estado\n  - Inexistencia de debitos pendentes\n  - Apos manutencao necessaria\n  - Apos descontar debitos\n• Combustivel por conta do LOCATARIO.\n• Carro devolvido sujo: cobrada lavagem.'],
-        [7, 'CLAUSULA 7a - DA VIGENCIA E RESCISAO', '• Vigencia minima: 3 meses.\n• Resilicao: aviso com 15 dias de antecedencia.\n• Rescisao automatica quando:\n  - Carro nao devolvido na data ajustada\n  - Acidente ou dano doloso/culposo\n  - Uso inadequado\n  - Apreensao por autoridades\n  - Debitos nao quitados\n  - Divida de R$ 800,00 nao quitada em 48h: multa R$ 150,00/dia\n• Inexistencia de vinculo trabalhista.'],
-        [8, 'CLAUSULA 8a - DO FORO', '• Foro: cidade e Comarca de {CIDADE_COMARCA}.'],
-        [9, 'CLAUSULA 9a - DA DEVOLUCAO DO VEICULO', '• Devolucao em 24h apos termino, no local indicado. Multa: R$ 200,00/dia.\n• Nao devolucao configura APROPRIACAO INDEBITA (art. 168 CP).'],
-        [10, 'CLAUSULA 10a - DA DISPONIBILIZACAO DE CARRO RESERVA', '• O LOCADOR nao e obrigado a disponibilizar carro reserva.'],
-        [11, 'CLAUSULA 11a - DAS NOTIFICACOES', '• Quaisquer notificacoes e comunicacoes devem ser escritas.\n\nE, por estarem assim justas e contratadas, as PARTES firmam o presente instrumento em 02 (duas) vias de igual teor e forma.'],
-      ];
+    const longestClause = await pool.query('SELECT MAX(LENGTH(conteudo)) as maxlen FROM contract_clauses');
+    const maxLen = parseInt(longestClause.rows[0]?.maxlen || 0);
+    if (parseInt(clauseCount.rows[0].count) === 0 || maxLen < 500) {
+      // Limpa cláusulas antigas (versão resumida) e re-seed com texto integral
+      if (maxLen > 0 && maxLen < 500) {
+        await pool.query('DELETE FROM contract_clauses');
+        console.log('🔄 Cláusulas antigas (resumidas) removidas, re-seedando com texto integral...');
+      }
+      const clauses = require('./config/defaultClauses');
       for (const [ordem, titulo, conteudo] of clauses) {
         await pool.query('INSERT INTO contract_clauses (ordem, titulo, conteudo) VALUES ($1, $2, $3)', [ordem, titulo, conteudo]);
       }
-      console.log('✅ Cláusulas do contrato seedadas.');
+      console.log('✅ Cláusulas do contrato seedadas (texto integral).');
     }
 
     console.log('✅ Settings e taxas OK.');

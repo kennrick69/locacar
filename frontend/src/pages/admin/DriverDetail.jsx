@@ -7,7 +7,7 @@ import {
   Eye, X, Shield, UserCheck, AlertCircle, Plus, Banknote,
   Check, Download, Upload, Pencil, Save, Calendar, User, Trash2,
   RefreshCw, ArrowRightLeft, History, DollarSign, ChevronDown, ChevronUp,
-  Lock, Unlock
+  Lock, Unlock, Camera
 } from 'lucide-react';
 
 const STATUS_BADGE = {
@@ -79,6 +79,9 @@ export default function AdminDriverDetail() {
 
   // Delete
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+
+  // Step navigation
+  const [openSteps, setOpenSteps] = useState({});
 
   // === NEW: Car Swap ===
   const [swapModal, setSwapModal] = useState(false);
@@ -299,6 +302,62 @@ export default function AdminDriverDetail() {
   const totalPagoGlobal = (driver.charges || []).reduce((s, c) => s + parseFloat(c.valor_pago_total || c.total_pago || 0), 0);
   const saldoGlobal = totalDevido - totalPagoGlobal;
 
+  // Step definitions
+  const vistoriaDocs = adminDocs.filter(d => d.tipo === 'vistoria_retirada');
+  const isAprovado = ['aprovado', 'ativo', 'inadimplente'].includes(driver.status);
+  const isAtivo = ['ativo', 'inadimplente'].includes(driver.status);
+  const contratoGerado = adminDocs.some(d => d.tipo === 'contrato_gerado');
+
+  const adminSteps = [
+    { id: 'dados', label: 'Dados Pessoais', icon: User, done: !!driver.nome && !!driver.cpf && !!driver.car_id },
+    { id: 'docs', label: 'Documentos', icon: FileText, done: !!driver.cnh_url && !!driver.comprovante_url && !!driver.perfil_app_url,
+      action: driver.status === 'em_analise' ? 'Aprovar/Reprovar' : null },
+    { id: 'contrato', label: 'Contrato', icon: FileText, done: !!driver.contrato_url && driver.contrato_confirmado,
+      action: !contratoGerado && driver.car_id ? 'Gerar contrato' : driver.contrato_url && !driver.contrato_confirmado ? 'Confirmar contrato' : null },
+    { id: 'caucao', label: 'Caução & Ativação', icon: Banknote, done: driver.caucao_pago && isAtivo,
+      action: isAprovado && driver.caucao_pago && driver.contrato_confirmado && !isAtivo ? 'Ativar motorista' : null },
+    { id: 'vistoria', label: 'Vistoria do Veículo', icon: Camera, done: vistoriaDocs.length > 0 && vistoriaDocs.some(d => d.fixado) },
+    { id: 'cobrancas', label: 'Cobranças Semanais', icon: Banknote, done: (driver.charges || []).length > 0 },
+  ];
+
+  const doneCount = adminSteps.filter(s => s.done).length;
+
+  // Auto-open first step with pending action or first incomplete
+  if (Object.keys(openSteps).length === 0) {
+    const firstAction = adminSteps.find(s => s.action);
+    const firstIncomplete = adminSteps.find(s => !s.done);
+    const autoOpen = firstAction?.id || firstIncomplete?.id || 'dados';
+    openSteps[autoOpen] = true;
+  }
+
+  const toggleStep = (id) => setOpenSteps(prev => ({ ...prev, [id]: !prev[id] }));
+
+  // Step wrapper component
+  const StepSection = ({ step, idx, children }) => {
+    const StepIcon = step.icon;
+    const isOpen = openSteps[step.id];
+    return (
+      <div className={`card transition-all ${isOpen ? 'ring-1 ring-brand-200' : ''}`}>
+        <button onClick={() => toggleStep(step.id)} className="w-full flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+            step.done ? 'bg-green-100' : step.action ? 'bg-yellow-100' : 'bg-gray-100'
+          }`}>
+            {step.done ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <StepIcon className={`w-5 h-5 ${step.action ? 'text-yellow-600' : 'text-gray-400'}`} />}
+          </div>
+          <div className="flex-1 text-left">
+            <p className={`text-sm font-semibold ${step.done ? 'text-green-700' : 'text-gray-700'}`}>
+              Etapa {idx + 1}: {step.label}
+            </p>
+            {step.done && <p className="text-xs text-green-500">Concluída ✓</p>}
+            {step.action && !step.done && <p className="text-xs text-yellow-600 font-medium">⚠ {step.action}</p>}
+          </div>
+          {isOpen ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+        </button>
+        {isOpen && <div className="mt-4 pt-4 border-t border-gray-100">{children}</div>}
+      </div>
+    );
+  };
+
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-5">
       {/* Header */}
@@ -316,15 +375,12 @@ export default function AdminDriverDetail() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => { setEditing(!editing); if (editing) initEditForm(driver); }} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${editing ? 'bg-gray-200 text-gray-700' : 'bg-brand-50 text-brand-700 hover:bg-brand-100'}`}>
-            {editing ? <><X className="w-4 h-4" /> Cancelar</> : <><Pencil className="w-4 h-4" /> Editar</>}
-          </button>
-          <button onClick={() => setDeleteConfirm(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-red-50 text-red-600 hover:bg-red-100"><Trash2 className="w-4 h-4" /></button>
+          <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_BADGE[driver.status]}`}>{driver.status?.replace('_', ' ')}</span>
         </div>
       </div>
 
       {/* ========== EDIT FORM ========== */}
-      {editing && (
+      {false && (
         <div className="card border-2 border-brand-200 space-y-4">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2"><User className="w-4 h-4 text-brand-600" /> Editar Dados</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -357,102 +413,65 @@ export default function AdminDriverDetail() {
         </div>
       )}
 
-      {/* ========== INFO CARDS ========== */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Veículo */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2"><Car className="w-4 h-4 text-brand-600" /><h3 className="font-semibold text-gray-700 text-sm">Veículo</h3></div>
-            {driver.car_marca && (driver.status === 'ativo' || driver.status === 'inadimplente') && (
-              <button onClick={() => setSwapModal(true)} className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded-lg hover:bg-amber-100 flex items-center gap-1">
-                <ArrowRightLeft className="w-3 h-3" /> Trocar
-              </button>
-            )}
-          </div>
-          {driver.car_marca ? (
-            <div>
-              <p className="font-medium">{driver.car_marca} {driver.car_modelo}</p>
-              <p className="text-xs text-gray-400">{driver.car_placa} · R$ {fmt(driver.car_valor_semanal)}/sem</p>
-            </div>
-          ) : (
-            <p className="text-sm text-gray-400">Nenhum — <button onClick={() => setEditing(true)} className="text-brand-600 underline">atribuir</button></p>
-          )}
-          {swapHistory.length > 0 && (
-            <button onClick={() => setShowSwapHistory(!showSwapHistory)} className="text-xs text-gray-400 mt-2 flex items-center gap-1 hover:text-gray-600">
-              <History className="w-3 h-3" /> {swapHistory.length} troca(s)
-              {showSwapHistory ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
-          )}
-          {showSwapHistory && swapHistory.map(s => (
-            <div key={s.id} className="text-xs bg-gray-50 rounded p-1.5 mt-1">
-              <p className="font-medium">{s.carro_anterior || '—'} → {s.carro_novo}</p>
-              <p className="text-gray-400">{fmtDate(s.created_at)}{s.motivo ? ` · ${s.motivo}` : ''}</p>
-            </div>
-          ))}
+      {/* ========== PROGRESS BAR ========== */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm font-medium text-gray-700">Progresso do Motorista</p>
+          <span className="text-sm font-bold text-brand-600">{doneCount}/{adminSteps.length}</span>
         </div>
-
-        {/* Financeiro resumo */}
-        <div className="card">
-          <div className="flex items-center gap-2 mb-2"><DollarSign className="w-4 h-4 text-brand-600" /><h3 className="font-semibold text-gray-700 text-sm">Financeiro</h3></div>
-          <div className="space-y-1 text-sm">
-            <div className="flex justify-between"><span className="text-gray-500">Total cobrado:</span><span className="font-medium">R$ {fmt(totalDevido)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Total pago:</span><span className="font-medium text-green-600">R$ {fmt(totalPagoGlobal)}</span></div>
-            <div className="flex justify-between border-t pt-1"><span className="text-gray-500 font-medium">Saldo devedor:</span><span className={`font-bold ${saldoGlobal > 0 ? 'text-red-600' : 'text-green-600'}`}>R$ {fmt(saldoGlobal)}</span></div>
-          </div>
+        <div className="w-full bg-gray-200 rounded-full h-2">
+          <div className="bg-brand-600 h-2 rounded-full transition-all duration-700" style={{ width: `${(doneCount / adminSteps.length) * 100}%` }} />
         </div>
-
-        {/* Progresso */}
-        <div className="card">
-          <div className="flex items-center gap-2 mb-2"><Shield className="w-4 h-4 text-brand-600" /><h3 className="font-semibold text-gray-700 text-sm">Progresso</h3></div>
-          <div className="space-y-1 text-xs">
-            {[
-              { ok: driver.cnh_url, label: 'CNH-e' }, { ok: driver.comprovante_url, label: 'Comprovante' },
-              { ok: driver.selfie_url, label: 'Selfie' }, { ok: driver.perfil_app_url, label: 'Print Uber/99' },
-              { ok: driver.contrato_url, label: 'Contrato' }, { ok: driver.caucao_pago, label: 'Caução' },
-            ].map((item, i) => (
-              <div key={i} className="flex items-center gap-1.5">
-                {item.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> : <XCircle className="w-3.5 h-3.5 text-gray-300" />}
-                <span className={item.ok ? 'text-gray-700' : 'text-gray-400'}>{item.label}</span>
-              </div>
-            ))}
-          </div>
+        <div className="flex items-center gap-3 mt-2 flex-wrap">
+          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_BADGE[driver.status]}`}>{driver.status?.replace('_', ' ')}</span>
+          {driver.car_marca && <span className="text-xs text-gray-500">🚗 {driver.car_marca} {driver.car_modelo} ({driver.car_placa})</span>}
+          <span className="text-xs text-gray-400">Cobrado: R$ {fmt(totalDevido)} | Pago: R$ {fmt(totalPagoGlobal)} | Saldo: R$ {fmt(saldoGlobal)}</span>
         </div>
       </div>
 
-      {/* ========== STATUS ACTIONS ========== */}
-      {driver.status === 'em_analise' && (
-        <div className="card border-l-4 border-yellow-400">
-          <h3 className="font-semibold text-gray-800 mb-3">Aprovação de Cadastro</h3>
-          <div className="flex gap-3">
-            <button onClick={() => setApproveModal(true)} className="btn-primary flex items-center gap-2"><UserCheck className="w-4 h-4" /> Aprovar</button>
-            <button onClick={() => setRejectModal(true)} className="btn-danger flex items-center gap-2"><XCircle className="w-4 h-4" /> Reprovar</button>
+      {/* ========== ETAPAS SEQUENCIAIS ========== */}
+      <div className="space-y-3">
+
+      {/* --- ETAPA 1: DADOS PESSOAIS --- */}
+      <StepSection step={adminSteps[0]} idx={0}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+          <div><span className="text-gray-400 text-xs">Nome</span><p className="font-medium">{driver.nome}</p></div>
+          <div><span className="text-gray-400 text-xs">CPF</span><p className="font-medium">{driver.cpf}</p></div>
+          <div><span className="text-gray-400 text-xs">Telefone</span><p className="font-medium">{driver.telefone || '—'}</p></div>
+          <div><span className="text-gray-400 text-xs">Email</span><p className="font-medium">{driver.email || '—'}</p></div>
+          <div><span className="text-gray-400 text-xs">RG</span><p className="font-medium">{driver.rg || '—'}</p></div>
+          <div><span className="text-gray-400 text-xs">Token</span><p className="font-medium font-mono text-brand-600">{driver.token_externo || '—'}</p></div>
+          <div className="col-span-2 sm:col-span-3"><span className="text-gray-400 text-xs">Endereço</span><p className="font-medium">{driver.endereco_completo || '—'}</p></div>
+        </div>
+        {driver.interesse_marca && !driver.car_id && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 mt-3 text-sm">
+            ⭐ Interesse: <strong>{driver.interesse_marca} {driver.interesse_modelo} {driver.interesse_ano} {driver.interesse_cor}{driver.interesse_placa ? ` (${driver.interesse_placa})` : ''}</strong>
           </div>
+        )}
+        {driver.car_marca && (
+          <div className="mt-3 flex items-center gap-3 bg-brand-50 rounded-lg p-3">
+            <Car className="w-5 h-5 text-brand-600" />
+            <div className="flex-1">
+              <p className="font-medium">{driver.car_marca} {driver.car_modelo}</p>
+              <p className="text-xs text-gray-400">{driver.car_placa} · R$ {fmt(driver.car_valor_semanal)}/sem · Caução: R$ {fmt(driver.car_valor_caucao || 0)}</p>
+            </div>
+            {isAtivo && <button onClick={() => setSwapModal(true)} className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-lg hover:bg-amber-200 flex items-center gap-1"><ArrowRightLeft className="w-3 h-3" /> Trocar</button>}
+          </div>
+        )}
+        <div className="flex gap-2 mt-3">
+          <button onClick={() => { setEditing(!editing); if (editing) initEditForm(driver); }}
+            className="btn-primary text-xs flex items-center gap-1"><Pencil className="w-3 h-3" /> Editar Dados</button>
+          <button onClick={() => setDeleteConfirm(true)} className="text-xs bg-red-50 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-100 flex items-center gap-1"><Trash2 className="w-3 h-3" /> Excluir</button>
         </div>
-      )}
+      </StepSection>
 
-      {driver.status === 'aprovado' && driver.contrato_url && !driver.contrato_confirmado && (
-        <div className="card border-l-4 border-purple-400">
-          <h3 className="font-semibold text-gray-800 mb-2">Confirmar Contrato</h3>
-          <button onClick={handleConfirmContract} className="btn-primary flex items-center gap-2"><Check className="w-4 h-4" /> Confirmar Contrato</button>
-        </div>
-      )}
-
-      {driver.status === 'aprovado' && driver.caucao_pago && driver.contrato_confirmado && (
-        <div className="card border-l-4 border-green-400">
-          <h3 className="font-semibold text-gray-800 mb-2">Ativar Motorista</h3>
-          <button onClick={handleActivate} className="btn-primary flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Ativar</button>
-        </div>
-      )}
-
-      {/* ========== DOCUMENTOS ========== */}
-      <div className="card">
-        <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-brand-600" /> Documentos</h3>
+      {/* --- ETAPA 2: DOCUMENTOS --- */}
+      <StepSection step={adminSteps[1]} idx={1}>
         <input type="file" ref={docInputRef} onChange={handleDocUpload} accept="image/*,application/pdf,.doc,.docx" className="hidden" />
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
           {DOC_TYPES.map(doc => {
             const urlField = { cnh: 'cnh_url', comprovante: 'comprovante_url', selfie: 'selfie_url', perfil_app: 'perfil_app_url', contrato: 'contrato_url' };
             const hasFile = urlField[doc.tipo] ? driver[urlField[doc.tipo]] : false;
-            // Verificar se o último doc deste tipo está fixado
             const latestDoc = adminDocs.find(d => d.tipo === doc.tipo);
             const isFixed = latestDoc?.fixado;
             return (
@@ -460,108 +479,121 @@ export default function AdminDriverDetail() {
                 <p className="text-xs font-medium text-gray-700 mb-1">{doc.label}</p>
                 {isFixed && <span className="text-[9px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full font-medium">🔒 Fixado</span>}
                 <div className="flex items-center justify-center gap-1 mt-1">
-                  {hasFile && (
-                    <button onClick={() => setPreviewUrl(driver[urlField[doc.tipo]])} className="text-[11px] bg-white border text-brand-600 px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                      <Eye className="w-3 h-3" /> Ver
-                    </button>
-                  )}
-                  <button onClick={() => triggerDocUpload(doc.tipo)} disabled={uploading}
-                    className={`text-[11px] px-1.5 py-0.5 rounded flex items-center gap-0.5 ${hasFile ? 'bg-white border text-gray-500' : 'bg-brand-600 text-white'}`}>
-                    <Upload className="w-3 h-3" /> {hasFile ? 'Trocar' : 'Enviar'}
-                  </button>
-                  {hasFile && latestDoc && (
-                    <button onClick={() => handleLockDoc(latestDoc.id, !isFixed)}
-                      title={isFixed ? 'Desfixar documento' : 'Fixar documento (impede motorista de substituir)'}
-                      className={`text-[11px] px-1.5 py-0.5 rounded flex items-center gap-0.5 ${isFixed ? 'bg-amber-200 text-amber-800 hover:bg-amber-300' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-                      {isFixed ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
-                      {isFixed ? 'Desfixar' : 'Fixar'}
-                    </button>
-                  )}
+                  {hasFile && <button onClick={() => setPreviewUrl(driver[urlField[doc.tipo]])} className="text-[11px] bg-white border text-brand-600 px-1.5 py-0.5 rounded flex items-center gap-0.5"><Eye className="w-3 h-3" /> Ver</button>}
+                  <button onClick={() => triggerDocUpload(doc.tipo)} disabled={uploading} className={`text-[11px] px-1.5 py-0.5 rounded flex items-center gap-0.5 ${hasFile ? 'bg-white border text-gray-500' : 'bg-brand-600 text-white'}`}><Upload className="w-3 h-3" /> {hasFile ? 'Trocar' : 'Enviar'}</button>
+                  {hasFile && latestDoc && <button onClick={() => handleLockDoc(latestDoc.id, !isFixed)} className={`text-[11px] px-1.5 py-0.5 rounded flex items-center gap-0.5 ${isFixed ? 'bg-amber-200 text-amber-800' : 'bg-gray-100 text-gray-500'}`}>{isFixed ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3" />} {isFixed ? 'Desfixar' : 'Fixar'}</button>}
                 </div>
               </div>
             );
           })}
         </div>
         {uploading && <p className="text-sm text-brand-600 animate-pulse mb-2">Enviando...</p>}
+
+        {/* Ações de aprovação */}
+        {driver.status === 'em_analise' && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-3">
+            <p className="text-sm font-medium text-yellow-800 mb-2">⚠ Aprovação de Cadastro Pendente</p>
+            <div className="flex gap-3">
+              <button onClick={() => setApproveModal(true)} className="btn-primary flex items-center gap-2 text-sm"><UserCheck className="w-4 h-4" /> Aprovar</button>
+              <button onClick={() => setRejectModal(true)} className="btn-danger flex items-center gap-2 text-sm"><XCircle className="w-4 h-4" /> Reprovar</button>
+            </div>
+          </div>
+        )}
+
         {(adminDocs.length > 0 || driver.documents?.length > 0) && (
-          <details className="text-sm">
-            <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">Histórico ({(adminDocs.length || driver.documents?.length || 0)} arquivos)</summary>
+          <details className="text-sm mt-2">
+            <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">Histórico ({adminDocs.length || driver.documents?.length || 0} arquivos)</summary>
             <div className="mt-2 divide-y divide-gray-100 max-h-48 overflow-auto">
               {(adminDocs.length > 0 ? adminDocs : driver.documents || []).map(doc => (
                 <div key={doc.id} className="flex items-center justify-between py-1.5">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className="text-xs text-gray-600 truncate">{doc.tipo.toUpperCase()} — {doc.nome_arquivo} · {fmtDate(doc.created_at)}</span>
-                    {doc.fixado && <span className="text-[9px] bg-amber-200 text-amber-800 px-1 py-0.5 rounded shrink-0">🔒</span>}
-                  </div>
+                  <span className="text-xs text-gray-600 truncate">{doc.tipo.toUpperCase()} — {doc.nome_arquivo} · {fmtDate(doc.created_at)}</span>
                   <div className="flex items-center gap-1 shrink-0">
                     <button onClick={() => setPreviewUrl(doc.caminho)} className="text-brand-600"><Eye className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => handleLockDoc(doc.id, !doc.fixado)}
-                      title={doc.fixado ? 'Desfixar' : 'Fixar'}
-                      className={`${doc.fixado ? 'text-amber-600' : 'text-gray-400 hover:text-gray-600'}`}>
-                      {doc.fixado ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-                    </button>
+                    <button onClick={() => handleLockDoc(doc.id, !doc.fixado)} className={doc.fixado ? 'text-amber-600' : 'text-gray-400'}>{doc.fixado ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}</button>
                   </div>
                 </div>
               ))}
             </div>
           </details>
         )}
-      </div>
+      </StepSection>
 
-      {/* ========== VISTORIA DE RETIRADA ========== */}
-      {(() => {
-        const vistoriaDocs = adminDocs.filter(d => d.tipo === 'vistoria_retirada');
-        if (vistoriaDocs.length === 0) return null;
-        return (
-          <div className="card">
-            <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-              <Eye className="w-4 h-4 text-orange-600" /> Vistoria de Retirada ({vistoriaDocs.length} fotos)
-            </h3>
+      {/* --- ETAPA 3: CONTRATO --- */}
+      <StepSection step={adminSteps[2]} idx={2}>
+        {driver.car_marca ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-600">Gerar PDF do contrato com dados preenchidos</p>
+              <button onClick={openContractModal} className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 flex items-center gap-2">
+                <FileText className="w-4 h-4" /> Gerar Contrato
+              </button>
+            </div>
+            {driver.contrato_url && (
+              <div className={`flex items-center justify-between p-3 rounded-lg ${driver.contrato_confirmado ? 'bg-green-50 border border-green-200' : 'bg-yellow-50 border border-yellow-200'}`}>
+                <div className="flex items-center gap-2">
+                  {driver.contrato_confirmado ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <Clock className="w-5 h-5 text-yellow-600" />}
+                  <div>
+                    <p className="text-sm font-medium">{driver.contrato_confirmado ? 'Contrato Confirmado ✓' : 'Contrato enviado — aguardando confirmação'}</p>
+                    <button onClick={() => setPreviewUrl(driver.contrato_url)} className="text-xs text-brand-600 flex items-center gap-1"><Eye className="w-3 h-3" /> Visualizar</button>
+                  </div>
+                </div>
+                {!driver.contrato_confirmado && (
+                  <button onClick={handleConfirmContract} className="btn-primary text-xs flex items-center gap-1"><Check className="w-3 h-3" /> Confirmar</button>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400">Atribua um carro ao motorista na Etapa 1 para gerar o contrato.</p>
+        )}
+      </StepSection>
+
+      {/* --- ETAPA 4: CAUÇÃO & ATIVAÇÃO --- */}
+      <StepSection step={adminSteps[3]} idx={3}>
+        <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50">
+          <div>
+            <p className="text-sm text-gray-500">Caução</p>
+            <p className="text-xl font-bold">{driver.caucao_pago ? <span className="text-green-600">✓ Paga</span> : <span className="text-red-600">Pendente — R$ {fmt(driver.car_valor_caucao || 0)}</span>}</p>
+          </div>
+        </div>
+        {isAprovado && driver.caucao_pago && driver.contrato_confirmado && !isAtivo && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-3">
+            <p className="text-sm font-medium text-green-800 mb-2">✅ Tudo pronto para ativar!</p>
+            <button onClick={handleActivate} className="btn-primary flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Ativar Motorista</button>
+          </div>
+        )}
+        {!isAprovado && <p className="text-xs text-gray-400 mt-2">Disponível após aprovação do cadastro</p>}
+      </StepSection>
+
+      {/* --- ETAPA 5: VISTORIA --- */}
+      <StepSection step={adminSteps[4]} idx={4}>
+        {vistoriaDocs.length > 0 ? (
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-2">{vistoriaDocs.length} foto(s) de vistoria</p>
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
               {vistoriaDocs.map(doc => (
                 <div key={doc.id} className="relative group">
-                  <img src={doc.caminho} alt={doc.descricao || 'Vistoria'} className="w-full h-20 object-cover rounded-lg border cursor-pointer hover:opacity-80"
-                    onClick={() => setPreviewUrl(doc.caminho)} />
+                  <img src={doc.caminho} alt={doc.descricao || 'Vistoria'} className="w-full h-20 object-cover rounded-lg border cursor-pointer hover:opacity-80" onClick={() => setPreviewUrl(doc.caminho)} />
                   {doc.fixado && <span className="absolute top-1 right-1 bg-amber-500 text-white rounded-full p-0.5"><Lock className="w-2.5 h-2.5" /></span>}
                   <div className="flex items-center justify-between mt-0.5">
                     <p className="text-[9px] text-gray-500 truncate flex-1">{doc.descricao || doc.nome_arquivo}</p>
-                    <button onClick={() => handleLockDoc(doc.id, !doc.fixado)} title={doc.fixado ? 'Desfixar' : 'Fixar'}
-                      className={`${doc.fixado ? 'text-amber-600' : 'text-gray-400 hover:text-gray-600'}`}>
-                      {doc.fixado ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-                    </button>
+                    <button onClick={() => handleLockDoc(doc.id, !doc.fixado)} className={doc.fixado ? 'text-amber-600' : 'text-gray-400'}>{doc.fixado ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}</button>
                   </div>
                 </div>
               ))}
             </div>
             {!vistoriaDocs.some(d => d.fixado) && (
-              <button onClick={async () => {
-                for (const doc of vistoriaDocs) { await driversAPI.lockDocument(id, doc.id, true); }
-                toast.success('Todas fotos de vistoria fixadas!'); await loadData();
-              }} className="mt-2 text-xs bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg hover:bg-amber-200 flex items-center gap-1">
-                <Lock className="w-3 h-3" /> Fixar Todas as Fotos
-              </button>
+              <button onClick={async () => { for (const doc of vistoriaDocs) { await driversAPI.lockDocument(id, doc.id, true); } toast.success('Todas fixadas!'); await loadData(); }}
+                className="mt-2 text-xs bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg hover:bg-amber-200 flex items-center gap-1"><Lock className="w-3 h-3" /> Fixar Todas</button>
             )}
           </div>
-        );
-      })()}
+        ) : (
+          <p className="text-sm text-gray-400">Nenhuma foto de vistoria enviada pelo motorista ainda.</p>
+        )}
+      </StepSection>
 
-      {/* ========== GERAR CONTRATO ========== */}
-      {driver.car_marca && (
-        <div className="card border border-purple-200 bg-purple-50/30">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold text-gray-800 flex items-center gap-2"><FileText className="w-4 h-4 text-purple-600" /> Contrato de Locação</h3>
-              <p className="text-sm text-gray-500 mt-1">Gera DOCX com dados do motorista e veículo</p>
-            </div>
-            <button onClick={openContractModal} className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 flex items-center gap-2">
-              <FileText className="w-4 h-4" /> Gerar Contrato
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ========== COBRANÇAS SEMANAIS ========== */}
-      <div className="card">
+      {/* --- ETAPA 6: COBRANÇAS --- */}
+      <StepSection step={adminSteps[5]} idx={5}>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2"><Banknote className="w-4 h-4 text-brand-600" /> Cobranças Semanais</h3>
           <div className="flex items-center gap-2">
@@ -703,16 +735,50 @@ export default function AdminDriverDetail() {
             })}
           </div>
         ) : <p className="text-sm text-gray-400">Nenhuma cobrança registrada. Use "Gerar Cobranças" para criar retroativamente.</p>}
-      </div>
 
-      {/* ========== RESCISÃO ========== */}
-      {(driver.status === 'ativo' || driver.status === 'inadimplente') && (
-        <div className="card border border-red-200">
-          <h3 className="font-semibold text-gray-800 mb-1">Rescisão e Acerto Final</h3>
-          <p className="text-sm text-gray-500 mb-3">Gera relatório de retenção do caução.</p>
-          <button onClick={() => setSettlementModal(true)} className="bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-red-700 text-sm">
-            <AlertCircle className="w-4 h-4" /> Iniciar Rescisão
-          </button>
+        {/* Rescisão */}
+        {(driver.status === 'ativo' || driver.status === 'inadimplente') && (
+          <div className="border border-red-200 rounded-lg p-3 mt-3 bg-red-50/30">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-800">Rescisão e Acerto Final</p>
+                <p className="text-xs text-gray-500">Gera relatório de retenção do caução.</p>
+              </div>
+              <button onClick={() => setSettlementModal(true)} className="bg-red-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-2 hover:bg-red-700 text-xs">
+                <AlertCircle className="w-3 h-3" /> Iniciar Rescisão
+              </button>
+            </div>
+          </div>
+        )}
+      </StepSection>
+
+      </div>{/* end space-y-3 steps */}
+
+      {/* Edit form modal-like */}
+      {editing && (
+        <div className="card border-2 border-brand-200 space-y-4">
+          <h3 className="font-semibold text-gray-800 flex items-center gap-2"><User className="w-4 h-4 text-brand-600" /> Editar Dados</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div><label className="block text-xs text-gray-500 mb-1">Nome *</label><input type="text" value={editForm.nome} onChange={e => setEditForm({...editForm, nome: e.target.value})} className="input-field" /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">CPF *</label><input type="text" value={editForm.cpf} onChange={e => setEditForm({...editForm, cpf: e.target.value})} className="input-field" /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">RG</label><input type="text" value={editForm.rg} onChange={e => setEditForm({...editForm, rg: e.target.value})} className="input-field" placeholder="0000000 SSP/SC" /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">Telefone</label><input type="text" value={editForm.telefone} onChange={e => setEditForm({...editForm, telefone: e.target.value})} className="input-field" /></div>
+            <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Email</label><input type="email" value={editForm.email} onChange={e => setEditForm({...editForm, email: e.target.value})} className="input-field" /></div>
+            <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Endereço completo</label><input type="text" value={editForm.endereco_completo} onChange={e => setEditForm({...editForm, endereco_completo: e.target.value})} className="input-field" /></div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div><label className="block text-xs text-gray-500 mb-1"><Car className="w-3.5 h-3.5 inline" /> Carro</label>
+              <select value={editForm.car_id} onChange={e => setEditForm({...editForm, car_id: e.target.value})} className="input-field"><option value="">Nenhum</option>
+                {availableCars.map(c => (<option key={c.id} value={c.id}>{c.marca} {c.modelo} — {c.placa} (R$ {fmt(c.valor_semanal)}/sem){c.id === driver.car_id ? ' ← atual' : ''}</option>))}
+              </select></div>
+            <div><label className="block text-xs text-gray-500 mb-1"><Calendar className="w-3.5 h-3.5 inline" /> Dia cobrança</label>
+              <select value={editForm.dia_cobranca} onChange={e => setEditForm({...editForm, dia_cobranca: e.target.value})} className="input-field">{DIAS_SEMANA.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}</select></div>
+          </div>
+          <div><label className="block text-xs text-gray-500 mb-1">Observações</label><textarea value={editForm.observacoes} onChange={e => setEditForm({...editForm, observacoes: e.target.value})} className="input-field" rows={2} /></div>
+          <div className="flex gap-2">
+            <button onClick={handleSaveEdit} disabled={saving} className="btn-primary flex items-center gap-2">{saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save className="w-4 h-4" />} Salvar</button>
+            <button onClick={() => { setEditing(false); initEditForm(driver); }} className="btn-secondary">Cancelar</button>
+          </div>
         </div>
       )}
 

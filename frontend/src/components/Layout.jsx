@@ -7,8 +7,7 @@ import {
 } from 'lucide-react';
 
 const driverMenu = [
-  { path: '/motorista', label: 'Painel', icon: LayoutDashboard },
-  { path: '/motorista/documentos', label: 'Documentos', icon: FileText },
+  { path: '/motorista', label: 'Meu Processo', icon: LayoutDashboard },
   { path: '/motorista/pagamentos', label: 'Pagamentos', icon: CreditCard },
 ];
 
