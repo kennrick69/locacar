@@ -1419,53 +1419,7 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
       INSERT INTO documents (user_id, tipo, nome_arquivo, caminho, mime_type, tamanho)
       VALUES ($1, 'contrato_gerado', $2, $3, 'application/pdf', $4)
     `, [driver.user_id, nomeArq, caminho, buffer.length]);
-
-    // Tentar enviar email com contrato
-    try {
-      const smtpUser = process.env.SMTP_USER;
-      const smtpPass = process.env.SMTP_PASS;
-      if (smtpUser && smtpPass && driver.email) {
-        const nodemailer = require('nodemailer');
-        const transporter = nodemailer.createTransport({
-          host: process.env.SMTP_HOST || 'smtp.gmail.com',
-          port: parseInt(process.env.SMTP_PORT || '587'),
-          secure: false,
-          auth: { user: smtpUser, pass: smtpPass },
-        });
-
-        const veiculo = (driver.car_marca || '') + ' ' + (driver.car_modelo || '') + ' ' + (driver.car_placa || '');
-        await transporter.sendMail({
-          from: `"LocaCar" <${smtpUser}>`,
-          to: driver.email,
-          subject: 'LocaCar - Seu Contrato de Locacao',
-          html: `
-            <h2>Ola ${driver.nome}!</h2>
-            <p>Seu contrato de locacao do veiculo <strong>${veiculo}</strong> esta em anexo.</p>
-            <h3>Instrucoes para assinatura:</h3>
-            <ol>
-              <li>Baixe o PDF anexo</li>
-              <li>Acesse <a href="https://assinador.iti.br">assinador.iti.br</a> ou use o app <strong>Gov.br</strong></li>
-              <li>Faca login com sua conta Gov.br (nivel Prata ou Ouro)</li>
-              <li>Selecione o PDF do contrato e assine digitalmente</li>
-              <li>Acesse o LocaCar com seu token <strong>${driver.token || ''}</strong></li>
-              <li>Na area de Documentos, faca upload do contrato assinado</li>
-              <li>Envie tambem uma selfie segurando seu documento (CNH)</li>
-            </ol>
-            <p>Qualquer duvida, entre em contato!</p>
-            <p><strong>LocaCar</strong></p>
-          `,
-          attachments: [{
-            filename: nomeArq,
-            content: buffer,
-            contentType: 'application/pdf',
-          }],
-        });
-        console.log(`Email com contrato enviado para ${driver.email}`);
-      }
-    } catch (emailErr) {
-      console.error('Erro ao enviar email do contrato:', emailErr.message);
-      // Nao bloqueia a geracao do contrato
-    }
+    console.log('[CONTRATO] Documento salvo no banco');
 
     // Monta link WhatsApp
     const telefone = (driver.telefone || '').replace(/\D/g, '');
@@ -1486,15 +1440,66 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
       whatsappLink = `https://wa.me/${tel}?text=${msg}`;
     }
 
-    // Envia o arquivo PDF + info extra
+    // ENVIA O PDF PRIMEIRO (antes do email!)
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${nomeArq}"`);
     res.setHeader('X-WhatsApp-Link', whatsappLink || '');
     res.send(buffer);
+    console.log('[CONTRATO] PDF enviado ao cliente');
+
+    // Tenta enviar email em BACKGROUND (fire and forget, não bloqueia)
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+    if (smtpUser && smtpPass && driver.email) {
+      const nodemailer = require('nodemailer');
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        port: parseInt(process.env.SMTP_PORT || '587'),
+        secure: false,
+        auth: { user: smtpUser, pass: smtpPass },
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 10000,
+      });
+
+      const veiculo = (driver.car_marca || '') + ' ' + (driver.car_modelo || '') + ' ' + (driver.car_placa || '');
+      transporter.sendMail({
+        from: `"LocaCar" <${smtpUser}>`,
+        to: driver.email,
+        subject: 'LocaCar - Seu Contrato de Locacao',
+        html: `
+          <h2>Ola ${driver.nome}!</h2>
+          <p>Seu contrato de locacao do veiculo <strong>${veiculo}</strong> esta em anexo.</p>
+          <h3>Instrucoes para assinatura:</h3>
+          <ol>
+            <li>Baixe o PDF anexo</li>
+            <li>Acesse <a href="https://assinador.iti.br">assinador.iti.br</a> ou use o app <strong>Gov.br</strong></li>
+            <li>Faca login com sua conta Gov.br (nivel Prata ou Ouro)</li>
+            <li>Selecione o PDF do contrato e assine digitalmente</li>
+            <li>Acesse o LocaCar com seu token <strong>${driver.token || ''}</strong></li>
+            <li>Na area de Documentos, faca upload do contrato assinado</li>
+            <li>Envie tambem uma selfie segurando seu documento (CNH)</li>
+          </ol>
+          <p>Qualquer duvida, entre em contato!</p>
+          <p><strong>LocaCar</strong></p>
+        `,
+        attachments: [{
+          filename: nomeArq,
+          content: buffer,
+          contentType: 'application/pdf',
+        }],
+      }).then(() => {
+        console.log(`[CONTRATO] Email enviado para ${driver.email}`);
+      }).catch(emailErr => {
+        console.error('[CONTRATO] Erro email (background):', emailErr.message);
+      });
+    }
   } catch (err) {
     console.error('[CONTRATO] ERRO:', err.message);
     console.error('[CONTRATO] Stack:', err.stack);
-    res.status(500).json({ error: err.message || 'Erro interno ao gerar contrato' });
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message || 'Erro interno ao gerar contrato' });
+    }
   }
 });
 
