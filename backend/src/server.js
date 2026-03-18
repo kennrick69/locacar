@@ -337,21 +337,44 @@ async function start() {
       await pool.query('INSERT INTO installment_fees (parcelas, taxa_percentual) VALUES ($1, $2) ON CONFLICT (parcelas) DO NOTHING', [p, t]);
     }
 
-    // Seed cláusulas do contrato (re-seed se texto curto = versão antiga)
+    // Seed cláusulas do contrato — SEMPRE verifica se precisa atualizar
     const clauseCount = await pool.query('SELECT COUNT(*) FROM contract_clauses');
-    const longestClause = await pool.query('SELECT MAX(LENGTH(conteudo)) as maxlen FROM contract_clauses');
-    const maxLen = parseInt(longestClause.rows[0]?.maxlen || 0);
-    if (parseInt(clauseCount.rows[0].count) === 0 || maxLen < 500) {
-      // Limpa cláusulas antigas (versão resumida) e re-seed com texto integral
-      if (maxLen > 0 && maxLen < 500) {
-        await pool.query('DELETE FROM contract_clauses');
-        console.log('🔄 Cláusulas antigas (resumidas) removidas, re-seedando com texto integral...');
+    const clauses = require('./config/defaultClauses');
+    
+    let needsReseed = false;
+    const count = parseInt(clauseCount.rows[0].count);
+    
+    if (count === 0) {
+      needsReseed = true;
+      console.log('📝 Nenhuma cláusula encontrada, seedando...');
+    } else {
+      // Verifica se texto é a versão completa (pega a maior cláusula esperada)
+      const longestExpected = clauses.reduce((max, c) => Math.max(max, c[2].length), 0);
+      const longestDB = await pool.query('SELECT MAX(LENGTH(conteudo)) as maxlen FROM contract_clauses');
+      const dbMaxLen = parseInt(longestDB.rows[0]?.maxlen || 0);
+      
+      // Se a maior cláusula no banco é menos de 70% do esperado, é versão antiga
+      if (dbMaxLen < longestExpected * 0.7) {
+        needsReseed = true;
+        console.log(`🔄 Cláusulas abreviadas detectadas (DB: ${dbMaxLen} chars, esperado: ${longestExpected}). Re-seedando...`);
       }
-      const clauses = require('./config/defaultClauses');
+      
+      // Verifica acentos
+      if (!needsReseed) {
+        const accentCheck = await pool.query("SELECT titulo FROM contract_clauses WHERE ordem = 1 LIMIT 1");
+        if (accentCheck.rows.length > 0 && !accentCheck.rows[0].titulo.includes('Á')) {
+          needsReseed = true;
+          console.log('🔄 Cláusulas sem acentos nos títulos, re-seedando...');
+        }
+      }
+    }
+
+    if (needsReseed) {
+      await pool.query('DELETE FROM contract_clauses');
       for (const [ordem, titulo, conteudo] of clauses) {
         await pool.query('INSERT INTO contract_clauses (ordem, titulo, conteudo) VALUES ($1, $2, $3)', [ordem, titulo, conteudo]);
       }
-      console.log('✅ Cláusulas do contrato seedadas (texto integral).');
+      console.log('✅ Cláusulas do contrato seedadas (texto integral com acentos).');
     }
 
     console.log('✅ Settings e taxas OK.');
