@@ -1427,15 +1427,15 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
     if (telefone.length >= 10) {
       const tel = telefone.startsWith('55') ? telefone : '55' + telefone;
       const msg = encodeURIComponent(
-        `Ola ${driver.nome}! Seu contrato de locacao do veiculo ${(driver.car_marca || '')} ${(driver.car_modelo || '')} esta pronto.\n\n` +
-        `*Instrucoes:*\n` +
-        `1. Baixe o PDF do contrato (enviado por email ou disponivel no sistema)\n` +
+        `Olá ${driver.nome}! Seu contrato de locação do veículo ${(driver.car_marca || '')} ${(driver.car_modelo || '')} está pronto.\n\n` +
+        `*Instruções:*\n` +
+        `1. Baixe o PDF do contrato (enviado por email ou disponível no sistema)\n` +
         `2. Acesse assinador.iti.br ou use o app Gov.br\n` +
         `3. Assine digitalmente o contrato\n` +
-        `4. Acesse o LocaCar com seu token: *${driver.token || ''}*\n` +
-        `5. Faca upload do contrato assinado\n` +
+        `4. Acesse o LocaCar com seu token: *${driver.token_externo || ''}*\n` +
+        `5. Faça upload do contrato assinado\n` +
         `6. Envie uma selfie segurando sua CNH\n\n` +
-        `Qualquer duvida, estou a disposicao!`
+        `Qualquer dúvida, estou à disposição!`
       );
       whatsappLink = `https://wa.me/${tel}?text=${msg}`;
     }
@@ -1468,19 +1468,19 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
         to: driver.email,
         subject: 'LocaCar - Seu Contrato de Locacao',
         html: `
-          <h2>Ola ${driver.nome}!</h2>
-          <p>Seu contrato de locacao do veiculo <strong>${veiculo}</strong> esta em anexo.</p>
-          <h3>Instrucoes para assinatura:</h3>
+          <h2>Olá ${driver.nome}!</h2>
+          <p>Seu contrato de locação do veículo <strong>${veiculo}</strong> está em anexo.</p>
+          <h3>Instruções para assinatura:</h3>
           <ol>
             <li>Baixe o PDF anexo</li>
             <li>Acesse <a href="https://assinador.iti.br">assinador.iti.br</a> ou use o app <strong>Gov.br</strong></li>
-            <li>Faca login com sua conta Gov.br (nivel Prata ou Ouro)</li>
+            <li>Faça login com sua conta Gov.br (nível Prata ou Ouro)</li>
             <li>Selecione o PDF do contrato e assine digitalmente</li>
-            <li>Acesse o LocaCar com seu token <strong>${driver.token || ''}</strong></li>
-            <li>Na area de Documentos, faca upload do contrato assinado</li>
-            <li>Envie tambem uma selfie segurando seu documento (CNH)</li>
+            <li>Acesse o LocaCar com seu token <strong>${driver.token_externo || ''}</strong></li>
+            <li>Na área de Documentos, faça upload do contrato assinado</li>
+            <li>Envie também uma selfie segurando seu documento (CNH)</li>
           </ol>
-          <p>Qualquer duvida, entre em contato!</p>
+          <p>Qualquer dúvida, entre em contato!</p>
           <p><strong>LocaCar</strong></p>
         `,
         attachments: [{
