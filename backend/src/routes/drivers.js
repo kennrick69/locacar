@@ -1324,6 +1324,7 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
   try {
     const driverId = req.params.id;
     const extraData = req.body;
+    console.log('[CONTRATO] Iniciando geração para driver:', driverId);
 
     // Busca dados do motorista
     const driverRes = await pool.query(`
@@ -1339,6 +1340,9 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
 
     if (driverRes.rows.length === 0) return res.status(404).json({ error: 'Motorista não encontrado' });
     const driver = driverRes.rows[0];
+    console.log('[CONTRATO] Motorista:', driver.nome, '| Carro:', driver.car_marca, driver.car_modelo);
+
+    if (!driver.car_id) return res.status(400).json({ error: 'Motorista sem carro atribuído' });
 
     // Busca dados do locador (settings)
     const settingsRes = await pool.query(
@@ -1346,6 +1350,7 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
     );
     const settings = {};
     settingsRes.rows.forEach(r => { settings[r.chave] = r.valor; });
+    console.log('[CONTRATO] Settings locador encontradas:', Object.keys(settings).length);
 
     // Auto-gerar extenso
     const { valorPorExtenso } = require('../utils/numberToWords');
@@ -1383,19 +1388,29 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
     // Buscar cláusulas ativas do banco
     const clausesRes = await pool.query('SELECT titulo, conteudo FROM contract_clauses WHERE ativo = true ORDER BY ordem');
     const clauses = clausesRes.rows;
+    console.log('[CONTRATO] Cláusulas encontradas:', clauses.length);
 
+    if (clauses.length === 0) {
+      return res.status(400).json({ error: 'Nenhuma cláusula de contrato cadastrada. Acesse Configurações > Cláusulas e adicione as cláusulas.' });
+    }
+
+    console.log('[CONTRATO] Gerando PDF...');
     const buffer = await gerarContrato(data, clauses);
+    console.log('[CONTRATO] PDF gerado, tamanho:', buffer.length, 'bytes');
 
     // Salva o contrato como arquivo PDF
     const fs = require('fs');
-    const path = require('path');
-    const uploadsDir = path.join(__dirname, '..', '..', 'uploads', 'contracts');
+    const pathMod = require('path');
+    const uploadsDir = process.env.UPLOADS_DIR
+      ? pathMod.join(process.env.UPLOADS_DIR, 'contracts')
+      : pathMod.join(__dirname, '..', '..', 'uploads', 'contracts');
     if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
     const nomeArq = `contrato_${driver.nome?.replace(/\s+/g, '_')}.pdf`;
     const fileName = `contrato_${driverId}_${Date.now()}.pdf`;
-    const filePath = path.join(uploadsDir, fileName);
+    const filePath = pathMod.join(uploadsDir, fileName);
     fs.writeFileSync(filePath, buffer);
+    console.log('[CONTRATO] Arquivo salvo:', filePath);
 
     const caminho = `/uploads/contracts/${fileName}`;
 
@@ -1477,8 +1492,9 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
     res.setHeader('X-WhatsApp-Link', whatsappLink || '');
     res.send(buffer);
   } catch (err) {
-    console.error('Erro ao gerar contrato:', err);
-    res.status(500).json({ error: err.message || 'Erro interno' });
+    console.error('[CONTRATO] ERRO:', err.message);
+    console.error('[CONTRATO] Stack:', err.stack);
+    res.status(500).json({ error: err.message || 'Erro interno ao gerar contrato' });
   }
 });
 

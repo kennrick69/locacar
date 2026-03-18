@@ -205,7 +205,21 @@ export default function AdminDriverDetail() {
         toast.success('Contrato PDF gerado e email enviado!');
       }
       setContractModal(false);
-    } catch (err) { toast.error('Erro ao gerar contrato'); }
+    } catch (err) {
+      // responseType blob - precisa ler o erro do blob
+      let msg = 'Erro ao gerar contrato';
+      try {
+        if (err.response?.data instanceof Blob) {
+          const text = await err.response.data.text();
+          const json = JSON.parse(text);
+          msg = json.error || msg;
+        } else if (err.response?.data?.error) {
+          msg = err.response.data.error;
+        }
+      } catch (_) {}
+      console.error('Erro contrato:', err.response?.status, msg);
+      toast.error(msg);
+    }
     finally { setGeneratingContract(false); }
   };
 
