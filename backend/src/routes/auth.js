@@ -213,25 +213,42 @@ router.post('/token-login', async (req, res) => {
  * GET /api/auth/cep/:cep
  * Proxy para ViaCEP (evita bloqueio de CSP no frontend)
  */
-router.get('/cep/:cep', (req, res) => {
+router.get('/cep/:cep', async (req, res) => {
   const cep = req.params.cep.replace(/\D/g, '');
   if (cep.length !== 8) return res.status(400).json({ error: 'CEP inválido' });
 
   const https = require('https');
-  https.get(`https://viacep.com.br/ws/${cep}/json/`, (response) => {
-    let data = '';
-    response.on('data', (chunk) => { data += chunk; });
-    response.on('end', () => {
-      try {
-        res.json(JSON.parse(data));
-      } catch {
-        res.status(500).json({ error: 'Erro ao processar CEP' });
-      }
-    });
-  }).on('error', (err) => {
-    console.error('Erro ao buscar CEP:', err);
-    res.status(500).json({ error: 'Erro ao buscar CEP' });
+
+  const fetchUrl = (url) => new Promise((resolve, reject) => {
+    https.get(url, (response) => {
+      let data = '';
+      response.on('data', (chunk) => { data += chunk; });
+      response.on('end', () => {
+        try { resolve(JSON.parse(data)); } catch { reject(new Error('Parse error')); }
+      });
+    }).on('error', reject);
   });
+
+  // 1) BrasilAPI (primário)
+  try {
+    const br = await fetchUrl(`https://brasilapi.com.br/api/cep/v1/${cep}`);
+    if (br && br.street) {
+      return res.json({
+        cep: br.cep, logradouro: br.street, complemento: '',
+        bairro: br.neighborhood, localidade: br.city, uf: br.state
+      });
+    }
+  } catch (e) { console.log('BrasilAPI falhou, tentando ViaCEP...', e.message); }
+
+  // 2) ViaCEP (fallback)
+  try {
+    const via = await fetchUrl(`https://viacep.com.br/ws/${cep}/json/`);
+    if (via && !via.erro) {
+      return res.json(via);
+    }
+  } catch (e) { console.log('ViaCEP também falhou:', e.message); }
+
+  res.status(404).json({ error: 'CEP não encontrado' });
 });
 
 module.exports = router;
