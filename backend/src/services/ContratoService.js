@@ -2,12 +2,12 @@ const PDFDocument = require('pdfkit');
 
 /**
  * Gera contrato de locação de veículo em PDF
- * Formatação próxima ao DOCX original (~12-13 páginas)
+ * v3 - Sem RG, formatação expandida (~15+ páginas com 15 cláusulas)
  */
 async function gerarContrato(data, clauses) {
   const {
-    locador_nome, locador_rg, locador_cpf, locador_endereco, locador_email,
-    locatario_nome, locatario_rg, locatario_cpf, locatario_endereco,
+    locador_nome, locador_cpf, locador_endereco, locador_email,
+    locatario_nome, locatario_cpf, locatario_endereco,
     veiculo_marca_modelo, veiculo_cor, veiculo_ano, veiculo_placa, veiculo_renavam,
     valor_semanal, valor_semanal_extenso, dia_pagamento, valor_caucao, valor_caucao_extenso,
     cidade_comarca, data_contrato
@@ -47,12 +47,11 @@ async function gerarContrato(data, clauses) {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    // Formatação próxima ao DOCX original (fonte 12, espaçamento 1.5)
     const bodySize = 12;
     const titleSize = 13;
     const headerSize = 16;
-    const lineGap = 5;      // espaçamento entre linhas (~1.5 no Word)
-    const paraSpacing = 0.8; // espaço entre parágrafos
+    const lineGap = 5;
+    const paraSpacing = 0.8;
 
     const chk = (n = 120) => { if (doc.y + n > doc.page.height - 80) doc.addPage(); };
 
@@ -61,11 +60,11 @@ async function gerarContrato(data, clauses) {
        .text('CONTRATO DE LOCAÇÃO DE VEÍCULO AUTOMOTOR', { align: 'center', lineGap: 4 });
     doc.moveDown(2);
 
-    // ======= PARTES =======
+    // ======= PARTES (sem RG) =======
     doc.font('Helvetica-Bold').fontSize(bodySize)
        .text(locador_nome, { continued: true, align: 'justify', lineGap });
     doc.font('Helvetica')
-       .text(', com documento de identidade nº ' + locador_rg + ', inscrito no CPF nº ' + locador_cpf + ', residente e domiciliado em ' + locador_endereco + ', e-mail ' + locador_email + ', ', { continued: true });
+       .text(', inscrito no CPF nº ' + locador_cpf + ', residente e domiciliado em ' + locador_endereco + ', e-mail ' + locador_email + ', ', { continued: true });
     doc.font('Helvetica-Bold')
        .text('ora denominado LOCADOR', { continued: true });
     doc.font('Helvetica')
@@ -73,7 +72,7 @@ async function gerarContrato(data, clauses) {
     doc.font('Helvetica-Bold')
        .text(locatario_nome, { continued: true });
     doc.font('Helvetica')
-       .text(', com documento de identidade nº ' + (locatario_rg || '_______________') + ', inscrito no CPF nº ' + locatario_cpf + ', residente e domiciliado em ' + (locatario_endereco || '_______________________________________________') + ', ', { continued: true });
+       .text(', inscrito no CPF nº ' + locatario_cpf + ', residente e domiciliado em ' + (locatario_endereco || '_______________________________________________') + ', ', { continued: true });
     doc.font('Helvetica-Bold')
        .text('ora denominado LOCATÁRIO', { continued: true });
     doc.font('Helvetica')
@@ -84,13 +83,11 @@ async function gerarContrato(data, clauses) {
     for (const clause of clauses) {
       chk(140);
 
-      // Título da cláusula
       doc.moveDown(paraSpacing);
       doc.font('Helvetica-Bold').fontSize(titleSize)
          .text(clause.titulo, { align: 'justify', lineGap: 4 });
       doc.moveDown(0.8);
 
-      // Conteúdo — substituir placeholders e renderizar
       const content = replaceAll(clause.conteudo);
       const lines = content.split('\n');
 

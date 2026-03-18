@@ -1363,12 +1363,10 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
 
     const data = {
       locador_nome: settings.locador_nome || 'NOME DO LOCADOR',
-      locador_rg: settings.locador_rg || '_______________',
       locador_cpf: settings.locador_cpf || '_______________',
       locador_endereco: settings.locador_endereco || '_______________',
       locador_email: settings.locador_email || '_______________',
       locatario_nome: driver.nome,
-      locatario_rg: extraData.locatario_rg || driver.rg || '_______________',
       locatario_cpf: driver.cpf,
       locatario_endereco: extraData.locatario_endereco || driver.endereco_completo || '_______________',
       veiculo_marca_modelo: (driver.car_marca || '') + ' ' + (driver.car_modelo || ''),

@@ -183,7 +183,7 @@ export default function AdminDriverDetail() {
   const handleSettlement = async () => { setProcessing(true); try { await fetch(`/api/drivers/${id}/settlement`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('locacar_token')}` }, body: JSON.stringify(settlementForm) }); toast.success('Rescisão processada!'); setSettlementModal(false); await loadData(); } catch (e) { toast.error('Erro na rescisão'); } finally { setProcessing(false); } };
 
   const openContractModal = () => {
-    setContractForm({ locatario_rg: driver.rg || '', locatario_endereco: driver.endereco_completo || '', data_contrato: new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }) });
+    setContractForm({ locatario_endereco: driver.endereco_completo || '', data_contrato: new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }) });
     setContractModal(true);
   };
 
@@ -1056,7 +1056,6 @@ export default function AdminDriverDetail() {
             </div>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-xs text-gray-500 mb-1">RG do locatário</label><input type="text" value={contractForm.locatario_rg} onChange={e => setContractForm({...contractForm, locatario_rg: e.target.value})} className="input-field" /></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Data do contrato</label><input type="text" value={contractForm.data_contrato} onChange={e => setContractForm({...contractForm, data_contrato: e.target.value})} className="input-field" /></div>
               </div>
               <div><label className="block text-xs text-gray-500 mb-1">Endereço completo do locatário</label><input type="text" value={contractForm.locatario_endereco} onChange={e => setContractForm({...contractForm, locatario_endereco: e.target.value})} className="input-field" /></div>
