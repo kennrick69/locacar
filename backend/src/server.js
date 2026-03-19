@@ -16,7 +16,9 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
-    ? (process.env.FRONTEND_URL || '*').split(',').map(u => u.trim()).filter(Boolean)
+    ? (process.env.FRONTEND_URL
+        ? process.env.FRONTEND_URL.split(',').map(u => u.trim()).filter(Boolean)
+        : false)
     : ['http://localhost:5173', 'http://localhost:3000'],
   credentials: true,
 }));
@@ -27,6 +29,9 @@ app.use('/api/', limiter);
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30, message: { error: 'Muitas tentativas.' } });
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
+
+const tokenLoginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, message: { error: 'Muitas tentativas de login.' } });
+app.use('/api/auth/token-login', tokenLoginLimiter);
 
 // ========== BODY ==========
 app.use(express.json({ limit: '10mb' }));
@@ -45,8 +50,14 @@ app.use('/api/webhooks', require('./routes/webhooks'));
 app.use('/api/contract-clauses', require('./routes/contractClauses'));
 
 // ========== HEALTH ==========
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), env: process.env.NODE_ENV || 'development' });
+app.get('/api/health', async (req, res) => {
+  try {
+    const pool = require('./config/database');
+    await pool.query('SELECT 1');
+    res.json({ status: 'ok', db: 'ok', timestamp: new Date().toISOString(), env: process.env.NODE_ENV || 'development' });
+  } catch {
+    res.status(503).json({ status: 'degraded', db: 'error', timestamp: new Date().toISOString() });
+  }
 });
 
 // ========== RAIZ / FRONTEND ==========
@@ -258,6 +269,19 @@ async function start() {
         await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS valor_pago_total DECIMAL(10,2) DEFAULT 0`);
         await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS saldo_devedor DECIMAL(10,2) DEFAULT 0`);
 
+        // Indexes para performance
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_driver_profiles_user_id ON driver_profiles (user_id)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_driver_profiles_status ON driver_profiles (status)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_weekly_charges_driver_id ON weekly_charges (driver_id)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_payments_user_id ON payments (user_id)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_payments_driver_id ON payments (driver_id)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents (user_id)`);
+
+        // Constraint para evitar cobranças duplicadas
+        try {
+          await pool.query(`ALTER TABLE weekly_charges ADD CONSTRAINT unique_driver_week UNIQUE (driver_id, semana_ref)`);
+        } catch (_) { /* já existe */ }
+
         // Fixação de documentos pelo admin
         await pool.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS fixado BOOLEAN DEFAULT false`);
         await pool.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS descricao TEXT`);
@@ -301,9 +325,10 @@ async function start() {
   try {
     const adminCheck = await pool.query("SELECT id FROM users WHERE email = 'admin@locacar.com'");
     if (adminCheck.rows.length === 0) {
-      const hash = await bcrypt.hash('admin123', 10);
+      const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+      const hash = await bcrypt.hash(adminPassword, 10);
       await pool.query("INSERT INTO users (nome, email, senha_hash, role) VALUES ('Administrador', 'admin@locacar.com', $1, 'admin')", [hash]);
-      console.log('✅ Admin criado: admin@locacar.com / admin123');
+      console.log('✅ Admin criado: admin@locacar.com');
     } else {
       console.log('✅ Admin OK.');
     }

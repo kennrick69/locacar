@@ -34,14 +34,19 @@ services:
       DB_NAME: locacar
       DB_USER: locacar
       DB_PASS: ${DB_PASS:-locacar_secret}
-      JWT_SECRET: ${JWT_SECRET:-trocar_em_producao}
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
       MP_PUBLIC_KEY: ${MP_PUBLIC_KEY:-}
       MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}
       MP_WEBHOOK_URL: ${MP_WEBHOOK_URL:-}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      FRONTEND_URL: ${FRONTEND_URL}
       EXTERNAL_API_URL: ${EXTERNAL_API_URL:-}
       EXTERNAL_API_KEY: ${EXTERNAL_API_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
     volumes:
       - uploads:/app/uploads
     ports:

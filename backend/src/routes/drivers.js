@@ -2,6 +2,7 @@ const express = require('express');
 const pool = require('../config/database');
 const { auth, driverOnly, adminOnly } = require('../middleware/auth');
 const { upload, setUploadDir } = require('../middleware/upload');
+const { sendEmail } = require('../utils/email');
 
 const router = express.Router();
 
@@ -1164,6 +1165,14 @@ router.post('/:id/settlement', auth, adminOnly, async (req, res) => {
     }
 
     const driver = driverRes.rows[0];
+
+    // Idempotencia: impede acerto duplo
+    const existingSettlement = await client.query('SELECT id FROM final_settlements WHERE driver_id = $1', [driverId]);
+    if (existingSettlement.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Acerto final já realizado para este motorista' });
+    }
+
     const valorCaucao = parseFloat(driver.car_valor_caucao || 0);
     const debitos = parseFloat(debitos_pendentes || 0);
     const multas = parseFloat(multas_acumuladas || 0);
@@ -1445,24 +1454,10 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
     res.send(buffer);
     console.log('[CONTRATO] PDF enviado ao cliente');
 
-    // Tenta enviar email em BACKGROUND (fire and forget, não bloqueia)
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
-    if (smtpUser && smtpPass && driver.email) {
-      const nodemailer = require('nodemailer');
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || 'smtp.gmail.com',
-        port: parseInt(process.env.SMTP_PORT || '587'),
-        secure: false,
-        auth: { user: smtpUser, pass: smtpPass },
-        connectionTimeout: 5000,
-        greetingTimeout: 5000,
-        socketTimeout: 10000,
-      });
-
-      const veiculo = (driver.car_marca || '') + ' ' + (driver.car_modelo || '') + ' ' + (driver.car_placa || '');
-      transporter.sendMail({
-        from: `"LocaCar" <${smtpUser}>`,
+    // Envia email em background via PHPMailer
+    if (process.env.SMTP_USER && process.env.SMTP_PASS && driver.email) {
+      const veiculo = [driver.car_marca, driver.car_modelo, driver.car_placa].filter(Boolean).join(' ');
+      sendEmail({
         to: driver.email,
         subject: 'LocaCar - Seu Contrato de Locacao',
         html: `
@@ -1481,15 +1476,11 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
           <p>Qualquer dúvida, entre em contato!</p>
           <p><strong>LocaCar</strong></p>
         `,
-        attachments: [{
-          filename: nomeArq,
-          content: buffer,
-          contentType: 'application/pdf',
-        }],
+        attachment: { filename: nomeArq, buffer, mime: 'application/pdf' },
       }).then(() => {
-        console.log(`[CONTRATO] Email enviado para ${driver.email}`);
+        console.log(`[CONTRATO] Email enviado via PHP para ${driver.email}`);
       }).catch(emailErr => {
-        console.error('[CONTRATO] Erro email (background):', emailErr.message);
+        console.error('[CONTRATO] Erro email PHP (background):', emailErr.message);
       });
     }
   } catch (err) {

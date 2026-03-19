@@ -36,7 +36,8 @@ router.post('/mp', async (req, res) => {
           const hash = crypto.createHmac('sha256', webhookSecret).update(manifest).digest('hex');
 
           if (hash !== v1) {
-            console.warn('[WEBHOOK MP] Assinatura inválida! Processando mesmo assim por segurança.');
+            console.warn('[WEBHOOK MP] Assinatura inválida! Requisição ignorada.');
+            return;
           }
         }
       }
