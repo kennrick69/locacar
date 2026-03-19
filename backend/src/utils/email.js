@@ -1,4 +1,4 @@
-const { execFile } = require('child_process');
+const { spawn } = require('child_process');
 const path = require('path');
 
 const phpScript = path.join(__dirname, '..', '..', 'php', 'send_email.php');
@@ -39,23 +39,39 @@ function sendEmail(params) {
       payload.attachment_mime     = params.attachment.mime || 'application/pdf';
     }
 
-    execFile(
-      'php',
-      [phpScript],
-      { input: JSON.stringify(payload), timeout: 30000, maxBuffer: 10 * 1024 * 1024 },
-      (err, stdout, stderr) => {
-        if (err) {
-          return reject(new Error(stderr || err.message));
-        }
+    const child = spawn('php', [phpScript], { timeout: 30000 });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (d) => { stdout += d; });
+    child.stderr.on('data', (d) => { stderr += d; });
+
+    child.on('error', (err) => {
+      reject(new Error('Falha ao executar PHP: ' + err.message));
+    });
+
+    child.on('close', (code) => {
+      if (code !== 0) {
+        // Tenta extrair a mensagem de erro do JSON que o PHP escreve no stdout
         try {
           const result = JSON.parse(stdout.trim());
-          if (result.success) resolve(result);
-          else reject(new Error(result.error || 'Erro desconhecido no envio PHP'));
+          return reject(new Error(result.error || stderr || `PHP saiu com código ${code}`));
         } catch {
-          reject(new Error('Resposta PHP inválida: ' + stdout));
+          return reject(new Error(stderr || stdout || `PHP saiu com código ${code}`));
         }
       }
-    );
+      try {
+        const result = JSON.parse(stdout.trim());
+        if (result.success) resolve(result);
+        else reject(new Error(result.error || 'Erro desconhecido no envio PHP'));
+      } catch {
+        reject(new Error('Resposta PHP inválida: ' + stdout));
+      }
+    });
+
+    child.stdin.write(JSON.stringify(payload));
+    child.stdin.end();
   });
 }
 
