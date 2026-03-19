@@ -5,19 +5,12 @@
 const { MercadoPagoConfig, Payment, Preference } = require('mercadopago');
 
 class MercadoPagoService {
-  constructor() {
-    this.client = new MercadoPagoConfig({
-      accessToken: process.env.MP_ACCESS_TOKEN,
-    });
+  constructor(accessToken) {
+    this.client = new MercadoPagoConfig({ accessToken });
     this.payment = new Payment(this.client);
     this.preference = new Preference(this.client);
   }
 
-  /**
-   * Gera pagamento Pix com QR Code
-   * @param {object} params - { valor, descricao, email, cpf, nome }
-   * @returns {object} { id, qr_code, qr_code_base64, ticket_url, expiration }
-   */
   async criarPix({ valor, descricao, email, cpf, nome }) {
     try {
       const body = {
@@ -49,31 +42,19 @@ class MercadoPagoService {
     }
   }
 
-  /**
-   * Cria preferência de pagamento (Checkout Pro) para cartão
-   * Retorna URL de checkout onde o motorista completa o pagamento
-   * @param {object} params - { valor, descricao, parcelas_max, email, external_reference }
-   * @returns {object} { preference_id, init_point, sandbox_init_point }
-   */
   async criarPreferenciaCartao({ valor, descricao, parcelas_max = 12, email, external_reference }) {
     try {
       const body = {
-        items: [
-          {
-            title: descricao || 'LocaCar - Pagamento',
-            quantity: 1,
-            unit_price: parseFloat(valor),
-            currency_id: 'BRL',
-          },
-        ],
-        payer: {
-          email: email,
-        },
+        items: [{
+          title: descricao || 'LocaCar - Pagamento',
+          quantity: 1,
+          unit_price: parseFloat(valor),
+          currency_id: 'BRL',
+        }],
+        payer: { email },
         payment_methods: {
           installments: parcelas_max,
-          excluded_payment_types: [
-            { id: 'ticket' },  // exclui boleto
-          ],
+          excluded_payment_types: [{ id: 'ticket' }],
         },
         back_urls: {
           success: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/motorista/pagamentos?status=success`,
@@ -99,11 +80,6 @@ class MercadoPagoService {
     }
   }
 
-  /**
-   * Consulta status de um pagamento pelo ID
-   * @param {string} paymentId
-   * @returns {object} payment data
-   */
   async consultarPagamento(paymentId) {
     try {
       const result = await this.payment.get({ id: paymentId });
@@ -123,26 +99,47 @@ class MercadoPagoService {
     }
   }
 
-  /**
-   * Regenera Pix expirado — cria um novo pagamento
-   */
   async regenerarPix(params) {
     return this.criarPix(params);
   }
 }
 
-// Singleton - só instancia se tiver token configurado
-let instance = null;
+/**
+ * Retorna instância do MercadoPagoService com token correto.
+ * Prioridade: settings do DB (mp_modo + token) → env vars → simulação
+ * @param {object} pool - conexão pg (opcional, para ler do DB)
+ */
+async function getMercadoPago(pool) {
+  // 1) Tenta DB settings (configuradas pelo admin no painel)
+  if (pool) {
+    try {
+      const result = await pool.query(
+        "SELECT chave, valor FROM settings WHERE chave IN ('mp_modo', 'mp_access_token', 'mp_access_token_test')"
+      );
+      const s = {};
+      result.rows.forEach(r => { s[r.chave] = r.valor; });
 
-function getMercadoPago() {
-  if (!process.env.MP_ACCESS_TOKEN) {
-    console.warn('⚠️  MP_ACCESS_TOKEN não configurado. Usando modo simulação.');
+      const modo = s.mp_modo || 'test';
+      const token = modo === 'production' ? s.mp_access_token : s.mp_access_token_test;
+
+      if (token && token.trim()) {
+        console.log(`[MP] Usando token do DB (modo: ${modo})`);
+        return new MercadoPagoService(token.trim());
+      }
+    } catch (err) {
+      console.warn('[MP] Erro ao ler settings do DB:', err.message);
+    }
+  }
+
+  // 2) Fallback: env vars (aceita MP_ACCESS_TOKEN ou MERCADOPAGO_ACCESS_TOKEN)
+  const token = process.env.MP_ACCESS_TOKEN || process.env.MERCADOPAGO_ACCESS_TOKEN;
+  if (!token) {
+    console.warn('⚠️  MP token não configurado. Usando modo simulação.');
     return null;
   }
-  if (!instance) {
-    instance = new MercadoPagoService();
-  }
-  return instance;
+
+  console.log('[MP] Usando token da variável de ambiente');
+  return new MercadoPagoService(token);
 }
 
 module.exports = { MercadoPagoService, getMercadoPago };

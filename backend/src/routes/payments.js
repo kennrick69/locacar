@@ -1,9 +1,108 @@
 const express = require('express');
 const pool = require('../config/database');
-const { auth, driverOnly } = require('../middleware/auth');
+const { auth, driverOnly, adminOnly } = require('../middleware/auth');
 const PaymentService = require('../services/PaymentService');
 
 const router = express.Router();
+
+/**
+ * GET /api/payments/me
+ * Lista pagamentos do motorista logado
+ */
+router.get('/me', auth, driverOnly, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT p.*, wc.semana_ref
+      FROM payments p
+      LEFT JOIN weekly_charges wc ON wc.id = p.charge_id
+      WHERE p.user_id = $1
+      ORDER BY p.created_at DESC
+    `, [req.user.id]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Erro ao listar pagamentos:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
+ * GET /api/payments/admin
+ * Lista todos os pagamentos (admin)
+ */
+router.get('/admin', auth, adminOnly, async (req, res) => {
+  try {
+    const { status, tipo, limit = 100, offset = 0 } = req.query;
+    const conditions = [];
+    const values = [];
+
+    if (status) { conditions.push(`p.status = $${values.length + 1}`); values.push(status); }
+    if (tipo)   { conditions.push(`p.tipo = $${values.length + 1}`);   values.push(tipo); }
+
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    const result = await pool.query(`
+      SELECT p.*, u.nome as motorista_nome, u.email as motorista_email,
+             wc.semana_ref
+      FROM payments p
+      JOIN users u ON u.id = p.user_id
+      LEFT JOIN weekly_charges wc ON wc.id = p.charge_id
+      ${where}
+      ORDER BY p.created_at DESC
+      LIMIT $${values.length + 1} OFFSET $${values.length + 2}
+    `, [...values, limit, offset]);
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Erro ao listar pagamentos admin:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
+ * GET /api/payments/:id
+ * Detalhe de um pagamento (dono ou admin)
+ */
+router.get('/:id', auth, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT p.*, u.nome as motorista_nome, wc.semana_ref
+      FROM payments p
+      JOIN users u ON u.id = p.user_id
+      LEFT JOIN weekly_charges wc ON wc.id = p.charge_id
+      WHERE p.id = $1
+    `, [req.params.id]);
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Pagamento não encontrado' });
+
+    const p = result.rows[0];
+    if (req.user.role !== 'admin' && p.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
+
+    res.json(p);
+  } catch (err) {
+    console.error('Erro ao buscar pagamento:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
+ * POST /api/payments/:id/cancel
+ * Cancela pagamento pendente (admin)
+ */
+router.post('/:id/cancel', auth, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "UPDATE payments SET status = 'cancelado', updated_at = NOW() WHERE id = $1 AND status = 'pendente' RETURNING id",
+      [req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(400).json({ error: 'Pagamento não encontrado ou não está pendente' });
+    res.json({ message: 'Pagamento cancelado' });
+  } catch (err) {
+    console.error('Erro ao cancelar pagamento:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
 
 /**
  * POST /api/payments/simulate

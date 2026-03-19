@@ -40,7 +40,7 @@ class PaymentService {
    */
   static async criarPagamento({ userId, driverId, chargeId, tipo, metodo, valor, parcelas = 1, justificativa = null }) {
     const calculo = await this.calcularValorComJuros(valor, parcelas);
-    const mp = getMercadoPago();
+    const mp = await getMercadoPago(pool);
 
     // Busca dados do motorista para enviar ao MP
     const userRes = await pool.query('SELECT nome, email, cpf FROM users WHERE id = $1', [userId]);
@@ -143,7 +143,7 @@ class PaymentService {
    * Regenera Pix expirado
    */
   static async regenerarPix(paymentId, userId) {
-    const mp = getMercadoPago();
+    const mp = await getMercadoPago(pool);
     const payRes = await pool.query('SELECT * FROM payments WHERE id = $1 AND user_id = $2', [paymentId, userId]);
     if (payRes.rows.length === 0) throw new Error('Pagamento não encontrado');
 
@@ -199,7 +199,7 @@ class PaymentService {
    * Chamado quando MP notifica sobre mudança de status
    */
   static async processarWebhook(mpPaymentId) {
-    const mp = getMercadoPago();
+    const mp = await getMercadoPago(pool);
     if (!mp) {
       console.log('[WEBHOOK] Modo simulação, ignorando webhook.');
       return { processed: false, reason: 'Modo simulação' };
