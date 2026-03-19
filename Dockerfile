@@ -18,7 +18,7 @@ FROM node:20-alpine
 
 # PHP CLI + extensões necessárias para PHPMailer (SMTP com TLS)
 RUN apk add --no-cache php83 php83-openssl php83-mbstring php83-phar php83-tokenizer \
-    php83-filter php83-iconv php83-ctype \
+    php83-iconv php83-ctype \
     && ln -sf /usr/bin/php83 /usr/bin/php
 
 WORKDIR /app
