@@ -429,30 +429,27 @@ export default function Register() {
           {/* STEP 3 */}
           {step === 3 && (
             <div className="text-center space-y-4 py-4">
-              <div className="w-18 h-18 bg-amber-100 rounded-full flex items-center justify-center mx-auto w-16 h-16">
-                <Clock className="w-8 h-8 text-amber-600" />
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                <CheckCircle2 className="w-8 h-8 text-green-600" />
               </div>
-              <h2 className="text-lg font-bold text-gray-800">Adesão enviada para análise!</h2>
+              <h2 className="text-lg font-bold text-gray-800">Cadastro realizado!</h2>
               <p className="text-sm text-gray-500 max-w-sm mx-auto">
-                Seus dados e documentos estão sendo analisados. Você receberá uma mensagem
-                no <strong>WhatsApp</strong> ou <strong>Email</strong> com os próximos passos.
+                Seus dados foram salvos. Acesse sua área para completar as próximas etapas:
+                contrato, selfie e pagamento.
               </p>
-              <div className="bg-gray-50 rounded-xl p-4 text-left space-y-2">
-                <p className="text-xs font-semibold text-gray-500 uppercase">Próximas etapas</p>
-                {['Aprovação dos documentos', 'Receber contrato do veículo', 'Assinar e enviar selfie com documento', 'Pagamento da caução → conta ativada'].map((t, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <div className="w-5 h-5 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-bold mt-0.5">{i + 1}</div>
-                    <p className="text-sm text-gray-600">{t}</p>
-                  </div>
-                ))}
-              </div>
               <div className="bg-blue-50 rounded-lg p-3 text-sm text-blue-700">
-                <strong>Seu token:</strong>
+                <strong>Seu token de acesso:</strong>
                 <span className="font-mono font-bold text-lg ml-2 tracking-widest">{token}</span>
-                <p className="text-xs text-blue-500 mt-1">Guarde! É seu login quando sua conta for ativada.</p>
+                <p className="text-xs text-blue-500 mt-1">São os 6 primeiros dígitos do seu CPF</p>
               </div>
-              <Link to="/" className="btn-primary w-full py-3 inline-flex items-center justify-center">
-                Voltar ao Início
+              <button
+                onClick={() => navigate('/motorista')}
+                className="btn-primary w-full py-3 inline-flex items-center justify-center gap-2"
+              >
+                <ArrowRight className="w-4 h-4" /> Acessar Minha Área
+              </button>
+              <Link to="/" className="text-sm text-gray-400 hover:text-gray-600">
+                ← Voltar ao início
               </Link>
             </div>
           )}
