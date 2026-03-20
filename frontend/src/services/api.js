@@ -107,6 +107,7 @@ export const driversAPI = {
   reject: (id, data) => api.patch(`/drivers/${id}/reject`, data),
   activate: (id) => api.patch(`/drivers/${id}/activate`),
   confirmContract: (id) => api.patch(`/drivers/${id}/confirm-contract`),
+  confirmCaucao: (id) => api.patch(`/drivers/${id}/confirm-caucao`),
   createCharge: (driverId, data) => api.post(`/drivers/${driverId}/charges`, data),
   approveAbatimento: (driverId, abatId) => api.patch(`/drivers/${driverId}/abatimentos/${abatId}/approve`),
   addAcrescimo: (driverId, data) => api.post(`/drivers/${driverId}/acrescimos`, data),

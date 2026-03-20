@@ -833,6 +833,37 @@ router.patch('/:id/confirm-contract', auth, adminOnly, async (req, res) => {
 });
 
 /**
+ * PATCH /api/drivers/:id/confirm-caucao - Admin: confirmar caução manualmente
+ */
+router.patch('/:id/confirm-caucao', auth, adminOnly, async (req, res) => {
+  try {
+    const driverId = req.params.id;
+
+    const check = await pool.query('SELECT id, caucao_pago FROM driver_profiles WHERE id = $1', [driverId]);
+    if (check.rows.length === 0) return res.status(404).json({ error: 'Motorista não encontrado' });
+    if (check.rows[0].caucao_pago) return res.status(400).json({ error: 'Caução já foi confirmada' });
+
+    const PaymentService = require('../services/PaymentService');
+    await PaymentService.confirmarCaucao(driverId);
+
+    const result = await pool.query(`
+      SELECT dp.*, u.nome, u.email, u.cpf, u.telefone,
+             c.marca AS car_marca, c.modelo AS car_modelo, c.placa AS car_placa,
+             c.valor_semanal AS car_valor_semanal, c.valor_caucao AS car_valor_caucao
+      FROM driver_profiles dp
+      JOIN users u ON u.id = dp.user_id
+      LEFT JOIN cars c ON c.id = dp.car_id
+      WHERE dp.id = $1
+    `, [driverId]);
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Erro ao confirmar caução manualmente:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
  * POST /api/drivers/:id/charges - Admin: criar cobrança semanal
  */
 router.post('/:id/charges', auth, adminOnly, async (req, res) => {

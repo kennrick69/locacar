@@ -160,6 +160,7 @@ export default function AdminDriverDetail() {
   const handleReject = async () => { setProcessing(true); try { await driversAPI.reject(id, { motivo: rejectReason }); toast.success('Reprovado'); setRejectModal(false); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } finally { setProcessing(false); } };
   const handleConfirmContract = async () => { try { await driversAPI.confirmContract(id); toast.success('Contrato confirmado!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
   const handleActivate = async () => { try { await driversAPI.activate(id); toast.success('Ativado!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
+  const handleConfirmCaucao = async () => { if (!confirm('Confirmar o pagamento da caução manualmente?')) return; try { await driversAPI.confirmCaucao(id); toast.success('Caução confirmada manualmente!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
   const handleLockDoc = async (docId, fixado) => {
     try {
       await driversAPI.lockDocument(id, docId, fixado);
@@ -569,6 +570,11 @@ export default function AdminDriverDetail() {
             <p className="text-sm text-gray-500">Caução</p>
             <p className="text-xl font-bold">{driver.caucao_pago ? <span className="text-green-600">✓ Paga</span> : <span className="text-red-600">Pendente — R$ {fmt(driver.car_valor_caucao || 0)}</span>}</p>
           </div>
+          {!driver.caucao_pago && isAprovado && (
+            <button onClick={handleConfirmCaucao} className="btn-primary text-sm flex items-center gap-1.5">
+              <Banknote className="w-4 h-4" /> Confirmar Manualmente
+            </button>
+          )}
         </div>
         {isAprovado && driver.caucao_pago && driver.contrato_confirmado && !isAtivo && (
           <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-3">
