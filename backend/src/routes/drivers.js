@@ -357,9 +357,10 @@ router.get('/me/charges', auth, driverOnly, async (req, res) => {
           (SELECT json_agg(ac.*) FROM acrescimos ac WHERE ac.charge_id = wc.id),
           '[]'
         ) as acrescimos_lista,
-        COALESCE(
-          (SELECT SUM(p.valor) FROM payments p WHERE p.charge_id = wc.id AND p.status = 'pago'),
-          0
+        GREATEST(
+          COALESCE(wc.valor_pago_total, 0),
+          COALESCE((SELECT SUM(pe.valor_pago) FROM payment_entries pe WHERE pe.charge_id = wc.id), 0),
+          COALESCE((SELECT SUM(p.valor) FROM payments p WHERE p.charge_id = wc.id AND p.status = 'pago'), 0)
         ) as total_pago
       FROM weekly_charges wc
       WHERE wc.driver_id = $1
@@ -850,7 +851,11 @@ router.get('/:id', auth, adminOnly, async (req, res) => {
       SELECT wc.*,
         COALESCE((SELECT json_agg(a.*) FROM abatimentos a WHERE a.charge_id = wc.id), '[]') as abatimentos_lista,
         COALESCE((SELECT json_agg(ac.*) FROM acrescimos ac WHERE ac.charge_id = wc.id), '[]') as acrescimos_lista,
-        COALESCE((SELECT SUM(p.valor) FROM payments p WHERE p.charge_id = wc.id AND p.status = 'pago'), 0) as total_pago,
+        GREATEST(
+          COALESCE(wc.valor_pago_total, 0),
+          COALESCE((SELECT SUM(pe.valor_pago) FROM payment_entries pe WHERE pe.charge_id = wc.id), 0),
+          COALESCE((SELECT SUM(p.valor) FROM payments p WHERE p.charge_id = wc.id AND p.status = 'pago'), 0)
+        ) as total_pago,
         COALESCE((SELECT json_agg(pe.* ORDER BY pe.data_pagamento) FROM payment_entries pe WHERE pe.charge_id = wc.id), '[]') as pagamentos_manuais
       FROM weekly_charges wc WHERE wc.driver_id = $1
       ORDER BY wc.semana_ref DESC LIMIT 50
@@ -1961,43 +1966,111 @@ router.post('/:id/register-payment', auth, adminOnly, async (req, res) => {
 
 /**
  * POST /api/drivers/:id/charges/:chargeId/payment-entry - Admin: registrar pagamento manual
+ * Se o valor exceder a cobrança, o excesso é distribuído para as próximas cobranças em aberto.
  */
 router.post('/:id/charges/:chargeId/payment-entry', auth, adminOnly, async (req, res) => {
+  const client = await pool.connect();
   try {
     const { chargeId } = req.params;
+    const driverId = req.params.id;
     const { valor_pago, data_pagamento, observacoes } = req.body;
 
     if (!valor_pago || !data_pagamento) {
       return res.status(400).json({ error: 'valor_pago e data_pagamento são obrigatórios' });
     }
 
-    // Insere entrada de pagamento
-    await pool.query(`
-      INSERT INTO payment_entries (charge_id, driver_id, valor_pago, data_pagamento, observacoes)
-      VALUES ($1, $2, $3, $4, $5)
-    `, [chargeId, req.params.id, valor_pago, data_pagamento, observacoes || null]);
+    await client.query('BEGIN');
 
-    // Recalcula totais da cobrança
-    const entries = await pool.query('SELECT SUM(valor_pago) as total FROM payment_entries WHERE charge_id = $1', [chargeId]);
-    const totalPago = parseFloat(entries.rows[0].total || 0);
+    // Busca a cobrança alvo
+    const chargeRes = await client.query('SELECT * FROM weekly_charges WHERE id = $1', [chargeId]);
+    if (chargeRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Cobrança não encontrada' });
+    }
 
-    const charge = await pool.query('SELECT * FROM weekly_charges WHERE id = $1', [chargeId]);
-    if (charge.rows.length === 0) return res.status(404).json({ error: 'Cobrança não encontrada' });
+    const targetCharge = chargeRes.rows[0];
+    const entriesSum = await client.query('SELECT COALESCE(SUM(valor_pago), 0) as total FROM payment_entries WHERE charge_id = $1', [chargeId]);
+    const jaPago = parseFloat(entriesSum.rows[0].total);
+    const saldoTarget = Math.max(parseFloat(targetCharge.valor_final) - jaPago, 0);
 
-    const valorFinal = parseFloat(charge.rows[0].valor_final);
-    const saldo = Math.max(valorFinal - totalPago, 0);
-    const pago = saldo <= 0.01; // tolerância de centavo
+    let valorParaTarget = Math.min(parseFloat(valor_pago), saldoTarget);
+    let excesso = parseFloat(valor_pago) - valorParaTarget;
 
-    await pool.query(`
+    // Registra pagamento na cobrança alvo
+    if (valorParaTarget > 0.01) {
+      await client.query(`
+        INSERT INTO payment_entries (charge_id, driver_id, valor_pago, data_pagamento, observacoes)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [chargeId, driverId, valorParaTarget, data_pagamento, observacoes || null]);
+    }
+
+    // Recalcula a cobrança alvo
+    const recalcTarget = await client.query('SELECT COALESCE(SUM(valor_pago), 0) as total FROM payment_entries WHERE charge_id = $1', [chargeId]);
+    const totalPagoTarget = parseFloat(recalcTarget.rows[0].total);
+    const saldoFinalTarget = Math.max(parseFloat(targetCharge.valor_final) - totalPagoTarget, 0);
+    const pagoTarget = saldoFinalTarget <= 0.01;
+
+    await client.query(`
       UPDATE weekly_charges SET valor_pago_total = $1, saldo_devedor = $2, pago = $3,
-        data_pagamento = CASE WHEN $3 THEN $4::TIMESTAMP ELSE NULL END, updated_at = NOW()
+        data_pagamento = CASE WHEN $3 THEN $4::TIMESTAMP ELSE data_pagamento END, updated_at = NOW()
       WHERE id = $5
-    `, [totalPago, saldo, pago, data_pagamento, chargeId]);
+    `, [totalPagoTarget, saldoFinalTarget, pagoTarget, data_pagamento, chargeId]);
 
-    res.json({ total_pago: totalPago, saldo_devedor: saldo, pago });
+    // Distribui excesso para as próximas cobranças em aberto (mais antigas primeiro)
+    const distribuicao = [{ charge_id: parseInt(chargeId), valor: valorParaTarget, pago: pagoTarget }];
+
+    if (excesso > 0.01) {
+      const nextCharges = await client.query(`
+        SELECT id, valor_final, COALESCE(valor_pago_total, 0) as pago_total
+        FROM weekly_charges
+        WHERE driver_id = $1 AND pago = false AND id != $2
+        ORDER BY semana_ref ASC
+      `, [driverId, chargeId]);
+
+      for (const nc of nextCharges.rows) {
+        if (excesso <= 0.01) break;
+
+        const saldoNc = Math.max(parseFloat(nc.valor_final) - parseFloat(nc.pago_total), 0);
+        if (saldoNc <= 0.01) continue;
+
+        const abater = Math.min(excesso, saldoNc);
+        excesso -= abater;
+
+        await client.query(`
+          INSERT INTO payment_entries (charge_id, driver_id, valor_pago, data_pagamento, observacoes)
+          VALUES ($1, $2, $3, $4, $5)
+        `, [nc.id, driverId, abater, data_pagamento, `Excesso da cobrança #${chargeId}`]);
+
+        const recalcNc = await client.query('SELECT COALESCE(SUM(valor_pago), 0) as total FROM payment_entries WHERE charge_id = $1', [nc.id]);
+        const totalPagoNc = parseFloat(recalcNc.rows[0].total);
+        const saldoFinalNc = Math.max(parseFloat(nc.valor_final) - totalPagoNc, 0);
+        const pagoNc = saldoFinalNc <= 0.01;
+
+        await client.query(`
+          UPDATE weekly_charges SET valor_pago_total = $1, saldo_devedor = $2, pago = $3,
+            data_pagamento = CASE WHEN $3 THEN $4::TIMESTAMP ELSE data_pagamento END, updated_at = NOW()
+          WHERE id = $5
+        `, [totalPagoNc, saldoFinalNc, pagoNc, data_pagamento, nc.id]);
+
+        distribuicao.push({ charge_id: nc.id, valor: abater, pago: pagoNc });
+      }
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      total_pago: totalPagoTarget,
+      saldo_devedor: saldoFinalTarget,
+      pago: pagoTarget,
+      distribuicao: distribuicao.length > 1 ? distribuicao : undefined,
+      sobra: excesso > 0.01 ? excesso : 0,
+    });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Erro ao registrar pagamento:', err);
     res.status(500).json({ error: 'Erro interno' });
+  } finally {
+    client.release();
   }
 });
 

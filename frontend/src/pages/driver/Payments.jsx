@@ -215,9 +215,10 @@ export default function DriverPayments() {
 
       {/* RESUMO FINANCEIRO */}
       {charges.length > 0 && (() => {
+        const getPago = (c) => Math.max(parseFloat(c.total_pago || 0), parseFloat(c.valor_pago_total || 0));
         const totalCobrado = charges.reduce((s, c) => s + parseFloat(c.valor_final || 0), 0);
-        const totalPagoGeral = charges.reduce((s, c) => s + parseFloat(c.total_pago || c.valor_pago_total || 0), 0);
-        const saldoDevedor = charges.filter(c => !c.pago).reduce((s, c) => s + Math.max(parseFloat(c.valor_final || 0) - parseFloat(c.total_pago || c.valor_pago_total || 0), 0), 0);
+        const totalPagoGeral = charges.reduce((s, c) => s + getPago(c), 0);
+        const saldoDevedor = charges.filter(c => !c.pago).reduce((s, c) => s + Math.max(parseFloat(c.valor_final || 0) - getPago(c), 0), 0);
 
         if (saldoDevedor <= 0.01) return null;
         return (
@@ -250,8 +251,11 @@ export default function DriverPayments() {
             const isOpen = expandedCharge === charge.id;
             const abatList = charge.abatimentos_lista || [];
             const isPaid = charge.pago;
-            const totalPago = parseFloat(charge.total_pago || 0);
-            const restante = parseFloat(charge.valor_final) - totalPago;
+            const totalPago = Math.max(
+              parseFloat(charge.total_pago || 0),
+              parseFloat(charge.valor_pago_total || 0)
+            );
+            const restante = Math.max(parseFloat(charge.valor_final) - totalPago, 0);
             const isParcial = !isPaid && totalPago > 0;
 
             return (
