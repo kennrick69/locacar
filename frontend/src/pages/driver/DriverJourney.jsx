@@ -402,11 +402,34 @@ export default function DriverJourney() {
                       </div>
 
                       <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                        <p className="text-xs text-orange-800 font-medium">O que fotografar:</p>
+                        <p className="text-xs text-orange-800 font-medium">O que fotografar e verificar:</p>
                         <p className="text-xs text-orange-700 mt-1">
-                          Arranhões, riscos, aros, estofamento, painel, vidros, amassados, manchas.
-                          <strong> Descreva: o quê, onde (lado/porta), tamanho aproximado.</strong>
+                          <strong>Descreva: o quê, onde (lado/porta), tamanho aproximado.</strong>
                         </p>
+
+                        <p className="text-[10px] text-orange-800 font-semibold mt-1.5">Lataria/pintura:</p>
+                        <p className="text-[10px] text-orange-700">Arranhões, riscos, amassados, ferrugem, pintura descascada — todos os lados, capô, teto e para-choques.</p>
+
+                        <p className="text-[10px] text-orange-800 font-semibold mt-1">Vidros e retrovisores:</p>
+                        <p className="text-[10px] text-orange-700">Trincas, lascas no para-brisa, vidros laterais, traseiro e retrovisores.</p>
+
+                        <p className="text-[10px] text-orange-800 font-semibold mt-1">Rodas e pneus:</p>
+                        <p className="text-[10px] text-orange-700">Aros (riscos, amassados), pneus (desgaste, bolhas, cortes), estepe/step.</p>
+
+                        <p className="text-[10px] text-orange-800 font-semibold mt-1">Interior:</p>
+                        <p className="text-[10px] text-orange-700">Estofamento, painel, volante, câmbio, cintos, A/C, som, tomadas USB/12V, tapetes.</p>
+
+                        <p className="text-[10px] text-orange-800 font-semibold mt-1">Iluminação:</p>
+                        <p className="text-[10px] text-orange-700">Faróis, lanternas, setas, luz de ré/freio/placa, limpadores e esguicho.</p>
+
+                        <p className="text-[10px] text-orange-800 font-semibold mt-1">Itens obrigatórios (CTB):</p>
+                        <p className="text-[10px] text-orange-700">Triângulo, macaco c/ manivela, chave de rodas, chave do estepe, estepe calibrado.</p>
+
+                        <p className="text-[10px] text-orange-800 font-semibold mt-1">Documentação e acessórios:</p>
+                        <p className="text-[10px] text-orange-700">Manual do proprietário, CRLV, chave reserva, tapetes, calotas, antena, acabamentos.</p>
+
+                        <p className="text-[10px] text-orange-800 font-semibold mt-1">Funcionamento:</p>
+                        <p className="text-[10px] text-orange-700">Combustível e km (foto do painel), freios, freio de mão, direção, vidros/travas elétricas, alarme, buzina.</p>
                       </div>
 
                       {/* Fotos existentes */}

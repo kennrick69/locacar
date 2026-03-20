@@ -358,11 +358,49 @@ export default function DriverDocuments() {
           </div>
 
           <div className="card border-l-4 border-orange-400 bg-orange-50">
-            <p className="text-sm text-orange-800 font-medium">O que fotografar:</p>
-            <p className="text-sm text-orange-700 mt-1">
-              Arranhões, riscos, avarias nos aros, rasgados nos estofamentos, manchas, defeitos no painel, vidros trincados, 
-              amassados na lataria, defeitos nos bancos, etc. <strong>Para cada foto, descreva o que é, onde está (lado, porta, 
-              para-choque), e o tamanho aproximado do dano.</strong>
+            <p className="text-sm text-orange-800 font-medium">O que fotografar e verificar:</p>
+            <p className="text-sm text-orange-700 mt-1 mb-2">
+              <strong>Para cada foto, descreva: o que é, onde está (lado/porta/para-choque) e o tamanho aproximado do dano.</strong>
+            </p>
+
+            <p className="text-xs text-orange-800 font-semibold mt-2">Condição da lataria e pintura:</p>
+            <p className="text-xs text-orange-700">
+              Arranhões, riscos, amassados, marcas de batida, ferrugem, pintura descascada ou retocada — fotografe todos os lados, capô, teto e para-choques.
+            </p>
+
+            <p className="text-xs text-orange-800 font-semibold mt-2">Vidros e retrovisores:</p>
+            <p className="text-xs text-orange-700">
+              Trincas, lascas ou arranhões no para-brisa, vidros laterais, traseiro e retrovisores (externos e interno).
+            </p>
+
+            <p className="text-xs text-orange-800 font-semibold mt-2">Rodas e pneus:</p>
+            <p className="text-xs text-orange-700">
+              Aros (riscos, amassados), estado dos pneus (desgaste, bolhas, cortes), calibragem, e estado do estepe/step.
+            </p>
+
+            <p className="text-xs text-orange-800 font-semibold mt-2">Interior do veículo:</p>
+            <p className="text-xs text-orange-700">
+              Estofamento (rasgos, manchas, queimaduras), painel (rachaduras, luzes de alerta acesas), volante, câmbio, pedais, tapetes, cintos de segurança, ar-condicionado, som/rádio, tomada 12V/USB, acendedor.
+            </p>
+
+            <p className="text-xs text-orange-800 font-semibold mt-2">Iluminação e elétrica:</p>
+            <p className="text-xs text-orange-700">
+              Faróis (alto/baixo), lanternas traseiras, setas, luz de ré, luz de freio, luz de placa, farol de neblina, limpadores e esguicho do para-brisa.
+            </p>
+
+            <p className="text-xs text-orange-800 font-semibold mt-2">Itens obrigatórios de segurança (CTB):</p>
+            <p className="text-xs text-orange-700">
+              Triângulo de sinalização, macaco (com manivela), chave de rodas, chave do estepe (se aplicável), estepe em bom estado e calibrado.
+            </p>
+
+            <p className="text-xs text-orange-800 font-semibold mt-2">Documentação e acessórios:</p>
+            <p className="text-xs text-orange-700">
+              Manual do proprietário, CRLV (documento do veículo), chave reserva, tapetes, calota (se houver), antena, acabamentos externos.
+            </p>
+
+            <p className="text-xs text-orange-800 font-semibold mt-2">Funcionamento geral:</p>
+            <p className="text-xs text-orange-700">
+              Nível de combustível (fotografe o painel), quilometragem (hodômetro), freios, freio de mão, direção hidráulica/elétrica, vidros elétricos, travas elétricas, alarme, buzina.
             </p>
           </div>
 
