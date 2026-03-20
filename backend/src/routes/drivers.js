@@ -1930,6 +1930,27 @@ router.get('/:id/charges/:chargeId/payment-entries', auth, adminOnly, async (req
 });
 
 /**
+ * DELETE /api/drivers/:id/charges/:chargeId - Admin: excluir cobrança
+ */
+router.delete('/:id/charges/:chargeId', auth, adminOnly, async (req, res) => {
+  try {
+    const { chargeId } = req.params;
+
+    // Remove dependências primeiro
+    await pool.query('DELETE FROM payment_entries WHERE charge_id = $1', [chargeId]);
+    await pool.query('DELETE FROM abatimentos WHERE charge_id = $1', [chargeId]);
+    await pool.query('DELETE FROM acrescimos WHERE charge_id = $1', [chargeId]);
+    await pool.query('DELETE FROM payments WHERE charge_id = $1', [chargeId]);
+    await pool.query('DELETE FROM weekly_charges WHERE id = $1', [chargeId]);
+
+    res.json({ message: 'Cobrança excluída' });
+  } catch (err) {
+    console.error('Erro ao excluir cobrança:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
  * DELETE /api/drivers/:id/charges/:chargeId/payment-entries/:entryId
  */
 router.delete('/:id/charges/:chargeId/payment-entries/:entryId', auth, adminOnly, async (req, res) => {

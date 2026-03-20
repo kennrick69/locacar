@@ -710,6 +710,21 @@ export default function AdminDriverDetail() {
                         </span>
                       </div>
                       {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!confirm(`Excluir cobrança de ${fmtDate(charge.semana_ref)} — R$ ${fmt(charge.valor_final)}?`)) return;
+                          try {
+                            await driversAPI.deleteCharge(id, charge.id);
+                            toast.success('Cobrança excluída');
+                            await loadData();
+                          } catch (err) { toast.error(err.response?.data?.error || 'Erro ao excluir'); }
+                        }}
+                        className="p-1 hover:bg-red-100 rounded text-red-400 hover:text-red-600 transition-colors"
+                        title="Excluir cobrança"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
 
