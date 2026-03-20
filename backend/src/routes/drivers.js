@@ -279,8 +279,15 @@ router.post('/me/generate-contract', auth, driverOnly, async (req, res) => {
     const filePath = pathMod.join(uploadsDir, fileName);
     fs.writeFileSync(filePath, buffer);
 
-    const caminho = `/uploads/contracts/${fileName}`;
     const nomeArq = `contrato_${driver.nome?.replace(/\s+/g, '_')}.pdf`;
+
+    // Tenta enviar para Cloudinary
+    const { uploadToCloud, isConfigured: isCloudConfigured } = require('../utils/cloudinary');
+    let caminho = `/uploads/contracts/${fileName}`;
+    if (isCloudConfigured()) {
+      const cloudUrl = await uploadToCloud(filePath, 'contracts');
+      if (cloudUrl) caminho = cloudUrl;
+    }
 
     // Salva na tabela documents
     await pool.query(`
@@ -1480,7 +1487,12 @@ ${observacoes ? '<h2>Observações</h2><p>' + observacoes + '</p>' : ''}
     const filename = `acerto_${driverId}_${Date.now()}.html`;
     fs.writeFileSync(path.join(settlementDir, filename), htmlPdf);
 
-    const pdfUrl = `/uploads/settlements/${filename}`;
+    let pdfUrl = `/uploads/settlements/${filename}`;
+    const { uploadToCloud: uploadSettlement, isConfigured: isSettlementCloud } = require('../utils/cloudinary');
+    if (isSettlementCloud()) {
+      const cloudUrl = await uploadSettlement(path.join(settlementDir, filename), 'settlements');
+      if (cloudUrl) pdfUrl = cloudUrl;
+    }
     await client.query('UPDATE final_settlements SET pdf_url = $1 WHERE id = $2', [pdfUrl, settlement.rows[0].id]);
 
     await client.query('COMMIT');
@@ -1632,7 +1644,13 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
     fs.writeFileSync(filePath, buffer);
     console.log('[CONTRATO] Arquivo salvo:', filePath);
 
-    const caminho = `/uploads/contracts/${fileName}`;
+    // Tenta Cloudinary
+    const { uploadToCloud: uploadAdminContract, isConfigured: isAdminCloud } = require('../utils/cloudinary');
+    let caminho = `/uploads/contracts/${fileName}`;
+    if (isAdminCloud()) {
+      const cloudUrl = await uploadAdminContract(filePath, 'contracts');
+      if (cloudUrl) caminho = cloudUrl;
+    }
 
     // Salva na tabela documents
     await pool.query(`
