@@ -363,7 +363,8 @@ async function start() {
           updated_at TIMESTAMP DEFAULT NOW()
         )`);
         await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS property_interesse_id INTEGER REFERENCES properties(id)`);
-        // Juros column on weekly_charges
+        // Titulo e juros on weekly_charges
+        await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS titulo VARCHAR(255)`);
         await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS juros_acumulados DECIMAL(10,2) DEFAULT 0`);
         await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS valor_pago_total DECIMAL(10,2) DEFAULT 0`);
         await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS saldo_devedor DECIMAL(10,2) DEFAULT 0`);

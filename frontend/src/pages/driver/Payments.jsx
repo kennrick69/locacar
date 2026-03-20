@@ -279,7 +279,7 @@ export default function DriverPayments() {
                     </div>
                     <div className="text-left">
                       <p className="text-sm font-medium">
-                        Semana {new Date(charge.semana_ref).toLocaleDateString('pt-BR')}
+                        {charge.titulo || `Semana ${new Date(charge.semana_ref).toLocaleDateString('pt-BR')}`}
                       </p>
                       <p className={`text-xs ${isPaid ? 'text-green-600' : isParcial ? 'text-yellow-600' : 'text-red-600'}`}>
                         {isPaid ? 'Pago' : isParcial ? `Parcial — falta R$ ${fmt(restante)}` : 'Pendente'}

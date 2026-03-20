@@ -1051,7 +1051,7 @@ router.post('/:id/charges', auth, adminOnly, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { semana_ref, valor_base, observacoes } = req.body;
+    const { semana_ref, valor_base, observacoes, titulo } = req.body;
     const driverId = req.params.id;
 
     if (!semana_ref || !valor_base) {
@@ -1087,10 +1087,10 @@ router.post('/:id/charges', auth, adminOnly, async (req, res) => {
     const valorFinal = base + creditoAnterior; // crédito é negativo, então subtrai
 
     const result = await client.query(`
-      INSERT INTO weekly_charges (driver_id, semana_ref, valor_base, credito_anterior, valor_final, observacoes)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO weekly_charges (driver_id, semana_ref, valor_base, credito_anterior, valor_final, observacoes, titulo)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *
-    `, [driverId, semana_ref, base, creditoAnterior, Math.max(valorFinal, 0), observacoes || null]);
+    `, [driverId, semana_ref, base, creditoAnterior, Math.max(valorFinal, 0), observacoes || null, titulo || null]);
 
     await client.query('COMMIT');
     res.status(201).json(result.rows[0]);

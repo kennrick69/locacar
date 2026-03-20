@@ -51,7 +51,7 @@ export default function AdminDriverDetail() {
 
   // Charge modal
   const [chargeModal, setChargeModal] = useState(false);
-  const [chargeForm, setChargeForm] = useState({ semana_ref: '', valor_base: '', observacoes: '' });
+  const [chargeForm, setChargeForm] = useState({ semana_ref: '', valor_base: '', observacoes: '', titulo: '' });
 
   // Acréscimo
   const [acrescimoChargeId, setAcrescimoChargeId] = useState(null);
@@ -174,7 +174,7 @@ export default function AdminDriverDetail() {
       await loadData();
     } catch (e) { toast.error('Erro ao fixar documento'); }
   };
-  const handleCreateCharge = async () => { if (!chargeForm.semana_ref || !chargeForm.valor_base) return toast.warning('Preencha semana e valor'); setProcessing(true); try { await driversAPI.createCharge(id, chargeForm); toast.success('Cobrança criada!'); setChargeModal(false); setChargeForm({ semana_ref: '', valor_base: '', observacoes: '' }); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } finally { setProcessing(false); } };
+  const handleCreateCharge = async () => { if (!chargeForm.semana_ref || !chargeForm.valor_base) return toast.warning('Preencha semana e valor'); setProcessing(true); try { await driversAPI.createCharge(id, chargeForm); toast.success('Cobrança criada!'); setChargeModal(false); setChargeForm({ semana_ref: '', valor_base: '', observacoes: '', titulo: '' }); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } finally { setProcessing(false); } };
   const handleApproveAbatimento = async (abatId) => { try { await driversAPI.approveAbatimento(id, abatId); toast.success('Abatimento aprovado!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
   const handleAddAcrescimo = async () => { if (!acrescimoForm.descricao || !acrescimoForm.valor) return toast.warning('Preencha'); try { await driversAPI.addAcrescimo(id, { charge_id: acrescimoChargeId, descricao: acrescimoForm.descricao, valor: parseFloat(acrescimoForm.valor) }); toast.success('Acréscimo adicionado!'); setAcrescimoChargeId(null); setAcrescimoForm({ descricao: '', valor: '' }); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
   const handleRemoveAcrescimo = async (acrescimoId) => { try { await driversAPI.removeAcrescimo(id, acrescimoId); toast.success('Removido!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
@@ -671,7 +671,7 @@ export default function AdminDriverDetail() {
             }} className="text-xs bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-100 flex items-center gap-1">
               <Calendar className="w-3 h-3" /> Gerar Cobranças
             </button>
-            <button onClick={() => { setChargeForm({ semana_ref: new Date().toISOString().split('T')[0], valor_base: driver.car_valor_semanal || '', observacoes: '' }); setChargeModal(true); }}
+            <button onClick={() => { setChargeForm({ semana_ref: new Date().toISOString().split('T')[0], valor_base: driver.car_valor_semanal || '', observacoes: '', titulo: '' }); setChargeModal(true); }}
               className="text-xs bg-brand-600 text-white px-3 py-1.5 rounded-lg hover:bg-brand-700 flex items-center gap-1">
               <Plus className="w-3 h-3" /> Avulsa
             </button>
@@ -703,7 +703,8 @@ export default function AdminDriverDetail() {
                   <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedCharge(isExpanded ? null : charge.id)}>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-medium">📅 {fmtDate(charge.semana_ref)}</p>
+                        <p className="text-sm font-medium">{charge.titulo || `📅 Semana ${fmtDate(charge.semana_ref)}`}</p>
+                        {charge.titulo && <span className="text-xs text-gray-400">{fmtDate(charge.semana_ref)}</span>}
                         {charge.observacoes && <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{charge.observacoes}</span>}
                       </div>
                       <p className="text-xs text-gray-400 mt-0.5">
@@ -931,8 +932,9 @@ export default function AdminDriverDetail() {
           <div className="bg-white rounded-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
             <h3 className="font-semibold text-lg mb-4">Nova Cobrança Avulsa</h3>
             <div className="space-y-3">
-              <div><label className="block text-sm mb-1">Semana de referência *</label><input type="date" value={chargeForm.semana_ref} onChange={e => setChargeForm({...chargeForm, semana_ref: e.target.value})} className="input-field" /></div>
-              <div><label className="block text-sm mb-1">Valor base (R$) *</label><input type="number" step="0.01" value={chargeForm.valor_base} onChange={e => setChargeForm({...chargeForm, valor_base: e.target.value})} className="input-field" /></div>
+              <div><label className="block text-sm mb-1">Título</label><input type="text" value={chargeForm.titulo} onChange={e => setChargeForm({...chargeForm, titulo: e.target.value})} className="input-field" placeholder="Ex: Multa, Reparo, Semanal..." /></div>
+              <div><label className="block text-sm mb-1">Data de referência *</label><input type="date" value={chargeForm.semana_ref} onChange={e => setChargeForm({...chargeForm, semana_ref: e.target.value})} className="input-field" /></div>
+              <div><label className="block text-sm mb-1">Valor (R$) *</label><input type="number" step="0.01" value={chargeForm.valor_base} onChange={e => setChargeForm({...chargeForm, valor_base: e.target.value})} className="input-field" /></div>
               <div><label className="block text-sm mb-1">Observações</label><textarea value={chargeForm.observacoes} onChange={e => setChargeForm({...chargeForm, observacoes: e.target.value})} className="input-field" rows={2} /></div>
             </div>
             <div className="flex gap-3 mt-4">
