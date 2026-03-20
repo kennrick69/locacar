@@ -64,7 +64,7 @@ class MercadoPagoService {
         auto_return: 'approved',
         external_reference: external_reference || undefined,
         notification_url: process.env.MP_WEBHOOK_URL || undefined,
-        statement_descriptor: 'LOCACAR',
+        statement_descriptor: 'IMP LOCADORA',
       };
 
       const result = await this.preference.create({ body });

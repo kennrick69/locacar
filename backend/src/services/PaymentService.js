@@ -125,7 +125,7 @@ class PaymentService {
    * Simulação de Pix para desenvolvimento
    */
   static async _simularPix(payment) {
-    const fakeCode = `00020126580014BR.GOV.BCB.PIX0136${Date.now()}5204000053039865802BR5913LOCACAR6009SAO_PAULO62070503***6304`;
+    const fakeCode = `00020126580014BR.GOV.BCB.PIX0136${Date.now()}5204000053039865802BR5916IMPLOCADORA6009SAO_PAULO62070503***6304`;
     await pool.query(`
       UPDATE payments SET
         mp_payment_id = $1, mp_qr_code = $2,

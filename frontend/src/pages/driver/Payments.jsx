@@ -629,17 +629,45 @@ export default function DriverPayments() {
                         </div>
                       </div>
 
-                      {/* Botão simular confirmação (dev) */}
-                      <div className="bg-yellow-50 rounded-lg p-3 text-xs text-yellow-700">
-                        <p className="font-medium">⚠️ Modo desenvolvimento</p>
-                        <p className="mt-1">Na Etapa 4, o pagamento será confirmado automaticamente via webhook do Mercado Pago.</p>
-                        <button
-                          onClick={() => confirmPayment(paymentResult.payment.id)}
-                          className="btn-primary text-xs mt-2"
+                      {/* QR Code imagem (se disponível do MP) */}
+                      {paymentResult.payment.mp_qr_code_base64 && (
+                        <div className="flex justify-center">
+                          <img
+                            src={`data:image/png;base64,${paymentResult.payment.mp_qr_code_base64}`}
+                            alt="QR Code Pix"
+                            className="w-48 h-48 rounded-lg border"
+                          />
+                        </div>
+                      )}
+
+                      {paymentResult.payment.mp_ticket_url && (
+                        <a
+                          href={paymentResult.payment.mp_ticket_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn-secondary w-full flex items-center justify-center gap-2 text-sm"
                         >
-                          Simular confirmação
-                        </button>
+                          <QrCode className="w-4 h-4" /> Ver página de pagamento
+                        </a>
+                      )}
+
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                        <p>Após o pagamento via Pix, a confirmação será automática em alguns instantes.</p>
                       </div>
+
+                      {/* Simular confirmação: só aparece quando é simulação (sem integração real) */}
+                      {paymentResult.payment.mp_payment_id?.startsWith('SIM_') && (
+                        <div className="bg-yellow-50 rounded-lg p-3 text-xs text-yellow-700">
+                          <p className="font-medium">Modo Simulação</p>
+                          <p className="mt-1">Mercado Pago não está configurado. Use o botão abaixo para simular.</p>
+                          <button
+                            onClick={() => confirmPayment(paymentResult.payment.id)}
+                            className="btn-primary text-xs mt-2"
+                          >
+                            Simular confirmação
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -653,16 +681,50 @@ export default function DriverPayments() {
                         </p>
                       </div>
 
-                      <div className="bg-yellow-50 rounded-lg p-3 text-xs text-yellow-700">
-                        <p className="font-medium">⚠️ Modo desenvolvimento</p>
-                        <p className="mt-1">Na Etapa 4, será gerado um link de checkout do Mercado Pago.</p>
-                        <button
-                          onClick={() => confirmPayment(paymentResult.payment.id)}
-                          className="btn-primary text-xs mt-2"
-                        >
-                          Simular confirmação
-                        </button>
-                      </div>
+                      {paymentResult.payment?.checkout_url ? (
+                        <div className="space-y-3">
+                          <a
+                            href={paymentResult.payment.checkout_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn-primary w-full py-3 flex items-center justify-center gap-2 text-base"
+                          >
+                            <CreditCard className="w-5 h-5" /> Pagar com Cartão
+                          </a>
+                          <p className="text-xs text-gray-400">
+                            Você será redirecionado para o ambiente seguro do Mercado Pago para inserir os dados do cartão.
+                          </p>
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                            <p>Após o pagamento, volte a esta página. A confirmação será automática em alguns instantes.</p>
+                          </div>
+                        </div>
+                      ) : paymentResult.payment?.sandbox_url ? (
+                        <div className="space-y-3">
+                          <a
+                            href={paymentResult.payment.sandbox_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn-primary w-full py-3 flex items-center justify-center gap-2 text-base bg-amber-600 hover:bg-amber-700"
+                          >
+                            <CreditCard className="w-5 h-5" /> Pagar (Sandbox)
+                          </a>
+                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
+                            <p className="font-medium">Modo Teste (Sandbox)</p>
+                            <p className="mt-1">Este é um pagamento de teste. Use os cartões de teste do Mercado Pago.</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-yellow-50 rounded-lg p-3 text-xs text-yellow-700">
+                          <p className="font-medium">Checkout não disponível</p>
+                          <p className="mt-1">O link de pagamento não foi gerado. Verifique as credenciais do Mercado Pago nas configurações.</p>
+                          <button
+                            onClick={() => confirmPayment(paymentResult.payment.id)}
+                            className="btn-primary text-xs mt-2"
+                          >
+                            Confirmar manualmente
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </>
