@@ -1,7 +1,7 @@
 const express = require('express');
 const pool = require('../config/database');
 const { auth, adminOnly } = require('../middleware/auth');
-const { upload, setUploadDir } = require('../middleware/upload');
+const { upload, setUploadDir, processUpload, processUploads } = require('../middleware/upload');
 
 const router = express.Router();
 
@@ -72,7 +72,7 @@ router.post('/', auth, adminOnly, setUploadDir('properties'), upload.single('fot
       return res.status(400).json({ error: 'Campos obrigatórios: endereco, cidade, valor_mensal' });
     }
 
-    const fotoUrl = req.file ? `/uploads/properties/${req.file.filename}` : null;
+    const fotoUrl = await processUpload(req.file, 'properties');
     const toBool = (v) => v === 'true' || v === true;
 
     const result = await pool.query(`
@@ -110,7 +110,7 @@ router.put('/:id', auth, adminOnly, setUploadDir('properties'), upload.single('f
       academia, varanda, area_servico, playground, salao_festas,
       descricao, observacoes } = req.body;
 
-    const fotoUrl = req.file ? `/uploads/properties/${req.file.filename}` : undefined;
+    const fotoUrl = req.file ? await processUpload(req.file, 'properties') : undefined;
     const toBool = (v) => v === 'true' || v === true;
 
     let query = `UPDATE properties SET tipo=$1, titulo=$2, endereco=$3, bairro=$4, cidade=$5, estado=$6, cep=$7,
@@ -152,7 +152,7 @@ router.post('/:id/photos', auth, adminOnly, setUploadDir('properties'), upload.a
   try {
     if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'Nenhuma foto enviada' });
 
-    const novasFotos = req.files.map(f => `/uploads/properties/${f.filename}`);
+    const novasFotos = await processUploads(req.files, 'properties');
 
     // Busca fotos atuais
     const prop = await pool.query('SELECT fotos_extras FROM properties WHERE id = $1', [req.params.id]);

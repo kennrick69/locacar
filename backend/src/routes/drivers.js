@@ -1,7 +1,7 @@
 const express = require('express');
 const pool = require('../config/database');
 const { auth, driverOnly, adminOnly } = require('../middleware/auth');
-const { upload, setUploadDir } = require('../middleware/upload');
+const { upload, setUploadDir, processUpload } = require('../middleware/upload');
 const { sendEmail } = require('../utils/email');
 
 const router = express.Router();
@@ -84,7 +84,7 @@ router.post('/me/documents',
         return res.status(403).json({ error: 'Este documento foi fixado pelo administrador e não pode ser substituído.' });
       }
 
-      const caminho = `/uploads/documents/${req.file.filename}`;
+      const caminho = await processUpload(req.file, 'documents') || `/uploads/documents/${req.file.filename}`;
       const descricao = req.body.descricao || null;
 
       // Salva na tabela documents
@@ -162,7 +162,7 @@ router.post('/me/contrato',
         return res.status(403).json({ error: 'O contrato foi fixado pelo administrador e não pode ser substituído.' });
       }
 
-      const caminho = `/uploads/contratos/${req.file.filename}`;
+      const caminho = await processUpload(req.file, 'contratos') || `/uploads/contratos/${req.file.filename}`;
 
       // Verifica assinatura digital
       const fs = require('fs');
@@ -545,7 +545,7 @@ router.post('/me/charges/:chargeId/abatimentos',
         return res.status(400).json({ error: 'Esta cobrança já foi paga' });
       }
 
-      const notaUrl = req.file ? `/uploads/notas/${req.file.filename}` : null;
+      const notaUrl = req.file ? (await processUpload(req.file, 'notas') || `/uploads/notas/${req.file.filename}`) : null;
 
       const result = await pool.query(`
         INSERT INTO abatimentos (charge_id, driver_id, descricao, valor, nota_url)
@@ -821,7 +821,7 @@ router.post('/:id/documents',
       if (profile.rows.length === 0) return res.status(404).json({ error: 'Motorista não encontrado' });
 
       const userId = profile.rows[0].user_id;
-      const caminho = `/uploads/documents/${req.file.filename}`;
+      const caminho = await processUpload(req.file, 'documents') || `/uploads/documents/${req.file.filename}`;
 
       // Salva documento
       const result = await pool.query(`

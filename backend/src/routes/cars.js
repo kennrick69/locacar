@@ -1,7 +1,7 @@
 const express = require('express');
 const pool = require('../config/database');
 const { auth, adminOnly } = require('../middleware/auth');
-const { upload, setUploadDir } = require('../middleware/upload');
+const { upload, setUploadDir, processUpload, processUploads } = require('../middleware/upload');
 
 const router = express.Router();
 
@@ -82,7 +82,7 @@ router.post('/', auth, adminOnly, setUploadDir('cars'), upload.single('foto'), a
       return res.status(400).json({ error: 'Campos obrigatórios: marca, modelo, placa, valor_semanal' });
     }
 
-    const fotoUrl = req.file ? `/uploads/cars/${req.file.filename}` : null;
+    const fotoUrl = await processUpload(req.file, 'cars');
 
     const boolVals = {};
     for (const f of BOOLEAN_FEATURES) {
@@ -115,7 +115,7 @@ router.put('/:id', auth, adminOnly, setUploadDir('cars'), upload.single('foto'),
     const { marca, modelo, ano, placa, cor, valor_semanal, valor_caucao, disponivel, observacoes,
       combustivel, transmissao, direcao, consumo_medio, portas, descricao, renavam } = req.body;
 
-    const fotoUrl = req.file ? `/uploads/cars/${req.file.filename}` : undefined;
+    const fotoUrl = req.file ? await processUpload(req.file, 'cars') : undefined;
 
     const boolVals = {};
     for (const f of BOOLEAN_FEATURES) {
@@ -171,12 +171,8 @@ router.post('/:id/photos', auth, adminOnly, setUploadDir('cars'), upload.array('
     let fotos = [];
     try { fotos = JSON.parse(car.rows[0].fotos_extras || '[]'); } catch { fotos = []; }
 
-    const novas = [];
-    for (const file of req.files) {
-      const url = `/uploads/cars/${file.filename}`;
-      fotos.push(url);
-      novas.push(url);
-    }
+    const novas = await processUploads(req.files, 'cars');
+    fotos.push(...novas);
 
     await pool.query('UPDATE cars SET fotos_extras = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(fotos), req.params.id]);
     res.json({ fotos, novas });
