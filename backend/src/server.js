@@ -13,7 +13,18 @@ const PORT = process.env.PORT || 3001;
 app.set('trust proxy', 1);
 
 // ========== SEGURANÇA ==========
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      imgSrc: ["'self'", 'data:', 'blob:', 'https://res.cloudinary.com'],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      connectSrc: ["'self'", 'https://api.mercadopago.com'],
+    },
+  },
+}));
 
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
