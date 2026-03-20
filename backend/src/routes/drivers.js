@@ -1454,8 +1454,12 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
     res.send(buffer);
     console.log('[CONTRATO] PDF enviado ao cliente');
 
-    // Envia email em background via PHPMailer
-    if (process.env.SMTP_USER && process.env.SMTP_PASS && driver.email) {
+    // Envia email em background via Resend
+    if (!driver.email) {
+      console.warn('[CONTRATO] Email não enviado: motorista sem email cadastrado');
+    } else if (!process.env.RESEND_API_KEY) {
+      console.warn('[CONTRATO] Email não enviado: RESEND_API_KEY não configurada');
+    } else {
       const veiculo = [driver.car_marca, driver.car_modelo, driver.car_placa].filter(Boolean).join(' ');
       sendEmail({
         to: driver.email,
@@ -1478,9 +1482,9 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
         `,
         attachment: { filename: nomeArq, buffer, mime: 'application/pdf' },
       }).then(() => {
-        console.log(`[CONTRATO] Email enviado via PHP para ${driver.email}`);
+        console.log(`[CONTRATO] Email enviado para ${driver.email}`);
       }).catch(emailErr => {
-        console.error('[CONTRATO] Erro email PHP (background):', emailErr.message);
+        console.error('[CONTRATO] Erro email (background):', emailErr.message);
       });
     }
   } catch (err) {
