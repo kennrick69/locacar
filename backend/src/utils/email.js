@@ -1,7 +1,5 @@
 const { Resend } = require('resend');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 /**
  * Envia email via Resend (HTTPS — sem bloqueio de porta SMTP).
  *
@@ -15,6 +13,8 @@ async function sendEmail(params) {
   if (!process.env.RESEND_API_KEY) {
     throw new Error('RESEND_API_KEY não configurada');
   }
+
+  const resend = new Resend(process.env.RESEND_API_KEY);
 
   const from = process.env.RESEND_FROM || 'LocaCar <onboarding@resend.dev>';
 
