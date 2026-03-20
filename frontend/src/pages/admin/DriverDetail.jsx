@@ -82,6 +82,7 @@ export default function AdminDriverDetail() {
 
   // Step navigation
   const [openSteps, setOpenSteps] = useState({});
+  const [viewMode, setViewMode] = useState('auto'); // 'auto', 'etapas', 'financeiro'
 
   // === NEW: Car Swap ===
   const [swapModal, setSwapModal] = useState(false);
@@ -339,11 +340,22 @@ export default function AdminDriverDetail() {
 
   // Auto-open first step with pending action or first incomplete
   if (Object.keys(openSteps).length === 0) {
-    const firstAction = adminSteps.find(s => s.action);
-    const firstIncomplete = adminSteps.find(s => !s.done);
-    const autoOpen = firstAction?.id || firstIncomplete?.id || 'dados';
-    openSteps[autoOpen] = true;
+    if (isAtivo) {
+      // Motoristas ativos: abre cobranças direto
+      openSteps['cobrancas'] = true;
+    } else {
+      const firstAction = adminSteps.find(s => s.action);
+      const firstIncomplete = adminSteps.find(s => !s.done);
+      const autoOpen = firstAction?.id || firstIncomplete?.id || 'dados';
+      openSteps[autoOpen] = true;
+    }
   }
+
+  // Modo financeiro: abre cobranças automaticamente
+  if (viewMode === 'auto' && isAtivo) {
+    // Para motoristas ativos, default é financeiro
+  }
+  const showEtapas = viewMode === 'etapas' || (!isAtivo && viewMode !== 'financeiro');
 
   const toggleStep = (id) => setOpenSteps(prev => ({ ...prev, [id]: !prev[id] }));
 
@@ -444,8 +456,31 @@ export default function AdminDriverDetail() {
         </div>
       </div>
 
+      {/* ========== TOGGLE ETAPAS / FINANCEIRO ========== */}
+      {isAtivo && (
+        <div className="flex gap-2">
+          <button
+            onClick={() => setViewMode('etapas')}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+              showEtapas ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <FileText className="w-4 h-4" /> Etapas do Cadastro
+          </button>
+          <button
+            onClick={() => setViewMode('financeiro')}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+              !showEtapas ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <Banknote className="w-4 h-4" /> Financeiro
+            {saldoGlobal > 0 && <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">R$ {fmt(saldoGlobal)}</span>}
+          </button>
+        </div>
+      )}
+
       {/* ========== ETAPAS SEQUENCIAIS ========== */}
-      <div className="space-y-3">
+      {showEtapas && <div className="space-y-3">
 
       {/* --- ETAPA 1: DADOS PESSOAIS --- */}
       <StepSection step={adminSteps[0]} idx={0}>
@@ -612,7 +647,9 @@ export default function AdminDriverDetail() {
         )}
       </StepSection>
 
-      {/* --- ETAPA 6: COBRANÇAS --- */}
+      </div>}{/* end etapas condicionais */}
+
+      {/* --- ETAPA 6: COBRANÇAS (aparece em ambos os modos) --- */}
       <StepSection step={adminSteps[5]} idx={5}>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2"><Banknote className="w-4 h-4 text-brand-600" /> Cobranças Semanais</h3>
@@ -771,8 +808,6 @@ export default function AdminDriverDetail() {
           </div>
         )}
       </StepSection>
-
-      </div>{/* end space-y-3 steps */}
 
       {/* Edit form modal-like */}
       {editing && (

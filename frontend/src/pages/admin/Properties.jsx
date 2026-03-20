@@ -6,7 +6,7 @@ import {
   Home, Bed, Bath, Car, Ruler, Image
 } from 'lucide-react';
 
-const PROPERTY_TYPES = ['Apartamento', 'Casa', 'Comercial', 'Terreno', 'Kitnet', 'Cobertura', 'Sobrado'];
+const PROPERTY_TYPES = ['Apartamento', 'Casa', 'Quarto', 'Comercial', 'Terreno', 'Kitnet', 'Cobertura', 'Sobrado'];
 
 const BR_STATES = [
   'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG',
