@@ -247,7 +247,13 @@ export default function DriverPayments() {
         <div className="space-y-3">
           <h2 className="text-lg font-semibold text-gray-700">Cobranças Semanais</h2>
 
-          {charges.map(charge => {
+          {[...charges].sort((a, b) => {
+            const aDevendo = !a.pago;
+            const bDevendo = !b.pago;
+            if (aDevendo && !bDevendo) return -1;
+            if (!aDevendo && bDevendo) return 1;
+            return new Date(b.semana_ref) - new Date(a.semana_ref);
+          }).map(charge => {
             const isOpen = expandedCharge === charge.id;
             const abatList = charge.abatimentos_lista || [];
             const isPaid = charge.pago;
@@ -259,7 +265,7 @@ export default function DriverPayments() {
             const isParcial = !isPaid && totalPago > 0;
 
             return (
-              <div key={charge.id} className="card">
+              <div key={charge.id} className={`card ${!isPaid ? 'ring-2 ring-red-300 animate-pulse-subtle border-red-200 bg-red-50/30' : ''}`}>
                 {/* Header */}
                 <button
                   onClick={() => setExpandedCharge(isOpen ? null : charge.id)}
