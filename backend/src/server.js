@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -38,7 +39,13 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ========== UPLOADS ==========
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+// Garante que as subpastas existem (necessário quando Railway monta volume vazio)
+const uploadsBase = path.join(__dirname, '..', 'uploads');
+['cars', 'documents', 'contracts', 'contratos', 'settlements', 'properties', 'misc'].forEach(sub => {
+  const dir = path.join(uploadsBase, sub);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+app.use('/uploads', express.static(uploadsBase));
 
 // ========== ROTAS ==========
 app.use('/api/auth', require('./routes/auth'));
@@ -62,7 +69,6 @@ app.get('/api/health', async (req, res) => {
 });
 
 // ========== RAIZ / FRONTEND ==========
-const fs = require('fs');
 const publicPath = path.join(__dirname, '..', 'public');
 const indexPath = path.join(publicPath, 'index.html');
 
