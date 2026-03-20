@@ -608,39 +608,32 @@ export default function DriverJourney() {
       {/* ============================
           COBRANÇAS SEMANAIS (pós-ativo)
          ============================ */}
-      {isAtivo && (
-        <div className="card">
+      {isAtivo && balance && parseFloat(balance.saldo_devedor) > 0 && (
+        <div className="card border-2 border-red-200 bg-red-50">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CreditCard className="w-5 h-5 text-brand-600" />
-              <div>
-                <p className="font-semibold text-gray-800">Cobranças Semanais</p>
-                <p className="text-xs text-gray-400">Gerencie seus pagamentos</p>
-              </div>
+            <div>
+              <p className="text-sm text-red-600 font-medium">Saldo Devedor</p>
+              <p className="text-3xl font-bold text-red-700">R$ {fmt(balance.saldo_devedor)}</p>
             </div>
             <button onClick={() => navigate('/motorista/pagamentos')}
-              className="bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-brand-700">
-              Ver Pagamentos →
+              className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700">
+              Pagar →
             </button>
           </div>
-          {balance && (
-            <div className="grid grid-cols-3 gap-3 mt-3 text-center">
-              <div className="bg-gray-50 rounded-lg p-2">
-                <p className="text-xs text-gray-400">Cobrado</p>
-                <p className="text-sm font-bold text-gray-700">R$ {fmt(balance.total_cobrado)}</p>
-              </div>
-              <div className="bg-green-50 rounded-lg p-2">
-                <p className="text-xs text-gray-400">Pago</p>
-                <p className="text-sm font-bold text-green-700">R$ {fmt(balance.total_pago)}</p>
-              </div>
-              <div className={`rounded-lg p-2 ${parseFloat(balance.saldo_devedor) > 0 ? 'bg-red-50' : 'bg-green-50'}`}>
-                <p className="text-xs text-gray-400">Saldo</p>
-                <p className={`text-sm font-bold ${parseFloat(balance.saldo_devedor) > 0 ? 'text-red-700' : 'text-green-700'}`}>
-                  R$ {fmt(balance.saldo_devedor)}
-                </p>
-              </div>
+        </div>
+      )}
+      {isAtivo && balance && parseFloat(balance.saldo_devedor) <= 0 && (
+        <div className="card border-2 border-green-200 bg-green-50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-green-600" />
+              <p className="text-sm text-green-800 font-medium">Tudo em dia!</p>
             </div>
-          )}
+            <button onClick={() => navigate('/motorista/pagamentos')}
+              className="text-sm text-green-700 hover:text-green-900 font-medium">
+              Ver histórico →
+            </button>
+          </div>
         </div>
       )}
 
