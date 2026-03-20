@@ -484,12 +484,14 @@ export default function Register() {
                     <p className="text-sm text-gray-500">Clique para enviar ou arraste a foto</p>
                   </div>
                 )}
-                <input type="file" ref={selfieRef} accept="image/*" className="hidden"
+                <input type="file" ref={selfieRef} accept="image/*" capture="user" className="hidden"
                   onChange={e => { if (e.target.files[0]) uploadSelfie(e.target.files[0]); e.target.value = ''; }} />
-                <button onClick={() => selfieRef.current?.click()} disabled={selfieUploading}
-                  className={`mt-3 px-4 py-2 rounded-lg text-sm font-medium ${selfieUploaded ? 'bg-green-100 text-green-700' : 'bg-brand-600 text-white hover:bg-brand-700'}`}>
-                  {selfieUploading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : selfieUploaded ? 'Reenviar' : 'Enviar Selfie'}
-                </button>
+                <div className="flex gap-2 justify-center mt-3">
+                  <button onClick={() => selfieRef.current?.click()} disabled={selfieUploading}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium ${selfieUploaded ? 'bg-green-100 text-green-700' : 'bg-brand-600 text-white hover:bg-brand-700'}`}>
+                    {selfieUploading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : selfieUploaded ? 'Reenviar' : 'Tirar Foto / Enviar'}
+                  </button>
+                </div>
               </div>
 
               <div className="flex gap-3 pt-1">

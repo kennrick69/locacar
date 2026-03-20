@@ -207,12 +207,18 @@ router.post('/me/generate-contract', auth, driverOnly, async (req, res) => {
   try {
     const driverRes = await pool.query(`
       SELECT dp.*, u.nome, u.email, u.cpf, u.telefone,
-        c.marca as car_marca, c.modelo as car_modelo, c.placa as car_placa,
-        c.cor as car_cor, c.ano as car_ano, c.valor_semanal, c.valor_caucao,
-        c.renavam as car_renavam
+        COALESCE(c.marca, ci.marca) as car_marca,
+        COALESCE(c.modelo, ci.modelo) as car_modelo,
+        COALESCE(c.placa, ci.placa) as car_placa,
+        COALESCE(c.cor, ci.cor) as car_cor,
+        COALESCE(c.ano, ci.ano) as car_ano,
+        COALESCE(c.valor_semanal, ci.valor_semanal) as valor_semanal,
+        COALESCE(c.valor_caucao, ci.valor_caucao) as valor_caucao,
+        COALESCE(c.renavam, ci.renavam) as car_renavam
       FROM driver_profiles dp
       JOIN users u ON u.id = dp.user_id
       LEFT JOIN cars c ON c.id = dp.car_id
+      LEFT JOIN cars ci ON ci.id = dp.car_interesse_id
       WHERE dp.user_id = $1
     `, [req.user.id]);
 
@@ -220,12 +226,8 @@ router.post('/me/generate-contract', auth, driverOnly, async (req, res) => {
     const driver = driverRes.rows[0];
 
     // Validações de pré-requisitos
-    if (!driver.car_id) return res.status(400).json({ error: 'Nenhum carro atribuído ao seu perfil' });
+    if (!driver.car_id && !driver.car_interesse_id) return res.status(400).json({ error: 'Nenhum veículo selecionado' });
     if (!driver.nome || !driver.cpf) return res.status(400).json({ error: 'Complete seus dados pessoais primeiro' });
-    if (!driver.cnh_url || !driver.comprovante_url || !driver.perfil_app_url) {
-      return res.status(400).json({ error: 'Envie todos os documentos de cadastro primeiro (CNH, comprovante, print do app)' });
-    }
-    if (!driver.selfie_url) return res.status(400).json({ error: 'Envie a selfie com documento primeiro' });
 
     // Busca dados do locador (settings)
     const settingsRes = await pool.query("SELECT chave, valor FROM settings WHERE chave LIKE 'locador_%'");

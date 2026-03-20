@@ -184,6 +184,7 @@ export default function DriverJourney() {
         {!isFixed && (
           <div>
             <input type="file" ref={el => fileInputs.current[tipo] = el} accept="image/*,application/pdf" className="hidden"
+              {...(tipo === 'selfie' ? { capture: 'user' } : {})}
               onChange={() => { const f = fileInputs.current[tipo]?.files?.[0]; if (f) uploadFile(tipo, f); fileInputs.current[tipo].value = ''; }} />
             <button onClick={() => fileInputs.current[tipo]?.click()} disabled={isUp}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium ${isUploaded ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : colors.btn + ' text-white'}`}>
