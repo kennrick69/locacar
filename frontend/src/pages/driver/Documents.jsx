@@ -102,7 +102,7 @@ export default function DriverDocuments() {
   }
 
   // Contrato aparece só após aprovação
-  const showContrato = profile?.status === 'aprovado' || profile?.status === 'ativo' || profile?.status === 'inadimplente';
+  const showContrato = !!profile;
 
   // Quantos docs de cadastro já foram enviados
   const docsCadastroEnviados = DOC_CADASTRO.filter(d => !!profile?.[d.field]).length;
@@ -249,15 +249,24 @@ export default function DriverDocuments() {
 
           {!profile?.contrato_url && (
             <div className="card border-l-4 border-purple-400 bg-purple-50 space-y-2">
-              <p className="text-sm text-purple-800">
-                Seu cadastro foi aprovado! Siga os passos abaixo para ativar sua conta:
-              </p>
-              <ol className="text-sm text-purple-700 list-decimal list-inside space-y-1">
-                <li>Baixe o contrato já preenchido com seus dados</li>
-                <li>Assine digitalmente pelo <strong>Gov.br</strong></li>
-                <li>Faça upload do contrato assinado</li>
-                <li>Envie a selfie segurando o documento</li>
-              </ol>
+              {documents.some(d => d.tipo === 'contrato_gerado') ? (
+                <>
+                  <p className="text-sm text-purple-800 font-medium">Contrato disponível! Siga os passos:</p>
+                  <ol className="text-sm text-purple-700 list-decimal list-inside space-y-1">
+                    <li>Baixe o contrato já preenchido com seus dados</li>
+                    <li>Acesse <strong>assinador.iti.br</strong> ou app <strong>Gov.br</strong></li>
+                    <li>Assine digitalmente o PDF</li>
+                    <li>Faça upload do contrato assinado abaixo</li>
+                    <li>Envie a selfie segurando o documento</li>
+                  </ol>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-blue-800 font-medium">Aguardando contrato</p>
+                  <p className="text-xs text-blue-700">O administrador vai gerar seu contrato e você receberá por email e/ou WhatsApp.</p>
+                  <p className="text-xs text-blue-500">Enquanto isso, você já pode enviar a <strong>selfie com documento</strong> abaixo.</p>
+                </>
+              )}
             </div>
           )}
 

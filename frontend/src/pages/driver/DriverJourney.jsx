@@ -294,13 +294,21 @@ export default function DriverJourney() {
                   {step.id === 'contrato' && (
                     <div className="space-y-4">
                       {/* Instruções */}
-                      {!hasContrato && (
+                      {!hasContrato && !contratoGerado && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700 space-y-2">
+                          <p className="font-medium">Aguardando contrato</p>
+                          <p className="text-xs">O administrador vai gerar seu contrato de locação e você receberá por <strong>email</strong> e/ou <strong>WhatsApp</strong>.</p>
+                          <p className="text-xs text-blue-500">Enquanto isso, você já pode enviar a <strong>selfie com documento</strong> abaixo para adiantar o processo.</p>
+                        </div>
+                      )}
+                      {!hasContrato && contratoGerado && (
                         <div className="bg-purple-50 rounded-lg p-3 text-sm text-purple-700 space-y-1">
                           <p className="font-medium">Passos para assinar o contrato:</p>
                           <ol className="list-decimal list-inside space-y-0.5 text-xs">
-                            <li>O administrador gerará o contrato (você receberá por email/WhatsApp)</li>
+                            <li>Baixe o PDF do contrato abaixo</li>
                             <li>Acesse <strong>assinador.iti.br</strong> ou app <strong>Gov.br</strong></li>
-                            <li>Assine digitalmente o PDF</li>
+                            <li>Faça login com sua conta Gov.br (nível Prata ou Ouro)</li>
+                            <li>Selecione o PDF e assine digitalmente</li>
                             <li>Faça upload do contrato assinado abaixo</li>
                           </ol>
                         </div>
