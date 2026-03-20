@@ -201,7 +201,7 @@ router.post('/me/contrato',
 
 /**
  * POST /api/drivers/me/generate-contract
- * Motorista gera seu próprio contrato (se tiver carro atribuído)
+ * Motorista gera seu próprio contrato após completar todas as etapas e aceitar LGPD
  */
 router.post('/me/generate-contract', auth, driverOnly, async (req, res) => {
   try {
@@ -219,7 +219,13 @@ router.post('/me/generate-contract', auth, driverOnly, async (req, res) => {
     if (driverRes.rows.length === 0) return res.status(404).json({ error: 'Perfil não encontrado' });
     const driver = driverRes.rows[0];
 
-    if (!driver.car_id) return res.status(400).json({ error: 'Nenhum carro atribuído ao seu perfil ainda' });
+    // Validações de pré-requisitos
+    if (!driver.car_id) return res.status(400).json({ error: 'Nenhum carro atribuído ao seu perfil' });
+    if (!driver.nome || !driver.cpf) return res.status(400).json({ error: 'Complete seus dados pessoais primeiro' });
+    if (!driver.cnh_url || !driver.comprovante_url || !driver.perfil_app_url) {
+      return res.status(400).json({ error: 'Envie todos os documentos de cadastro primeiro (CNH, comprovante, print do app)' });
+    }
+    if (!driver.selfie_url) return res.status(400).json({ error: 'Envie a selfie com documento primeiro' });
 
     // Busca dados do locador (settings)
     const settingsRes = await pool.query("SELECT chave, valor FROM settings WHERE chave LIKE 'locador_%'");
@@ -282,6 +288,36 @@ router.post('/me/generate-contract', auth, driverOnly, async (req, res) => {
       VALUES ($1, 'contrato_gerado', $2, $3, 'application/pdf', $4)
     `, [req.user.id, nomeArq, caminho, buffer.length]);
 
+    // Envia PDF por email em background
+    if (driver.email && process.env.RESEND_API_KEY) {
+      const { sendEmail } = require('../utils/email');
+      const veiculo = [driver.car_marca, driver.car_modelo, driver.car_placa].filter(Boolean).join(' ');
+      sendEmail({
+        to: driver.email,
+        subject: 'IMP Locadora - Seu Contrato de Locação',
+        html: `
+          <h2>Olá ${driver.nome}!</h2>
+          <p>Seu contrato de locação do veículo <strong>${veiculo}</strong> está em anexo.</p>
+          <h3>Instruções para assinatura digital:</h3>
+          <ol>
+            <li>Baixe o PDF anexo</li>
+            <li>Acesse <a href="https://assinador.iti.br">assinador.iti.br</a> ou use o app <strong>Gov.br</strong></li>
+            <li>Faça login com sua conta Gov.br (nível Prata ou Ouro)</li>
+            <li>Selecione o PDF do contrato e assine digitalmente</li>
+            <li>Volte ao sistema e faça upload do contrato assinado</li>
+          </ol>
+          <p>Qualquer dúvida, entre em contato!</p>
+          <p><strong>IMP Locadora</strong></p>
+        `,
+        attachment: { filename: nomeArq, buffer, mime: 'application/pdf' },
+      }).then(() => {
+        console.log(`[CONTRATO] Email enviado para ${driver.email}`);
+      }).catch(emailErr => {
+        console.error('[CONTRATO] Erro email:', emailErr.message);
+      });
+    }
+
+    // Envia PDF como resposta
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${nomeArq}"`);
     res.send(buffer);

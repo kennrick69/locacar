@@ -78,6 +78,7 @@ export default function DriverJourney() {
   };
 
   const [generatingContract, setGeneratingContract] = useState(false);
+  const [lgpdAccepted, setLgpdAccepted] = useState(false);
   const handleGenerateContract = async () => {
     setGeneratingContract(true);
     try {
@@ -129,9 +130,9 @@ export default function DriverJourney() {
     },
     {
       id: 'contrato',
-      label: 'Contrato de Locação',
+      label: 'Termos e Contrato',
       icon: FileCheck,
-      done: hasContrato && hasSelfie,
+      done: hasContrato && hasSelfie && contratoGerado,
       available: true,
       waitMsg: null,
     },
@@ -320,45 +321,109 @@ export default function DriverJourney() {
                   {/* ---- STEP 3: CONTRATO ---- */}
                   {step.id === 'contrato' && (
                     <div className="space-y-4">
-                      {/* Gerar contrato */}
-                      {!contratoGerado && profile?.car_id && (
-                        <div className="bg-brand-50 border border-brand-200 rounded-lg p-4 space-y-3">
-                          <div>
-                            <p className="text-sm font-medium text-brand-800">Gere seu contrato de locação</p>
-                            <p className="text-xs text-brand-600 mt-1">O contrato será preenchido automaticamente com seus dados e os do veículo.</p>
-                          </div>
-                          <button
-                            onClick={handleGenerateContract}
-                            disabled={generatingContract}
-                            className="btn-primary w-full flex items-center justify-center gap-2"
-                          >
-                            {generatingContract ? (
-                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                            ) : (
-                              <><Download className="w-4 h-4" /> Gerar e Baixar Contrato</>
-                            )}
-                          </button>
-                        </div>
-                      )}
-                      {!contratoGerado && !profile?.car_id && (
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-500">
-                          <p>O contrato será disponibilizado quando um veículo for atribuído ao seu cadastro.</p>
-                        </div>
-                      )}
+                      {(() => {
+                        const dadosOk = !!profile?.nome && !!profile?.cpf && !!profile?.telefone;
+                        const docsOk = hasCnh && hasComprovante && hasPrint;
+                        const selfieOk = hasSelfie;
+                        const allPreReqsDone = dadosOk && docsOk && selfieOk && !!profile?.car_id;
 
-                      {/* Instruções pós-geração */}
-                      {contratoGerado && !hasContrato && (
-                        <div className="bg-purple-50 rounded-lg p-3 text-sm text-purple-700 space-y-1">
-                          <p className="font-medium">Passos para assinar o contrato:</p>
-                          <ol className="list-decimal list-inside space-y-0.5 text-xs">
-                            <li>Baixe o PDF do contrato abaixo (se ainda não baixou)</li>
-                            <li>Acesse <strong>assinador.iti.br</strong> ou app <strong>Gov.br</strong></li>
-                            <li>Faça login com sua conta Gov.br (nível Prata ou Ouro)</li>
-                            <li>Selecione o PDF e assine digitalmente</li>
-                            <li>Faça upload do contrato assinado abaixo</li>
-                          </ol>
-                        </div>
-                      )}
+                        return (
+                          <>
+                            {/* Selfie primeiro (pode enviar antes do contrato) */}
+                            <DocUpload tipo="selfie" label="Selfie com Documento" icon={Camera} desc="Foto segurando a CNH ao lado do rosto" field="selfie_url" colorClass="purple" />
+
+                            {/* Checklist de pré-requisitos */}
+                            {!contratoGerado && (
+                              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+                                <p className="text-sm font-semibold text-gray-700">Para gerar o contrato, complete:</p>
+                                <div className="space-y-1.5">
+                                  {[
+                                    { ok: dadosOk, label: 'Dados pessoais (nome, CPF, telefone)' },
+                                    { ok: docsOk, label: 'Documentos (CNH, comprovante, print do app)' },
+                                    { ok: selfieOk, label: 'Selfie segurando documento' },
+                                    { ok: !!profile?.car_id, label: 'Veículo atribuído ao seu cadastro' },
+                                  ].map((item, i) => (
+                                    <div key={i} className="flex items-center gap-2">
+                                      {item.ok
+                                        ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+                                        : <div className="w-4 h-4 rounded-full border-2 border-gray-300 shrink-0" />}
+                                      <span className={`text-xs ${item.ok ? 'text-green-700' : 'text-gray-500'}`}>{item.label}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Aceite LGPD + Geração do contrato */}
+                            {!contratoGerado && allPreReqsDone && (
+                              <div className="bg-brand-50 border border-brand-200 rounded-xl p-4 space-y-4">
+                                <div>
+                                  <p className="text-sm font-semibold text-brand-800">Termo de Consentimento para Uso de Dados Pessoais</p>
+                                  <p className="text-xs text-brand-600 mt-1">Conforme a Lei Geral de Proteção de Dados (LGPD - Lei 13.709/2018)</p>
+                                </div>
+
+                                <div className="bg-white rounded-lg p-3 max-h-40 overflow-y-auto text-[11px] text-gray-600 space-y-2 border border-gray-200">
+                                  <p>Ao prosseguir, declaro estar ciente e autorizo a <strong>IMP Locadora</strong> a coletar, armazenar e utilizar os seguintes dados pessoais fornecidos por mim durante o processo de cadastro:</p>
+                                  <ul className="list-disc list-inside space-y-0.5">
+                                    <li><strong>Dados de identificação:</strong> nome completo, CPF, RG, endereço, telefone e e-mail</li>
+                                    <li><strong>Documentos:</strong> CNH (digital ou física), comprovante de endereço</li>
+                                    <li><strong>Imagens:</strong> selfie com documento, fotos de vistoria do veículo, print do perfil em aplicativo de transporte</li>
+                                    <li><strong>Dados financeiros:</strong> informações de pagamento (caução, cobranças semanais)</li>
+                                  </ul>
+                                  <p className="font-medium">Finalidade do tratamento dos dados:</p>
+                                  <ul className="list-disc list-inside space-y-0.5">
+                                    <li>Execução do contrato de locação de veículo</li>
+                                    <li>Identificação junto a autoridades de trânsito</li>
+                                    <li>Comunicação sobre pagamentos, cobranças e notificações</li>
+                                    <li>Cumprimento de obrigações legais e regulatórias</li>
+                                    <li>Proteção ao crédito e prevenção a fraudes</li>
+                                  </ul>
+                                  <p>Os dados serão mantidos pelo período necessário ao cumprimento das finalidades acima e das obrigações legais aplicáveis. Após o término do contrato, os dados serão eliminados, salvo obrigação legal de retenção.</p>
+                                  <p>Você pode, a qualquer momento, solicitar informações sobre seus dados, correção, atualização ou exclusão, entrando em contato com a administração.</p>
+                                </div>
+
+                                <label className="flex items-start gap-3 cursor-pointer group">
+                                  <input
+                                    type="checkbox"
+                                    checked={lgpdAccepted}
+                                    onChange={e => setLgpdAccepted(e.target.checked)}
+                                    className="mt-0.5 w-5 h-5 rounded border-gray-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
+                                  />
+                                  <span className="text-xs text-gray-700 group-hover:text-gray-900">
+                                    Li e concordo com o <strong>Termo de Consentimento para Uso de Dados Pessoais</strong> e autorizo o tratamento dos meus dados conforme descrito acima.
+                                  </span>
+                                </label>
+
+                                <button
+                                  onClick={handleGenerateContract}
+                                  disabled={generatingContract || !lgpdAccepted}
+                                  className="btn-primary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {generatingContract ? (
+                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                  ) : (
+                                    <><Download className="w-4 h-4" /> Aceitar Termos e Gerar Contrato</>
+                                  )}
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Instruções pós-geração */}
+                            {contratoGerado && !hasContrato && (
+                              <div className="bg-purple-50 rounded-lg p-3 text-sm text-purple-700 space-y-1">
+                                <p className="font-medium">Passos para assinar o contrato:</p>
+                                <ol className="list-decimal list-inside space-y-0.5 text-xs">
+                                  <li>Baixe o PDF do contrato abaixo (também enviado por email)</li>
+                                  <li>Acesse <strong>assinador.iti.br</strong> ou app <strong>Gov.br</strong></li>
+                                  <li>Faça login com sua conta Gov.br (nível Prata ou Ouro)</li>
+                                  <li>Selecione o PDF e assine digitalmente</li>
+                                  <li>Faça upload do contrato assinado abaixo</li>
+                                </ol>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
 
                       {/* Download do contrato gerado */}
                       {contratoGerado && (
@@ -414,8 +479,6 @@ export default function DriverJourney() {
                         );
                       })()}
 
-                      {/* Selfie */}
-                      <DocUpload tipo="selfie" label="Selfie com Documento" icon={Camera} desc="Foto segurando a CNH ao lado do rosto" field="selfie_url" colorClass="purple" />
                     </div>
                   )}
 
