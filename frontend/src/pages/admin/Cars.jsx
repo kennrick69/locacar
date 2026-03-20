@@ -119,10 +119,32 @@ function Autocomplete({ label, value, onChange, options, placeholder, disabled }
 }
 
 // ==========================================================
+const FEATURE_LIST = [
+  { key: 'ar_condicionado', label: 'Ar Condicionado' },
+  { key: 'vidro_eletrico', label: 'Vidros Elétricos' },
+  { key: 'trava_eletrica', label: 'Travas Elétricas' },
+  { key: 'airbag', label: 'Airbag' },
+  { key: 'freio_abs', label: 'Freio ABS' },
+  { key: 'sensor_estacionamento', label: 'Sensor de Estacionamento' },
+  { key: 'camera_re', label: 'Câmera de Ré' },
+  { key: 'multimidia', label: 'Central Multimídia' },
+  { key: 'bluetooth', label: 'Bluetooth' },
+  { key: 'gps_nativo', label: 'GPS Nativo' },
+  { key: 'banco_couro', label: 'Bancos de Couro' },
+  { key: 'teto_solar', label: 'Teto Solar' },
+  { key: 'sensor_chuva', label: 'Sensor de Chuva' },
+  { key: 'farol_neblina', label: 'Farol de Neblina' },
+  { key: 'rodas_liga', label: 'Rodas de Liga Leve' },
+  { key: 'alarme', label: 'Alarme' },
+  { key: 'controle_tracao', label: 'Controle de Tração' },
+  { key: 'piloto_automatico', label: 'Piloto Automático' },
+];
+
 const EMPTY_CAR = {
   marca: '', modelo: '', ano: '', placa: '', cor: '', valor_semanal: '', valor_caucao: '',
-  renavam: '', observacoes: '', ar_condicionado: false, combustivel: 'Flex',
-  transmissao: 'Manual', direcao: 'Hidráulica', consumo_medio: '', portas: '4', descricao: ''
+  renavam: '', observacoes: '', combustivel: 'Flex',
+  transmissao: 'Manual', direcao: 'Hidráulica', consumo_medio: '', portas: '4', descricao: '',
+  ...Object.fromEntries(FEATURE_LIST.map(f => [f.key, false]))
 };
 
 export default function AdminCars() {
@@ -158,25 +180,28 @@ export default function AdminCars() {
       marca: car.marca || '', modelo: car.modelo || '', ano: car.ano || '',
       placa: car.placa || '', cor: car.cor || '', valor_semanal: car.valor_semanal || '',
       valor_caucao: car.valor_caucao || '', renavam: car.renavam || '', observacoes: car.observacoes || '',
-      disponivel: car.disponivel, ar_condicionado: car.ar_condicionado || false,
+      disponivel: car.disponivel,
       combustivel: car.combustivel || 'Flex', transmissao: car.transmissao || 'Manual',
       direcao: car.direcao || 'Hidráulica', consumo_medio: car.consumo_medio || '',
       portas: car.portas || '4', descricao: car.descricao || '',
+      ...Object.fromEntries(FEATURE_LIST.map(f => [f.key, car[f.key] || false])),
     });
     try { setExtraPhotos(JSON.parse(car.fotos_extras || '[]')); } catch { setExtraPhotos([]); }
     setModal(car);
   };
 
-  const handleUploadExtraPhoto = async (file) => {
-    if (!file || modal === 'new') return;
+  const handleUploadExtraPhoto = async (files) => {
+    if (!files || files.length === 0 || modal === 'new') return;
     setUploadingPhoto(true);
     try {
       const fd = new FormData();
-      fd.append('foto', file);
+      for (let i = 0; i < files.length; i++) {
+        fd.append('fotos', files[i]);
+      }
       const res = await carsAPI.addPhoto(modal.id, fd);
       setExtraPhotos(res.data.fotos);
-      toast.success('Foto adicionada!');
-    } catch (e) { toast.error('Erro ao enviar foto'); }
+      toast.success(files.length > 1 ? `${files.length} fotos adicionadas!` : 'Foto adicionada!');
+    } catch (e) { toast.error('Erro ao enviar foto(s)'); }
     finally { setUploadingPhoto(false); if (extraPhotoRef.current) extraPhotoRef.current.value = ''; }
   };
 
@@ -422,18 +447,24 @@ export default function AdminCars() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Consumo médio</label>
                     <input type="text" value={form.consumo_medio} onChange={set('consumo_medio')} className="input-field" placeholder="12 km/l" />
                   </div>
-                  <div className="flex items-end pb-1">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={form.ar_condicionado}
-                        onChange={e => setForm({ ...form, ar_condicionado: e.target.checked })}
-                        className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
-                      <span className="text-sm text-gray-700">Ar Condicionado</span>
-                    </label>
-                  </div>
                 </div>
                 <div className="mt-3">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Descrição do veículo</label>
                   <textarea value={form.descricao} onChange={set('descricao')} className="input-field" rows={3} placeholder="Detalhes sobre o carro, estado de conservação, acessórios..." />
+                </div>
+                {/* Itens de Conforto e Segurança */}
+                <div className="mt-4">
+                  <p className="text-sm font-semibold text-gray-700 mb-3">Itens de Conforto e Segurança</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {FEATURE_LIST.map(f => (
+                      <label key={f.key} className="flex items-center gap-2 cursor-pointer py-1">
+                        <input type="checkbox" checked={form[f.key] || false}
+                          onChange={e => setForm({ ...form, [f.key]: e.target.checked })}
+                          className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
+                        <span className="text-sm text-gray-700">{f.label}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -465,8 +496,8 @@ export default function AdminCars() {
                     </div>
                   )}
                   <div className="flex items-center gap-2">
-                    <input type="file" ref={extraPhotoRef} accept="image/*" className="hidden"
-                      onChange={(e) => { if (e.target.files[0]) handleUploadExtraPhoto(e.target.files[0]); }} />
+                    <input type="file" ref={extraPhotoRef} accept="image/*" multiple className="hidden"
+                      onChange={(e) => { if (e.target.files.length > 0) handleUploadExtraPhoto(e.target.files); }} />
                     <button type="button" onClick={() => extraPhotoRef.current?.click()} disabled={uploadingPhoto}
                       className="text-sm bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-200 flex items-center gap-1">
                       {uploadingPhoto ? <div className="w-4 h-4 border-2 border-gray-300 border-t-brand-600 rounded-full animate-spin" />

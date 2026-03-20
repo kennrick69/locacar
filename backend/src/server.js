@@ -43,6 +43,7 @@ app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 // ========== ROTAS ==========
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/cars', require('./routes/cars'));
+app.use('/api/properties', require('./routes/properties'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/drivers', require('./routes/drivers'));
 app.use('/api/payments', require('./routes/payments'));
@@ -128,6 +129,15 @@ async function start() {
           transmissao VARCHAR(30) DEFAULT 'Manual', direcao VARCHAR(30) DEFAULT 'Hidráulica',
           consumo_medio VARCHAR(30), portas INTEGER DEFAULT 4, descricao TEXT,
           fotos_extras TEXT DEFAULT '[]', renavam VARCHAR(30),
+          vidro_eletrico BOOLEAN DEFAULT false, trava_eletrica BOOLEAN DEFAULT false,
+          airbag BOOLEAN DEFAULT false, freio_abs BOOLEAN DEFAULT false,
+          sensor_estacionamento BOOLEAN DEFAULT false, camera_re BOOLEAN DEFAULT false,
+          multimidia BOOLEAN DEFAULT false, bluetooth BOOLEAN DEFAULT false,
+          gps_nativo BOOLEAN DEFAULT false, banco_couro BOOLEAN DEFAULT false,
+          teto_solar BOOLEAN DEFAULT false, sensor_chuva BOOLEAN DEFAULT false,
+          farol_neblina BOOLEAN DEFAULT false, rodas_liga BOOLEAN DEFAULT false,
+          alarme BOOLEAN DEFAULT false, controle_tracao BOOLEAN DEFAULT false,
+          piloto_automatico BOOLEAN DEFAULT false,
           created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW()
         )`);
 
@@ -214,6 +224,41 @@ async function start() {
           observacoes TEXT, created_at TIMESTAMP DEFAULT NOW()
         )`);
 
+        await client.query(`CREATE TABLE IF NOT EXISTS properties (
+          id SERIAL PRIMARY KEY,
+          tipo VARCHAR(50) NOT NULL DEFAULT 'apartamento',
+          titulo VARCHAR(255),
+          endereco VARCHAR(255) NOT NULL,
+          bairro VARCHAR(100),
+          cidade VARCHAR(100) NOT NULL,
+          estado VARCHAR(2) NOT NULL DEFAULT 'SC',
+          cep VARCHAR(10),
+          quartos INTEGER DEFAULT 0,
+          banheiros INTEGER DEFAULT 0,
+          vagas_garagem INTEGER DEFAULT 0,
+          area_m2 DECIMAL(10,2),
+          valor_mensal DECIMAL(10,2) NOT NULL,
+          valor_deposito DECIMAL(10,2) DEFAULT 0,
+          disponivel BOOLEAN DEFAULT true,
+          mobiliado BOOLEAN DEFAULT false,
+          aceita_pets BOOLEAN DEFAULT false,
+          piscina BOOLEAN DEFAULT false,
+          churrasqueira BOOLEAN DEFAULT false,
+          portaria_24h BOOLEAN DEFAULT false,
+          elevador BOOLEAN DEFAULT false,
+          academia BOOLEAN DEFAULT false,
+          varanda BOOLEAN DEFAULT false,
+          area_servico BOOLEAN DEFAULT false,
+          playground BOOLEAN DEFAULT false,
+          salao_festas BOOLEAN DEFAULT false,
+          descricao TEXT,
+          foto_url TEXT,
+          fotos_extras TEXT DEFAULT '[]',
+          observacoes TEXT,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )`);
+
         await client.query('COMMIT');
         console.log('✅ Tabelas criadas!');
       } catch (migErr) {
@@ -249,6 +294,24 @@ async function start() {
         await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS portas INTEGER DEFAULT 4`);
         await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS descricao TEXT`);
         await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS fotos_extras TEXT DEFAULT '[]'`);
+        // Feature boolean columns
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS vidro_eletrico BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS trava_eletrica BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS airbag BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS freio_abs BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS sensor_estacionamento BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS camera_re BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS multimidia BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS bluetooth BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS gps_nativo BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS banco_couro BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS teto_solar BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS sensor_chuva BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS farol_neblina BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS rodas_liga BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS alarme BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS controle_tracao BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE cars ADD COLUMN IF NOT EXISTS piloto_automatico BOOLEAN DEFAULT false`);
         // Driver car interest
         await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS car_interesse_id INTEGER REFERENCES cars(id)`);
         // Car swap history
@@ -264,6 +327,42 @@ async function start() {
           valor_pago DECIMAL(10,2) NOT NULL, data_pagamento DATE NOT NULL,
           observacoes TEXT, created_at TIMESTAMP DEFAULT NOW()
         )`);
+        // Properties table
+        await pool.query(`CREATE TABLE IF NOT EXISTS properties (
+          id SERIAL PRIMARY KEY,
+          tipo VARCHAR(50) NOT NULL DEFAULT 'apartamento',
+          titulo VARCHAR(255),
+          endereco VARCHAR(255) NOT NULL,
+          bairro VARCHAR(100),
+          cidade VARCHAR(100) NOT NULL,
+          estado VARCHAR(2) NOT NULL DEFAULT 'SC',
+          cep VARCHAR(10),
+          quartos INTEGER DEFAULT 0,
+          banheiros INTEGER DEFAULT 0,
+          vagas_garagem INTEGER DEFAULT 0,
+          area_m2 DECIMAL(10,2),
+          valor_mensal DECIMAL(10,2) NOT NULL,
+          valor_deposito DECIMAL(10,2) DEFAULT 0,
+          disponivel BOOLEAN DEFAULT true,
+          mobiliado BOOLEAN DEFAULT false,
+          aceita_pets BOOLEAN DEFAULT false,
+          piscina BOOLEAN DEFAULT false,
+          churrasqueira BOOLEAN DEFAULT false,
+          portaria_24h BOOLEAN DEFAULT false,
+          elevador BOOLEAN DEFAULT false,
+          academia BOOLEAN DEFAULT false,
+          varanda BOOLEAN DEFAULT false,
+          area_servico BOOLEAN DEFAULT false,
+          playground BOOLEAN DEFAULT false,
+          salao_festas BOOLEAN DEFAULT false,
+          descricao TEXT,
+          foto_url TEXT,
+          fotos_extras TEXT DEFAULT '[]',
+          observacoes TEXT,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )`);
+        await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS property_interesse_id INTEGER REFERENCES properties(id)`);
         // Juros column on weekly_charges
         await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS juros_acumulados DECIMAL(10,2) DEFAULT 0`);
         await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS valor_pago_total DECIMAL(10,2) DEFAULT 0`);

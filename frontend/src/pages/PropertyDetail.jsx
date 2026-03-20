@@ -1,30 +1,35 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { carsAPI } from '../services/api';
+import { propertiesAPI } from '../services/api';
 import {
-  Car, ArrowLeft, Calendar, Fuel, Gauge, Wind, Settings2,
-  DoorOpen, ChevronLeft, ChevronRight, ArrowRight, CheckCircle2
+  Building2, ArrowLeft, Bed, Bath, Car, Ruler,
+  ChevronLeft, ChevronRight, ArrowRight, Home
 } from 'lucide-react';
 
-const FEATURE_LABELS = {
-  ar_condicionado: 'Ar Condicionado', vidro_eletrico: 'Vidros Elétricos', trava_eletrica: 'Travas Elétricas',
-  airbag: 'Airbag', freio_abs: 'Freio ABS', sensor_estacionamento: 'Sensor de Estacionamento',
-  camera_re: 'Câmera de Ré', multimidia: 'Central Multimídia', bluetooth: 'Bluetooth',
-  gps_nativo: 'GPS Nativo', banco_couro: 'Bancos de Couro', teto_solar: 'Teto Solar',
-  sensor_chuva: 'Sensor de Chuva', farol_neblina: 'Farol de Neblina', rodas_liga: 'Rodas de Liga Leve',
-  alarme: 'Alarme', controle_tracao: 'Controle de Tração', piloto_automatico: 'Piloto Automático',
+const AMENITY_LABELS = {
+  mobiliado: 'Mobiliado',
+  aceita_pets: 'Aceita Pets',
+  piscina: 'Piscina',
+  churrasqueira: 'Churrasqueira',
+  portaria_24h: 'Portaria 24h',
+  elevador: 'Elevador',
+  academia: 'Academia',
+  varanda: 'Varanda',
+  area_servico: 'Area de Servico',
+  playground: 'Playground',
+  salao_festas: 'Salao de Festas',
 };
 
-export default function CarDetail() {
+export default function PropertyDetail() {
   const { id } = useParams();
-  const [car, setCar] = useState(null);
+  const [property, setProperty] = useState(null);
   const [loading, setLoading] = useState(true);
   const [photoIndex, setPhotoIndex] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
-    carsAPI.get(id)
-      .then(res => setCar(res.data))
+    propertiesAPI.get(id)
+      .then(res => setProperty(res.data))
       .catch(() => navigate('/'))
       .finally(() => setLoading(false));
   }, [id]);
@@ -35,26 +40,25 @@ export default function CarDetail() {
     </div>
   );
 
-  if (!car) return null;
+  if (!property) return null;
 
-  // Monta array de fotos
+  // Build photo array
   let fotos = [];
-  if (car.foto_url) fotos.push(car.foto_url);
+  if (property.foto_url) fotos.push(property.foto_url);
   try {
-    const extras = JSON.parse(car.fotos_extras || '[]');
+    const extras = JSON.parse(property.fotos_extras || '[]');
     fotos = [...fotos, ...extras];
   } catch {}
-  if (fotos.length === 0) fotos.push(null); // placeholder
+  if (fotos.length === 0) fotos.push(null);
 
   const specs = [
-    { icon: Fuel, label: 'Combustível', value: car.combustivel || 'Flex' },
-    { icon: Settings2, label: 'Transmissão', value: car.transmissao || 'Manual' },
-    { icon: Gauge, label: 'Direção', value: car.direcao || 'Hidráulica' },
-    { icon: DoorOpen, label: 'Portas', value: car.portas || 4 },
-    car.consumo_medio ? { icon: Fuel, label: 'Consumo', value: car.consumo_medio } : null,
+    property.quartos > 0 ? { icon: Bed, label: 'Quartos', value: property.quartos } : null,
+    property.banheiros > 0 ? { icon: Bath, label: 'Banheiros', value: property.banheiros } : null,
+    property.vagas_garagem > 0 ? { icon: Car, label: 'Vagas', value: property.vagas_garagem } : null,
+    property.area_m2 > 0 ? { icon: Ruler, label: 'Area', value: `${property.area_m2} m2` } : null,
   ].filter(Boolean);
 
-  const activeFeatures = Object.entries(FEATURE_LABELS).filter(([key]) => car[key]).map(([, label]) => label);
+  const amenities = Object.keys(AMENITY_LABELS).filter(key => property[key]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -65,21 +69,21 @@ export default function CarDetail() {
             <ArrowLeft className="w-5 h-5" /> <span className="text-sm font-medium">Voltar</span>
           </Link>
           <div className="flex items-center gap-2">
-            <Car className="w-5 h-5 text-brand-600" />
+            <Building2 className="w-5 h-5 text-brand-600" />
             <span className="font-bold text-brand-800">IMP Locadora</span>
           </div>
         </div>
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-6">
-        {/* Galeria de fotos */}
+        {/* Photo gallery */}
         <div className="relative bg-gray-200 rounded-2xl overflow-hidden aspect-[16/9] mb-6">
           {fotos[photoIndex] ? (
-            <img src={fotos[photoIndex]} alt={`${car.marca} ${car.modelo}`}
+            <img src={fotos[photoIndex]} alt={property.titulo || property.tipo}
               className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <Car className="w-20 h-20 text-gray-300" />
+              <Home className="w-20 h-20 text-gray-300" />
             </div>
           )}
 
@@ -121,43 +125,52 @@ export default function CarDetail() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 space-y-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-800">{car.marca} {car.modelo}</h1>
-              <div className="flex items-center gap-3 mt-1 text-gray-500">
-                {car.ano && <span className="flex items-center gap-1"><Calendar className="w-4 h-4" /> {car.ano}</span>}
-                {car.cor && <span className="px-2 py-0.5 bg-gray-100 rounded-full text-xs">{car.cor}</span>}
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">
+                  {property.tipo}
+                </span>
               </div>
+              <h1 className="text-2xl font-bold text-gray-800">
+                {property.titulo || `${property.tipo} - ${property.bairro || ''}`}
+              </h1>
+              <p className="text-gray-500 mt-1">
+                {property.bairro}{property.cidade ? `, ${property.cidade}` : ''}{property.estado ? ` - ${property.estado}` : ''}
+              </p>
             </div>
 
-            {car.descricao && (
+            {property.descricao && (
               <div className="bg-white rounded-xl p-4 border border-gray-200">
-                <h3 className="font-semibold text-gray-700 mb-2">Sobre o veículo</h3>
-                <p className="text-sm text-gray-600 whitespace-pre-line">{car.descricao}</p>
+                <h3 className="font-semibold text-gray-700 mb-2">Sobre o imovel</h3>
+                <p className="text-sm text-gray-600 whitespace-pre-line">{property.descricao}</p>
               </div>
             )}
 
             {/* Specs grid */}
-            <div className="bg-white rounded-xl p-4 border border-gray-200">
-              <h3 className="font-semibold text-gray-700 mb-3">Especificações</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {specs.map((spec, i) => (
-                  <div key={i} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
-                    <spec.icon className="w-4 h-4 text-brand-600 flex-shrink-0" />
-                    <div>
-                      <p className="text-xs text-gray-400">{spec.label}</p>
-                      <p className="text-sm font-medium text-gray-700">{spec.value}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {activeFeatures.length > 0 && (
+            {specs.length > 0 && (
               <div className="bg-white rounded-xl p-4 border border-gray-200">
-                <h3 className="font-semibold text-gray-700 mb-3">Itens de Conforto e Segurança</h3>
+                <h3 className="font-semibold text-gray-700 mb-3">Detalhes</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {specs.map((spec, i) => (
+                    <div key={i} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
+                      <spec.icon className="w-4 h-4 text-brand-600 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs text-gray-400">{spec.label}</p>
+                        <p className="text-sm font-medium text-gray-700">{spec.value}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Amenities */}
+            {amenities.length > 0 && (
+              <div className="bg-white rounded-xl p-4 border border-gray-200">
+                <h3 className="font-semibold text-gray-700 mb-3">Comodidades</h3>
                 <div className="flex flex-wrap gap-2">
-                  {activeFeatures.map((label) => (
-                    <span key={label} className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> {label}
+                  {amenities.map(key => (
+                    <span key={key} className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-sm font-medium">
+                      {AMENITY_LABELS[key]}
                     </span>
                   ))}
                 </div>
@@ -165,32 +178,32 @@ export default function CarDetail() {
             )}
           </div>
 
-          {/* Sidebar - Preço + CTA */}
+          {/* Sidebar - Price + CTA */}
           <div className="space-y-4">
             <div className="bg-white rounded-xl p-5 border border-gray-200 sticky top-20">
               <div className="mb-4">
-                <p className="text-sm text-gray-400">Valor semanal</p>
+                <p className="text-sm text-gray-400">Valor mensal</p>
                 <p className="text-3xl font-bold text-brand-700">
-                  R$ {parseFloat(car.valor_semanal).toFixed(2).replace('.', ',')}
+                  R$ {parseFloat(property.valor_mensal).toFixed(2).replace('.', ',')}
                 </p>
               </div>
 
-              {car.valor_caucao > 0 && (
+              {property.valor_deposito > 0 && (
                 <div className="mb-4 pb-4 border-b border-gray-100">
-                  <p className="text-sm text-gray-400">Caução</p>
+                  <p className="text-sm text-gray-400">Deposito</p>
                   <p className="text-lg font-semibold text-gray-700">
-                    R$ {parseFloat(car.valor_caucao).toFixed(2).replace('.', ',')}
+                    R$ {parseFloat(property.valor_deposito).toFixed(2).replace('.', ',')}
                   </p>
                 </div>
               )}
 
-              <Link to={`/register?car=${car.id}`}
+              <Link to={`/register?property=${property.id}`}
                 className="btn-primary w-full py-3 flex items-center justify-center gap-2 text-base">
                 Tenho Interesse <ArrowRight className="w-5 h-5" />
               </Link>
 
               <p className="text-xs text-gray-400 text-center mt-3">
-                Sem burocracia · Pagamento semanal
+                Sem burocracia - Aluguel simplificado
               </p>
             </div>
           </div>

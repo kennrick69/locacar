@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
   Car, LayoutDashboard, FileText, CreditCard, Settings,
-  Users, LogOut, Menu, X, ChevronRight
+  Users, LogOut, Menu, X, ChevronRight, Building2
 } from 'lucide-react';
 
 const driverMenu = [
@@ -14,6 +14,7 @@ const driverMenu = [
 const adminMenu = [
   { path: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/admin/carros', label: 'Carros', icon: Car },
+  { path: '/admin/imoveis', label: 'Imóveis', icon: Building2 },
   { path: '/admin/motoristas', label: 'Motoristas', icon: Users },
   { path: '/admin/config', label: 'Configurações', icon: Settings },
 ];

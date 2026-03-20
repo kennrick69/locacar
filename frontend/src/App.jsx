@@ -10,6 +10,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Vitrine from './pages/Vitrine';
 import CarDetail from './pages/CarDetail';
+import PropertyDetail from './pages/PropertyDetail';
 
 // Páginas motorista (Etapa 2)
 import DriverJourney from './pages/driver/DriverJourney';
@@ -21,6 +22,7 @@ import AdminCars from './pages/admin/Cars';
 import AdminDrivers from './pages/admin/Drivers';
 import AdminDriverDetail from './pages/admin/DriverDetail';
 import AdminSettings from './pages/admin/Settings';
+import AdminProperties from './pages/admin/Properties';
 import ContractClauses from './pages/admin/ContractClauses';
 
 function PrivateRoute({ children, role }) {
@@ -43,6 +45,7 @@ export default function App() {
       {/* Públicas */}
       <Route path="/" element={<Vitrine />} />
       <Route path="/carro/:id" element={<CarDetail />} />
+      <Route path="/imovel/:id" element={<PropertyDetail />} />
       <Route path="/login" element={
         isAuthenticated
           ? <Navigate to={user?.role === 'admin' ? '/admin' : '/motorista'} />
@@ -82,6 +85,11 @@ export default function App() {
       <Route path="/admin/motoristas/:id" element={
         <PrivateRoute role="admin">
           <Layout><AdminDriverDetail /></Layout>
+        </PrivateRoute>
+      } />
+      <Route path="/admin/imoveis" element={
+        <PrivateRoute role="admin">
+          <Layout><AdminProperties /></Layout>
         </PrivateRoute>
       } />
       <Route path="/admin/config" element={

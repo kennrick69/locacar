@@ -3,9 +3,9 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   Car, KeyRound, Loader2, Search, CheckCircle2, XCircle,
-  Upload, CreditCard, Home, Smartphone, ArrowRight, ArrowLeft, Clock, AlertTriangle
+  Upload, CreditCard, Home, Smartphone, ArrowRight, ArrowLeft, Clock, AlertTriangle, Building2
 } from 'lucide-react';
-import api, { authAPI, carsAPI } from '../services/api';
+import api, { authAPI, carsAPI, propertiesAPI } from '../services/api';
 
 function validarCPF(cpf) {
   const nums = cpf.replace(/\D/g, '');
@@ -32,9 +32,12 @@ const DOCS = [
 export default function Register() {
   const [searchParams] = useSearchParams();
   const carId = searchParams.get('car');
+  const propertyId = searchParams.get('property');
+  const isPropertyMode = !!propertyId;
   const navigate = useNavigate();
 
   const [carInfo, setCarInfo] = useState(null);
+  const [propertyInfo, setPropertyInfo] = useState(null);
   const [carLoading, setCarLoading] = useState(true);
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
@@ -50,20 +53,30 @@ export default function Register() {
   const [dragOver, setDragOver] = useState(null);
   const fileInputs = useRef({});
 
-  // Se não tem car param, redireciona
+  // Se não tem car nem property param, redireciona
   useEffect(() => {
-    if (!carId) {
+    if (!carId && !propertyId) {
       navigate('/');
       return;
     }
-    carsAPI.get(carId)
-      .then(res => setCarInfo(res.data))
-      .catch(() => {
-        toast.error('Carro não encontrado');
-        navigate('/');
-      })
-      .finally(() => setCarLoading(false));
-  }, [carId]);
+    if (propertyId) {
+      propertiesAPI.get(propertyId)
+        .then(res => setPropertyInfo(res.data))
+        .catch(() => {
+          toast.error('Imovel nao encontrado');
+          navigate('/');
+        })
+        .finally(() => setCarLoading(false));
+    } else {
+      carsAPI.get(carId)
+        .then(res => setCarInfo(res.data))
+        .catch(() => {
+          toast.error('Carro nao encontrado');
+          navigate('/');
+        })
+        .finally(() => setCarLoading(false));
+    }
+  }, [carId, propertyId]);
 
   const set = (field) => (e) => setForm({ ...form, [field]: e.target.value });
   const cpfStatus = validarCPF(form.cpf);
@@ -118,10 +131,15 @@ export default function Register() {
       const cpfClean = cpf.replace(/\D/g, '');
       const generatedToken = cpfClean.substring(0, 6);
       const endereco = montarEndereco();
-      const res = await authAPI.register({
+      const payload = {
         nome, email, senha: generatedToken, cpf: cpfClean, telefone, endereco,
-        car_interesse_id: parseInt(carId)
-      });
+      };
+      if (isPropertyMode) {
+        payload.property_interesse_id = parseInt(propertyId);
+      } else {
+        payload.car_interesse_id = parseInt(carId);
+      }
+      const res = await authAPI.register(payload);
       setAuthToken(res.data.token);
       setToken(generatedToken);
       setStep(2);
@@ -184,7 +202,7 @@ export default function Register() {
     <div className="min-h-screen bg-gradient-to-br from-brand-50 to-blue-100 p-4">
       <div className="w-full max-w-lg mx-auto pt-4">
         {/* Car info banner */}
-        {carInfo && step < 3 && (
+        {carInfo && !isPropertyMode && step < 3 && (
           <div className="bg-white rounded-xl p-3 mb-4 flex items-center gap-3 shadow-sm border border-gray-200">
             <div className="w-16 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
               {carInfo.foto_url ? (
@@ -202,12 +220,35 @@ export default function Register() {
           </div>
         )}
 
+        {/* Property info banner */}
+        {propertyInfo && isPropertyMode && step < 3 && (
+          <div className="bg-white rounded-xl p-3 mb-4 flex items-center gap-3 shadow-sm border border-gray-200">
+            <div className="w-16 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
+              {propertyInfo.foto_url ? (
+                <img src={propertyInfo.foto_url} alt="" className="w-full h-full object-cover" />
+              ) : <Building2 className="w-6 h-6 text-gray-300 m-auto mt-3" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-gray-800 text-sm truncate">
+                {propertyInfo.titulo || `${propertyInfo.tipo} - ${propertyInfo.bairro || ''}`}
+              </p>
+              <p className="text-xs text-gray-500">{propertyInfo.cidade}{propertyInfo.estado ? ` - ${propertyInfo.estado}` : ''}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-400">Mensal</p>
+              <p className="font-bold text-brand-700 text-sm">R$ {parseFloat(propertyInfo.valor_mensal).toFixed(2).replace('.', ',')}</p>
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="text-center mb-4">
           <div className="inline-flex items-center justify-center w-12 h-12 bg-brand-600 rounded-2xl mb-2 shadow-lg shadow-brand-200">
-            <Car className="w-6 h-6 text-white" />
+            {isPropertyMode ? <Building2 className="w-6 h-6 text-white" /> : <Car className="w-6 h-6 text-white" />}
           </div>
-          <h1 className="text-lg font-bold text-gray-800">Adesão — Locação de Veículo</h1>
+          <h1 className="text-lg font-bold text-gray-800">
+            {isPropertyMode ? 'Interesse — Locacao de Imovel' : 'Adesao — Locacao de Veiculo'}
+          </h1>
         </div>
 
         {/* Steps */}
@@ -420,7 +461,7 @@ export default function Register() {
         {step < 3 && (
           <div className="mt-4 text-center text-sm text-gray-500">
             <Link to="/" className="text-brand-600 font-medium hover:text-brand-700">
-              ← Voltar para os carros
+              {isPropertyMode ? '← Voltar para os imoveis' : '← Voltar para os carros'}
             </Link>
           </div>
         )}

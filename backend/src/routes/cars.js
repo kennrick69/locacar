@@ -6,7 +6,14 @@ const { upload, setUploadDir } = require('../middleware/upload');
 const router = express.Router();
 
 // Campos de specs
-const SPEC_FIELDS = ['ar_condicionado', 'combustivel', 'transmissao', 'direcao', 'consumo_medio', 'portas', 'descricao', 'renavam'];
+const SPEC_FIELDS = ['ar_condicionado', 'combustivel', 'transmissao', 'direcao', 'consumo_medio', 'portas', 'descricao', 'renavam',
+  'vidro_eletrico', 'trava_eletrica', 'airbag', 'freio_abs', 'sensor_estacionamento', 'camera_re',
+  'multimidia', 'bluetooth', 'gps_nativo', 'banco_couro', 'teto_solar', 'sensor_chuva',
+  'farol_neblina', 'rodas_liga', 'alarme', 'controle_tracao', 'piloto_automatico'];
+
+const BOOLEAN_FEATURES = ['ar_condicionado', 'vidro_eletrico', 'trava_eletrica', 'airbag', 'freio_abs',
+  'sensor_estacionamento', 'camera_re', 'multimidia', 'bluetooth', 'gps_nativo', 'banco_couro',
+  'teto_solar', 'sensor_chuva', 'farol_neblina', 'rodas_liga', 'alarme', 'controle_tracao', 'piloto_automatico'];
 
 /**
  * GET /api/cars - Lista carros disponíveis (público)
@@ -69,7 +76,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', auth, adminOnly, setUploadDir('cars'), upload.single('foto'), async (req, res) => {
   try {
     const { marca, modelo, ano, placa, cor, valor_semanal, valor_caucao, observacoes,
-      ar_condicionado, combustivel, transmissao, direcao, consumo_medio, portas, descricao, renavam } = req.body;
+      combustivel, transmissao, direcao, consumo_medio, portas, descricao, renavam } = req.body;
 
     if (!marca || !modelo || !placa || !valor_semanal) {
       return res.status(400).json({ error: 'Campos obrigatórios: marca, modelo, placa, valor_semanal' });
@@ -77,14 +84,20 @@ router.post('/', auth, adminOnly, setUploadDir('cars'), upload.single('foto'), a
 
     const fotoUrl = req.file ? `/uploads/cars/${req.file.filename}` : null;
 
-    const result = await pool.query(`
-      INSERT INTO cars (marca, modelo, ano, placa, cor, foto_url, valor_semanal, valor_caucao, observacoes,
-        ar_condicionado, combustivel, transmissao, direcao, consumo_medio, portas, descricao, renavam)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-      RETURNING *
-    `, [marca, modelo, ano || null, placa, cor || null, fotoUrl, valor_semanal, valor_caucao || 0, observacoes || null,
-      ar_condicionado === 'true' || ar_condicionado === true, combustivel || 'Flex', transmissao || 'Manual',
-      direcao || 'Hidráulica', consumo_medio || null, portas || 4, descricao || null, renavam || null]);
+    const boolVals = {};
+    for (const f of BOOLEAN_FEATURES) {
+      boolVals[f] = req.body[f] === 'true' || req.body[f] === true;
+    }
+
+    const cols = ['marca', 'modelo', 'ano', 'placa', 'cor', 'foto_url', 'valor_semanal', 'valor_caucao', 'observacoes',
+      'combustivel', 'transmissao', 'direcao', 'consumo_medio', 'portas', 'descricao', 'renavam', ...BOOLEAN_FEATURES];
+    const vals = [marca, modelo, ano || null, placa, cor || null, fotoUrl, valor_semanal, valor_caucao || 0, observacoes || null,
+      combustivel || 'Flex', transmissao || 'Manual', direcao || 'Hidráulica', consumo_medio || null, portas || 4,
+      descricao || null, renavam || null, ...BOOLEAN_FEATURES.map(f => boolVals[f])];
+    const placeholders = vals.map((_, i) => `$${i + 1}`).join(',');
+
+    const result = await pool.query(
+      `INSERT INTO cars (${cols.join(',')}) VALUES (${placeholders}) RETURNING *`, vals);
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -100,26 +113,40 @@ router.post('/', auth, adminOnly, setUploadDir('cars'), upload.single('foto'), a
 router.put('/:id', auth, adminOnly, setUploadDir('cars'), upload.single('foto'), async (req, res) => {
   try {
     const { marca, modelo, ano, placa, cor, valor_semanal, valor_caucao, disponivel, observacoes,
-      ar_condicionado, combustivel, transmissao, direcao, consumo_medio, portas, descricao, renavam } = req.body;
+      combustivel, transmissao, direcao, consumo_medio, portas, descricao, renavam } = req.body;
 
     const fotoUrl = req.file ? `/uploads/cars/${req.file.filename}` : undefined;
 
-    let query = `UPDATE cars SET marca=$1, modelo=$2, ano=$3, placa=$4, cor=$5, valor_semanal=$6, valor_caucao=$7,
-      disponivel=$8, observacoes=$9, ar_condicionado=$10, combustivel=$11, transmissao=$12, direcao=$13,
-      consumo_medio=$14, portas=$15, descricao=$16, renavam=$17, updated_at=NOW()`;
-    const params = [marca, modelo, ano, placa, cor, valor_semanal, valor_caucao || 0,
-      disponivel !== 'false' && disponivel !== false, observacoes,
-      ar_condicionado === 'true' || ar_condicionado === true,
-      combustivel || 'Flex', transmissao || 'Manual', direcao || 'Hidráulica',
-      consumo_medio || null, portas || 4, descricao || null, renavam || null];
+    const boolVals = {};
+    for (const f of BOOLEAN_FEATURES) {
+      boolVals[f] = req.body[f] === 'true' || req.body[f] === true;
+    }
+
+    let idx = 1;
+    const sets = [];
+    const params = [];
+    const addParam = (col, val) => { sets.push(`${col}=$${idx++}`); params.push(val); };
+
+    addParam('marca', marca); addParam('modelo', modelo); addParam('ano', ano);
+    addParam('placa', placa); addParam('cor', cor); addParam('valor_semanal', valor_semanal);
+    addParam('valor_caucao', valor_caucao || 0);
+    addParam('disponivel', disponivel !== 'false' && disponivel !== false);
+    addParam('observacoes', observacoes);
+    addParam('combustivel', combustivel || 'Flex'); addParam('transmissao', transmissao || 'Manual');
+    addParam('direcao', direcao || 'Hidráulica'); addParam('consumo_medio', consumo_medio || null);
+    addParam('portas', portas || 4); addParam('descricao', descricao || null);
+    addParam('renavam', renavam || null);
+    for (const f of BOOLEAN_FEATURES) { addParam(f, boolVals[f]); }
+
+    let query = `UPDATE cars SET ${sets.join(', ')}, updated_at=NOW()`;
 
     if (fotoUrl) {
-      query += `, foto_url=$${params.length + 1}`;
+      query += `, foto_url=$${idx++}`;
       params.push(fotoUrl);
     }
 
     params.push(req.params.id);
-    query += ` WHERE id=$${params.length} RETURNING *`;
+    query += ` WHERE id=$${idx} RETURNING *`;
 
     const result = await pool.query(query, params);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Carro não encontrado' });
@@ -133,10 +160,9 @@ router.put('/:id', auth, adminOnly, setUploadDir('cars'), upload.single('foto'),
 /**
  * POST /api/cars/:id/photos - Admin: upload fotos extras
  */
-router.post('/:id/photos', auth, adminOnly, setUploadDir('cars'), upload.single('foto'), async (req, res) => {
+router.post('/:id/photos', auth, adminOnly, setUploadDir('cars'), upload.array('fotos', 20), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'Nenhuma foto enviada' });
-    const fotoUrl = `/uploads/cars/${req.file.filename}`;
+    if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'Nenhuma foto enviada' });
 
     // Busca fotos atuais
     const car = await pool.query('SELECT fotos_extras FROM cars WHERE id = $1', [req.params.id]);
@@ -144,10 +170,16 @@ router.post('/:id/photos', auth, adminOnly, setUploadDir('cars'), upload.single(
 
     let fotos = [];
     try { fotos = JSON.parse(car.rows[0].fotos_extras || '[]'); } catch { fotos = []; }
-    fotos.push(fotoUrl);
+
+    const novas = [];
+    for (const file of req.files) {
+      const url = `/uploads/cars/${file.filename}`;
+      fotos.push(url);
+      novas.push(url);
+    }
 
     await pool.query('UPDATE cars SET fotos_extras = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(fotos), req.params.id]);
-    res.json({ fotos, nova: fotoUrl });
+    res.json({ fotos, novas });
   } catch (err) {
     console.error('Erro ao adicionar foto:', err);
     res.status(500).json({ error: 'Erro interno' });

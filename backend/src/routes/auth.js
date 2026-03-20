@@ -12,7 +12,7 @@ const router = express.Router();
  */
 router.post('/register', async (req, res) => {
   try {
-    const { nome, email, senha, cpf, telefone, endereco, car_interesse_id } = req.body;
+    const { nome, email, senha, cpf, telefone, endereco, car_interesse_id, property_interesse_id } = req.body;
 
     if (!nome || !cpf) {
       return res.status(400).json({ error: 'Nome e CPF são obrigatórios' });
@@ -57,9 +57,9 @@ router.post('/register', async (req, res) => {
 
     // Cria perfil de motorista automaticamente
     await pool.query(`
-      INSERT INTO driver_profiles (user_id, token_externo, endereco_completo, car_interesse_id)
-      VALUES ($1, $2, $3, $4)
-    `, [user.id, tokenExterno, endereco || null, car_interesse_id || null]);
+      INSERT INTO driver_profiles (user_id, token_externo, endereco_completo, car_interesse_id, property_interesse_id)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [user.id, tokenExterno, endereco || null, car_interesse_id || null, property_interesse_id || null]);
 
     // Gera JWT
     const token = jwt.sign(

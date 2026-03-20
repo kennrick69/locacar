@@ -1,11 +1,22 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { carsAPI } from '../services/api';
+import { carsAPI, propertiesAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { Car, Calendar, DollarSign, ArrowRight, Lock, User, KeyRound, AlertCircle } from 'lucide-react';
+import { Car, Calendar, DollarSign, ArrowRight, Lock, User, KeyRound, AlertCircle, CheckCircle2, Building2, Bed, Bath, Ruler, Home } from 'lucide-react';
+
+const FEATURE_LABELS = {
+  ar_condicionado: 'A/C', vidro_eletrico: 'Vidros El.', trava_eletrica: 'Travas El.',
+  airbag: 'Airbag', freio_abs: 'ABS', sensor_estacionamento: 'Sensor Est.',
+  camera_re: 'Câm. Ré', multimidia: 'Multimídia', bluetooth: 'Bluetooth',
+  gps_nativo: 'GPS', banco_couro: 'Couro', teto_solar: 'Teto Solar',
+  sensor_chuva: 'Sensor Chuva', farol_neblina: 'Farol Neblina', rodas_liga: 'Rodas Liga',
+  alarme: 'Alarme', controle_tracao: 'Contr. Tração', piloto_automatico: 'Piloto Auto.',
+};
 
 export default function Vitrine() {
   const [cars, setCars] = useState([]);
+  const [properties, setProperties] = useState([]);
+  const [activeTab, setActiveTab] = useState('veiculos');
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState('');
   const [tokenError, setTokenError] = useState('');
@@ -14,10 +25,10 @@ export default function Vitrine() {
   const { tokenLogin } = useAuth();
 
   useEffect(() => {
-    carsAPI.list()
-      .then(res => setCars(res.data))
-      .catch(err => console.error('Erro ao carregar carros:', err))
-      .finally(() => setLoading(false));
+    Promise.all([
+      carsAPI.list().then(res => setCars(res.data)).catch(err => console.error('Erro ao carregar carros:', err)),
+      propertiesAPI.list().then(res => setProperties(res.data)).catch(err => console.error('Erro ao carregar imoveis:', err)),
+    ]).finally(() => setLoading(false));
   }, []);
 
   const handleTokenLogin = async (e) => {
@@ -66,14 +77,14 @@ export default function Vitrine() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
             <div>
               <h1 className="text-3xl md:text-4xl font-bold mb-4">
-                Alugue seu veículo de trabalho
+                Alugue veiculos e imoveis
               </h1>
               <p className="text-brand-200 text-lg mb-6">
-                Carros prontos para rodar em apps de transporte. 
-                Sem burocracia, sem fiador, pagamento semanal.
+                Carros prontos para rodar em apps de transporte e imoveis para morar.
+                Sem burocracia, sem fiador.
               </p>
               <p className="text-brand-300 text-sm">
-                Escolha um carro abaixo e clique em <strong>"Tenho Interesse"</strong> para começar
+                Escolha abaixo e clique em <strong>"Tenho Interesse"</strong> para comecar
               </p>
             </div>
 
@@ -127,58 +138,152 @@ export default function Vitrine() {
         </div>
       </section>
 
-      {/* Carros */}
-      <section className="max-w-6xl mx-auto px-4 py-12">
-        <div className="flex items-center justify-between mb-8">
-          <h2 className="text-2xl font-bold text-gray-800">Carros Disponíveis</h2>
-          <span className="text-sm text-gray-400">{cars.length} veículos</span>
+      {/* Tabs */}
+      <section className="max-w-6xl mx-auto px-4 pt-8">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setActiveTab('veiculos')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-colors ${
+              activeTab === 'veiculos'
+                ? 'bg-brand-600 text-white shadow-md'
+                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+            }`}
+          >
+            <Car className="w-4 h-4" /> Veiculos ({cars.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('imoveis')}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-colors ${
+              activeTab === 'imoveis'
+                ? 'bg-brand-600 text-white shadow-md'
+                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+            }`}
+          >
+            <Building2 className="w-4 h-4" /> Imoveis ({properties.length})
+          </button>
         </div>
+      </section>
 
+      {/* Listing */}
+      <section className="max-w-6xl mx-auto px-4 py-8">
         {loading ? (
           <div className="flex justify-center py-20">
             <div className="w-10 h-10 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
           </div>
-        ) : cars.length === 0 ? (
-          <div className="text-center py-20 text-gray-400">
-            <Car className="w-12 h-12 mx-auto mb-3 opacity-40" />
-            <p>Nenhum carro disponível no momento</p>
-          </div>
+        ) : activeTab === 'veiculos' ? (
+          <>
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-2xl font-bold text-gray-800">Carros Disponiveis</h2>
+              <span className="text-sm text-gray-400">{cars.length} veiculos</span>
+            </div>
+            {cars.length === 0 ? (
+              <div className="text-center py-20 text-gray-400">
+                <Car className="w-12 h-12 mx-auto mb-3 opacity-40" />
+                <p>Nenhum carro disponivel no momento</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {cars.map(car => (
+                  <Link key={car.id} to={`/carro/${car.id}`}
+                    className="card hover:shadow-lg transition-all duration-200 cursor-pointer group">
+                    <div className="aspect-video bg-gray-100 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
+                      {car.foto_url ? (
+                        <img src={car.foto_url} alt={`${car.marca} ${car.modelo}`}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      ) : (
+                        <Car className="w-12 h-12 text-gray-300" />
+                      )}
+                    </div>
+
+                    <h3 className="text-lg font-semibold text-gray-800">{car.marca} {car.modelo}</h3>
+
+                    <div className="flex flex-wrap gap-1.5 mt-2 text-sm text-gray-500">
+                      {car.ano && <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> {car.ano}</span>}
+                      {car.cor && <span className="px-2 py-0.5 bg-gray-100 rounded-full text-xs">{car.cor}</span>}
+                      {Object.entries(FEATURE_LABELS).map(([key, label]) =>
+                        car[key] ? <span key={key} className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs">{label}</span> : null
+                      )}
+                    </div>
+
+                    <div className="mt-4 pt-4 border-t border-gray-100 flex items-end justify-between">
+                      <div>
+                        <span className="text-xs text-gray-400">Valor semanal</span>
+                        <p className="text-xl font-bold text-brand-700">
+                          R$ {parseFloat(car.valor_semanal).toFixed(2).replace('.', ',')}
+                        </p>
+                      </div>
+                      <span className="text-sm text-brand-600 font-medium group-hover:text-brand-700 flex items-center gap-1">
+                        Ver detalhes <ArrowRight className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {cars.map(car => (
-              <Link key={car.id} to={`/carro/${car.id}`}
-                className="card hover:shadow-lg transition-all duration-200 cursor-pointer group">
-                <div className="aspect-video bg-gray-100 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
-                  {car.foto_url ? (
-                    <img src={car.foto_url} alt={`${car.marca} ${car.modelo}`}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                  ) : (
-                    <Car className="w-12 h-12 text-gray-300" />
-                  )}
-                </div>
+          <>
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-2xl font-bold text-gray-800">Imoveis Disponiveis</h2>
+              <span className="text-sm text-gray-400">{properties.length} imoveis</span>
+            </div>
+            {properties.length === 0 ? (
+              <div className="text-center py-20 text-gray-400">
+                <Home className="w-12 h-12 mx-auto mb-3 opacity-40" />
+                <p>Nenhum imovel disponivel no momento</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {properties.map(property => (
+                  <Link key={property.id} to={`/imovel/${property.id}`}
+                    className="card hover:shadow-lg transition-all duration-200 cursor-pointer group">
+                    <div className="aspect-video bg-gray-100 rounded-lg mb-4 flex items-center justify-center overflow-hidden relative">
+                      {property.foto_url ? (
+                        <img src={property.foto_url} alt={property.titulo || property.tipo}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      ) : (
+                        <Home className="w-12 h-12 text-gray-300" />
+                      )}
+                      <span className="absolute top-2 left-2 text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">
+                        {property.tipo}
+                      </span>
+                    </div>
 
-                <h3 className="text-lg font-semibold text-gray-800">{car.marca} {car.modelo}</h3>
-
-                <div className="flex flex-wrap gap-3 mt-2 text-sm text-gray-500">
-                  {car.ano && <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> {car.ano}</span>}
-                  {car.cor && <span className="px-2 py-0.5 bg-gray-100 rounded-full text-xs">{car.cor}</span>}
-                  {car.ar_condicionado && <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs">A/C</span>}
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-gray-100 flex items-end justify-between">
-                  <div>
-                    <span className="text-xs text-gray-400">Valor semanal</span>
-                    <p className="text-xl font-bold text-brand-700">
-                      R$ {parseFloat(car.valor_semanal).toFixed(2).replace('.', ',')}
+                    <h3 className="text-lg font-semibold text-gray-800">
+                      {property.titulo || `${property.tipo} - ${property.bairro || ''}`}
+                    </h3>
+                    <p className="text-sm text-gray-400">
+                      {property.bairro}{property.cidade ? `, ${property.cidade}` : ''}
                     </p>
-                  </div>
-                  <span className="text-sm text-brand-600 font-medium group-hover:text-brand-700 flex items-center gap-1">
-                    Ver detalhes <ArrowRight className="w-3.5 h-3.5" />
-                  </span>
-                </div>
-              </Link>
-            ))}
-          </div>
+
+                    <div className="flex flex-wrap gap-2 mt-2 text-sm text-gray-500">
+                      {property.quartos > 0 && (
+                        <span className="flex items-center gap-1"><Bed className="w-3.5 h-3.5" /> {property.quartos} qto(s)</span>
+                      )}
+                      {property.banheiros > 0 && (
+                        <span className="flex items-center gap-1"><Bath className="w-3.5 h-3.5" /> {property.banheiros} ban</span>
+                      )}
+                      {property.area_m2 > 0 && (
+                        <span className="flex items-center gap-1"><Ruler className="w-3.5 h-3.5" /> {property.area_m2} m2</span>
+                      )}
+                    </div>
+
+                    <div className="mt-4 pt-4 border-t border-gray-100 flex items-end justify-between">
+                      <div>
+                        <span className="text-xs text-gray-400">Valor mensal</span>
+                        <p className="text-xl font-bold text-brand-700">
+                          R$ {parseFloat(property.valor_mensal).toFixed(2).replace('.', ',')}
+                        </p>
+                      </div>
+                      <span className="text-sm text-brand-600 font-medium group-hover:text-brand-700 flex items-center gap-1">
+                        Ver detalhes <ArrowRight className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </section>
 

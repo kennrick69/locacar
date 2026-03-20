@@ -57,6 +57,18 @@ export const carsAPI = {
   delete: (id) => api.delete(`/cars/${id}`),
 };
 
+// ========== PROPERTIES ==========
+export const propertiesAPI = {
+  list: () => api.get('/properties'),
+  listAll: () => api.get('/properties/all'),
+  get: (id) => api.get(`/properties/${id}`),
+  create: (formData) => api.post('/properties', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  update: (id, formData) => api.put(`/properties/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  addPhoto: (id, formData) => api.post(`/properties/${id}/photos`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  removePhoto: (id, url) => api.delete(`/properties/${id}/photos`, { data: { url } }),
+  delete: (id) => api.delete(`/properties/${id}`),
+};
+
 // ========== SETTINGS ==========
 export const settingsAPI = {
   get: () => api.get('/settings'),
