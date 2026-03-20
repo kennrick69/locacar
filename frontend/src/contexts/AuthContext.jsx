@@ -8,13 +8,13 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('locacar_token');
+    const token = localStorage.getItem('implocadora_token');
     if (token) {
       authAPI.me()
         .then(res => setUser(res.data))
         .catch(() => {
-          localStorage.removeItem('locacar_token');
-          localStorage.removeItem('locacar_user');
+          localStorage.removeItem('implocadora_token');
+          localStorage.removeItem('implocadora_user');
         })
         .finally(() => setLoading(false));
     } else {
@@ -24,31 +24,31 @@ export function AuthProvider({ children }) {
 
   const login = async (email, senha) => {
     const res = await authAPI.login({ email, senha });
-    localStorage.setItem('locacar_token', res.data.token);
-    localStorage.setItem('locacar_user', JSON.stringify(res.data.user));
+    localStorage.setItem('implocadora_token', res.data.token);
+    localStorage.setItem('implocadora_user', JSON.stringify(res.data.user));
     setUser(res.data.user);
     return res.data.user;
   };
 
   const tokenLogin = async (tokenCode) => {
     const res = await authAPI.tokenLogin(tokenCode);
-    localStorage.setItem('locacar_token', res.data.token);
-    localStorage.setItem('locacar_user', JSON.stringify(res.data.user));
+    localStorage.setItem('implocadora_token', res.data.token);
+    localStorage.setItem('implocadora_user', JSON.stringify(res.data.user));
     setUser(res.data.user);
     return res.data.user;
   };
 
   const register = async (data) => {
     const res = await authAPI.register(data);
-    localStorage.setItem('locacar_token', res.data.token);
-    localStorage.setItem('locacar_user', JSON.stringify(res.data.user));
+    localStorage.setItem('implocadora_token', res.data.token);
+    localStorage.setItem('implocadora_user', JSON.stringify(res.data.user));
     setUser(res.data.user);
     return res.data.user;
   };
 
   const logout = () => {
-    localStorage.removeItem('locacar_token');
-    localStorage.removeItem('locacar_user');
+    localStorage.removeItem('implocadora_token');
+    localStorage.removeItem('implocadora_user');
     setUser(null);
   };
 

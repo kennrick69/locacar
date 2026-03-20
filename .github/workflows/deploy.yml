@@ -1,4 +1,4 @@
-name: LocaCar CI
+name: IMP Locadora CI
 
 on:
   push:

@@ -9,8 +9,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
       manifest: {
-        name: 'LocaCar - Gestão de Locação',
-        short_name: 'LocaCar',
+        name: 'IMP Locadora - Gestão de Locação',
+        short_name: 'IMP Locadora',
         description: 'Plataforma de gestão de locação de veículos',
         theme_color: '#1e40af',
         background_color: '#f8fafc',

@@ -463,7 +463,7 @@ router.post('/admin-create', auth, adminOnly, async (req, res) => {
     const cpfClean = cpf.replace(/\D/g, '');
     const tokenExterno = cpfClean.substring(0, 6);
     const senhaHash = await bcrypt.hash(tokenExterno, 10);
-    const emailFinal = email || `motorista_${cpfClean}@locacar.temp`;
+    const emailFinal = email || `motorista_${cpfClean}@implocadora.temp`;
 
     const userResult = await client.query(`
       INSERT INTO users (nome, email, senha_hash, cpf, telefone, role)
@@ -1222,7 +1222,7 @@ th{background:#f3f4f6;font-weight:600;color:#374151}
 </style>
 </head>
 <body>
-<h1>LocaCar — Relatório de Acerto Final</h1>
+<h1>IMP Locadora — Relatório de Acerto Final</h1>
 <h2>Dados do Motorista</h2>
 <table>
 <tr><th>Nome</th><td>${driver.nome}</td></tr>
@@ -1256,7 +1256,7 @@ ${saldoFinal >= 0 ? 'R$ ' + fmt(saldoFinal) + ' (devolver ao motorista)' : 'R$ '
 </div>
 ${observacoes ? '<h2>Observações</h2><p>' + observacoes + '</p>' : ''}
 <div class="footer">
-<p>Documento gerado em ${dataHoje} pelo sistema LocaCar. ID: #${settlement.rows[0].id}</p>
+<p>Documento gerado em ${dataHoje} pelo sistema IMP Locadora. ID: #${settlement.rows[0].id}</p>
 </div>
 </body></html>`;
 
@@ -1439,7 +1439,7 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
         `1. Baixe o PDF do contrato (enviado por email ou disponível no sistema)\n` +
         `2. Acesse assinador.iti.br ou use o app Gov.br\n` +
         `3. Assine digitalmente o contrato\n` +
-        `4. Acesse o LocaCar com seu token: *${driver.token_externo || ''}*\n` +
+        `4. Acesse a IMP Locadora com seu token: *${driver.token_externo || ''}*\n` +
         `5. Faça upload do contrato assinado\n` +
         `6. Envie uma selfie segurando sua CNH\n\n` +
         `Qualquer dúvida, estou à disposição!`
@@ -1463,7 +1463,7 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
       const veiculo = [driver.car_marca, driver.car_modelo, driver.car_placa].filter(Boolean).join(' ');
       sendEmail({
         to: driver.email,
-        subject: 'LocaCar - Seu Contrato de Locacao',
+        subject: 'IMP Locadora - Seu Contrato de Locacao',
         html: `
           <h2>Olá ${driver.nome}!</h2>
           <p>Seu contrato de locação do veículo <strong>${veiculo}</strong> está em anexo.</p>
@@ -1473,12 +1473,12 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
             <li>Acesse <a href="https://assinador.iti.br">assinador.iti.br</a> ou use o app <strong>Gov.br</strong></li>
             <li>Faça login com sua conta Gov.br (nível Prata ou Ouro)</li>
             <li>Selecione o PDF do contrato e assine digitalmente</li>
-            <li>Acesse o LocaCar com seu token <strong>${driver.token_externo || ''}</strong></li>
+            <li>Acesse a IMP Locadora com seu token <strong>${driver.token_externo || ''}</strong></li>
             <li>Na área de Documentos, faça upload do contrato assinado</li>
             <li>Envie também uma selfie segurando seu documento (CNH)</li>
           </ol>
           <p>Qualquer dúvida, entre em contato!</p>
-          <p><strong>LocaCar</strong></p>
+          <p><strong>IMP Locadora</strong></p>
         `,
         attachment: { filename: nomeArq, buffer, mime: 'application/pdf' },
       }).then(() => {

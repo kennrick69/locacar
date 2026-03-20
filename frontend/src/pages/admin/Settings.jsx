@@ -196,7 +196,7 @@ export default function AdminSettings() {
           <ol className="list-decimal list-inside space-y-0.5 text-xs">
             <li>Acesse <a href="https://www.mercadopago.com.br/developers" target="_blank" rel="noreferrer" className="underline font-medium">mercadopago.com.br/developers</a></li>
             <li>Faça login → "Suas integrações" → "Criar aplicação"</li>
-            <li>Nome: "LocaCar", tipo: "Checkout Transparente"</li>
+            <li>Nome: "IMP Locadora", tipo: "Checkout Transparente"</li>
             <li>Copie a <strong>Public Key</strong> e o <strong>Access Token</strong> de produção e/ou teste</li>
           </ol>
         </div>

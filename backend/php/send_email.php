@@ -1,6 +1,6 @@
 <?php
 /**
- * LocaCar - Email sender via PHP mail()
+ * IMP Locadora - Email sender via PHP mail()
  * Usa o sendmail local do Railway (sem SMTP externo).
  * Lê parâmetros em JSON do stdin, retorna JSON no stdout.
  */
@@ -13,8 +13,8 @@ if (!$params || empty($params['to']) || empty($params['subject']) || empty($para
 }
 
 $to        = $params['to'];
-$fromName  = $params['from_name']  ?? 'LocaCar';
-$fromEmail = $params['from_email'] ?? 'no-reply@locacar.com';
+$fromName  = $params['from_name']  ?? 'IMP Locadora';
+$fromEmail = $params['from_email'] ?? 'no-reply@implocadora.com.br';
 $subject   = '=?UTF-8?B?' . base64_encode($params['subject']) . '?=';
 $html      = $params['html'];
 

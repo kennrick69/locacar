@@ -54,7 +54,7 @@ class PaymentService {
     `, [userId, driverId, chargeId, tipo, metodo, calculo.valor_base, parcelas, calculo.taxa_percentual, calculo.valor_total, justificativa]);
 
     const payment = result.rows[0];
-    const descricao = tipo === 'caucao' ? 'LocaCar - Caução' : `LocaCar - Semana ${chargeId}`;
+    const descricao = tipo === 'caucao' ? 'IMP Locadora - Caução' : `IMP Locadora - Semana ${chargeId}`;
 
     // ========== PIX ==========
     if (metodo === 'pix') {
@@ -156,7 +156,7 @@ class PaymentService {
     if (mp) {
       const pixData = await mp.criarPix({
         valor: parseFloat(payment.valor_total),
-        descricao: payment.tipo === 'caucao' ? 'LocaCar - Caução' : 'LocaCar - Semanal',
+        descricao: payment.tipo === 'caucao' ? 'IMP Locadora - Caução' : 'IMP Locadora - Semanal',
         email: user.email,
         cpf: user.cpf,
         nome: user.nome,

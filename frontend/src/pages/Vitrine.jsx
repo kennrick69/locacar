@@ -52,7 +52,7 @@ export default function Vitrine() {
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Car className="w-7 h-7 text-brand-600" />
-            <span className="text-xl font-bold text-brand-800">LocaCar</span>
+            <span className="text-xl font-bold text-brand-800">IMP Locadora</span>
           </div>
           <Link to="/login" className="text-sm text-gray-600 hover:text-brand-600 font-medium">
             Admin
@@ -183,7 +183,7 @@ export default function Vitrine() {
       </section>
 
       <footer className="bg-white border-t border-gray-200 py-8 text-center text-sm text-gray-400">
-        <p>© {new Date().getFullYear()} LocaCar. Todos os direitos reservados.</p>
+        <p>© {new Date().getFullYear()} IMP Locadora. Todos os direitos reservados.</p>
       </footer>
     </div>
   );

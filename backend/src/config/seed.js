@@ -1,5 +1,5 @@
 /**
- * LOCACAR - Seed de dados iniciais
+ * IMP LOCADORA - Seed de dados iniciais
  * Executa: npm run seed
  */
 const pool = require('./database');
@@ -14,7 +14,7 @@ const seed = async () => {
     const senhaHash = await bcrypt.hash('admin123', 10);
     await client.query(`
       INSERT INTO users (nome, email, senha_hash, cpf, role)
-      VALUES ('Administrador', 'admin@locacar.com', $1, '00000000000', 'admin')
+      VALUES ('Administrador', 'admin@implocadora.com.br', $1, '00000000000', 'admin')
       ON CONFLICT (email) DO NOTHING;
     `, [senhaHash]);
 
@@ -67,7 +67,7 @@ const seed = async () => {
     }
 
     await client.query('COMMIT');
-    console.log('✅ Seed concluído! Admin: admin@locacar.com / admin123');
+    console.log('✅ Seed concluído! Admin: admin@implocadora.com.br / admin123');
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('❌ Erro no seed:', err.message);

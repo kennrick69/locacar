@@ -13,8 +13,8 @@ const poolConfig = process.env.DATABASE_URL
   : {
       host: process.env.DB_HOST || 'localhost',
       port: parseInt(process.env.DB_PORT || '5432'),
-      database: process.env.DB_NAME || 'locacar',
-      user: process.env.DB_USER || 'locacar',
+      database: process.env.DB_NAME || 'implocadora',
+      user: process.env.DB_USER || 'implocadora',
       password: process.env.DB_PASS || '',
       max: 20,
       idleTimeoutMillis: 30000,

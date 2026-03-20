@@ -15,7 +15,7 @@ class MercadoPagoService {
     try {
       const body = {
         transaction_amount: parseFloat(valor),
-        description: descricao || 'LocaCar - Pagamento',
+        description: descricao || 'IMP Locadora - Pagamento',
         payment_method_id: 'pix',
         payer: {
           email: email,
@@ -46,7 +46,7 @@ class MercadoPagoService {
     try {
       const body = {
         items: [{
-          title: descricao || 'LocaCar - Pagamento',
+          title: descricao || 'IMP Locadora - Pagamento',
           quantity: 1,
           unit_price: parseFloat(valor),
           currency_id: 'BRL',

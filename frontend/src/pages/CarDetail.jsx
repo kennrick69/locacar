@@ -56,7 +56,7 @@ export default function CarDetail() {
           </Link>
           <div className="flex items-center gap-2">
             <Car className="w-5 h-5 text-brand-600" />
-            <span className="font-bold text-brand-800">LocaCar</span>
+            <span className="font-bold text-brand-800">IMP Locadora</span>
           </div>
         </div>
       </header>

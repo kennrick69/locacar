@@ -1,12 +1,12 @@
 #!/bin/bash
 # ============================================================
-#  LocaCar - Setup Inicial do VPS Hostinger
+#  IMP Locadora - Setup Inicial do VPS Hostinger
 #  Executar como root no VPS Ubuntu 22.04+
 #  Uso: bash setup-vps.sh
 # ============================================================
 
 set -e
-echo "=== LocaCar VPS Setup ==="
+echo "=== IMP Locadora VPS Setup ==="
 
 # 1) Atualiza sistema
 echo "[1/8] Atualizando sistema..."
@@ -29,25 +29,25 @@ systemctl start postgresql
 
 # 5) Cria banco e usuario
 echo "[5/8] Configurando banco de dados..."
-sudo -u postgres psql -c "CREATE USER locacar WITH PASSWORD 'TROCAR_SENHA_AQUI';" 2>/dev/null || true
-sudo -u postgres psql -c "CREATE DATABASE locacar OWNER locacar;" 2>/dev/null || true
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE locacar TO locacar;" 2>/dev/null || true
+sudo -u postgres psql -c "CREATE USER implocadora WITH PASSWORD 'TROCAR_SENHA_AQUI';" 2>/dev/null || true
+sudo -u postgres psql -c "CREATE DATABASE implocadora OWNER implocadora;" 2>/dev/null || true
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE implocadora TO implocadora;" 2>/dev/null || true
 
 # 6) Cria diretorio do projeto
 echo "[6/8] Criando diretório do projeto..."
-mkdir -p /opt/locacar/backend/uploads
-mkdir -p /opt/locacar/backend/public
+mkdir -p /opt/implocadora/backend/uploads
+mkdir -p /opt/implocadora/backend/public
 
 # 7) Instala Nginx (para HTTPS e proxy)
 echo "[7/8] Instalando Nginx..."
 apt install -y nginx
-cat > /etc/nginx/sites-available/locacar << 'NGINX'
+cat > /etc/nginx/sites-available/implocadora << 'NGINX'
 server {
     listen 80;
     server_name _;
 
     location / {
-        root /opt/locacar/backend/public;
+        root /opt/implocadora/backend/public;
         try_files $uri $uri/ /index.html;
     }
 
@@ -69,7 +69,7 @@ server {
 }
 NGINX
 
-ln -sf /etc/nginx/sites-available/locacar /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/implocadora /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 
@@ -84,9 +84,9 @@ echo ""
 echo "=== SETUP COMPLETO! ==="
 echo ""
 echo "Proximos passos:"
-echo "  1. Edite /opt/locacar/backend/.env com suas credenciais"
+echo "  1. Edite /opt/implocadora/backend/.env com suas credenciais"
 echo "  2. Envie os arquivos com deploy.bat ou GitHub Actions"
-echo "  3. Execute: cd /opt/locacar/backend && npm run migrate && npm run seed"
-echo "  4. Inicie: pm2 start src/server.js --name locacar && pm2 save && pm2 startup"
+echo "  3. Execute: cd /opt/implocadora/backend && npm run migrate && npm run seed"
+echo "  4. Inicie: pm2 start src/server.js --name implocadora && pm2 save && pm2 startup"
 echo "  5. Para HTTPS: apt install certbot python3-certbot-nginx && certbot --nginx -d seudominio.com"
 echo ""

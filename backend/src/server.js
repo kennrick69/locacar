@@ -75,7 +75,7 @@ if (fs.existsSync(indexPath)) {
   });
 } else {
   app.get('/', (req, res) => {
-    res.json({ app: 'LocaCar API', version: '1.0', health: '/api/health' });
+    res.json({ app: 'IMP Locadora API', version: '1.0', health: '/api/health' });
   });
 }
 
@@ -96,7 +96,7 @@ async function start() {
     console.log('✅ PostgreSQL conectado:', res.rows[0].now);
   } catch (err) {
     console.error('❌ Erro ao conectar PostgreSQL:', err.message);
-    app.listen(PORT, () => console.log('🚗 LocaCar API porta ' + PORT + ' | SEM BANCO'));
+    app.listen(PORT, () => console.log('🚗 IMP Locadora API porta ' + PORT + ' | SEM BANCO'));
     return;
   }
 
@@ -323,12 +323,12 @@ async function start() {
 
   // 3) Auto seed: cria admin + settings se não existirem
   try {
-    const adminCheck = await pool.query("SELECT id FROM users WHERE email = 'admin@locacar.com'");
+    const adminCheck = await pool.query("SELECT id FROM users WHERE email = 'admin@implocadora.com.br'");
     if (adminCheck.rows.length === 0) {
       const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
       const hash = await bcrypt.hash(adminPassword, 10);
-      await pool.query("INSERT INTO users (nome, email, senha_hash, role) VALUES ('Administrador', 'admin@locacar.com', $1, 'admin')", [hash]);
-      console.log('✅ Admin criado: admin@locacar.com');
+      await pool.query("INSERT INTO users (nome, email, senha_hash, role) VALUES ('Administrador', 'admin@implocadora.com.br', $1, 'admin')", [hash]);
+      console.log('✅ Admin criado: admin@implocadora.com.br');
     } else {
       console.log('✅ Admin OK.');
     }
@@ -402,7 +402,7 @@ async function start() {
 
   // 4) Inicia servidor
   app.listen(PORT, () => {
-    console.log('🚗 LocaCar API porta ' + PORT + ' | ' + (process.env.NODE_ENV || 'development'));
+    console.log('🚗 IMP Locadora API porta ' + PORT + ' | ' + (process.env.NODE_ENV || 'development'));
   });
 
   // 5) CRON: Gerar cobranças automáticas diariamente

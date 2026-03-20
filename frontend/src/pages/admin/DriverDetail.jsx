@@ -180,7 +180,7 @@ export default function AdminDriverDetail() {
     finally { setUploading(false); setUploadTipo(''); if (docInputRef.current) docInputRef.current.value = ''; }
   };
 
-  const handleSettlement = async () => { setProcessing(true); try { await fetch(`/api/drivers/${id}/settlement`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('locacar_token')}` }, body: JSON.stringify(settlementForm) }); toast.success('Rescisão processada!'); setSettlementModal(false); await loadData(); } catch (e) { toast.error('Erro na rescisão'); } finally { setProcessing(false); } };
+  const handleSettlement = async () => { setProcessing(true); try { await fetch(`/api/drivers/${id}/settlement`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('implocadora_token')}` }, body: JSON.stringify(settlementForm) }); toast.success('Rescisão processada!'); setSettlementModal(false); await loadData(); } catch (e) { toast.error('Erro na rescisão'); } finally { setProcessing(false); } };
 
   const openContractModal = () => {
     setContractForm({ locatario_endereco: driver.endereco_completo || '', data_contrato: new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }) });

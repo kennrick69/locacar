@@ -9,7 +9,7 @@ const api = axios.create({
 
 // Interceptor - adiciona token em todas as requests
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('locacar_token');
+  const token = localStorage.getItem('implocadora_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -21,8 +21,8 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('locacar_token');
-      localStorage.removeItem('locacar_user');
+      localStorage.removeItem('implocadora_token');
+      localStorage.removeItem('implocadora_user');
       window.location.href = '/login';
     }
     return Promise.reject(error);

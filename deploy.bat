@@ -2,13 +2,13 @@
 setlocal enabledelayedexpansion
 
 REM ============================================================
-REM  LocaCar - Deploy Automatizado para Hostinger VPS
+REM  IMP Locadora - Deploy Automatizado para Hostinger VPS
 REM  Uso: deploy.bat [--full | --backend | --frontend | --watch]
 REM ============================================================
 
 set "DEPLOY_HOST=SEU_IP_VPS"
 set "DEPLOY_USER=root"
-set "DEPLOY_PATH=/opt/locacar"
+set "DEPLOY_PATH=/opt/implocadora"
 set "DEPLOY_KEY=~/.ssh/hostinger_key"
 
 REM Cores (ANSI)
@@ -19,7 +19,7 @@ set "CYAN=[96m"
 set "RESET=[0m"
 
 echo %CYAN%========================================%RESET%
-echo %CYAN%  LocaCar - Deploy Script v1.0%RESET%
+echo %CYAN%  IMP Locadora - Deploy Script v1.0%RESET%
 echo %CYAN%========================================%RESET%
 echo.
 
@@ -73,7 +73,7 @@ if errorlevel 1 (
 echo %GREEN%Dependencias OK%RESET%
 
 echo %YELLOW%[5/5] Reiniciando servico...%RESET%
-ssh -i %DEPLOY_KEY% %DEPLOY_USER%@%DEPLOY_HOST% "cd %DEPLOY_PATH%/backend && pm2 restart locacar || pm2 start src/server.js --name locacar"
+ssh -i %DEPLOY_KEY% %DEPLOY_USER%@%DEPLOY_HOST% "cd %DEPLOY_PATH%/backend && pm2 restart implocadora || pm2 start src/server.js --name implocadora"
 if errorlevel 1 (
     echo %RED%ERRO: Reinicio falhou!%RESET%
     goto :eof
@@ -86,14 +86,14 @@ echo %GREEN%========================================%RESET%
 echo.
 
 REM Log
-ssh -i %DEPLOY_KEY% %DEPLOY_USER%@%DEPLOY_HOST% "pm2 logs locacar --lines 5 --nostream"
+ssh -i %DEPLOY_KEY% %DEPLOY_USER%@%DEPLOY_HOST% "pm2 logs implocadora --lines 5 --nostream"
 goto :eof
 
 REM ============================================================
 :backend
 echo %YELLOW%Deploy apenas do Backend...%RESET%
 scp -i %DEPLOY_KEY% -r backend/src backend/package.json backend/package-lock.json %DEPLOY_USER%@%DEPLOY_HOST%:%DEPLOY_PATH%/backend/
-ssh -i %DEPLOY_KEY% %DEPLOY_USER%@%DEPLOY_HOST% "cd %DEPLOY_PATH%/backend && npm ci --only=production && pm2 restart locacar"
+ssh -i %DEPLOY_KEY% %DEPLOY_USER%@%DEPLOY_HOST% "cd %DEPLOY_PATH%/backend && npm ci --only=production && pm2 restart implocadora"
 echo %GREEN%Backend deploy OK%RESET%
 goto :eof
 

@@ -6,15 +6,15 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: locacar
-      POSTGRES_USER: locacar
-      POSTGRES_PASSWORD: ${DB_PASS:-locacar_secret}
+      POSTGRES_DB: implocadora
+      POSTGRES_USER: implocadora
+      POSTGRES_PASSWORD: ${DB_PASS:-implocadora_secret}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U locacar"]
+      test: ["CMD-SHELL", "pg_isready -U implocadora"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -31,9 +31,9 @@ services:
       PORT: 3001
       DB_HOST: db
       DB_PORT: 5432
-      DB_NAME: locacar
-      DB_USER: locacar
-      DB_PASS: ${DB_PASS:-locacar_secret}
+      DB_NAME: implocadora
+      DB_USER: implocadora
+      DB_PASS: ${DB_PASS:-implocadora_secret}
       JWT_SECRET: ${JWT_SECRET}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}

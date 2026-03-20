@@ -16,7 +16,7 @@ async function sendEmail(params) {
 
   const resend = new Resend(process.env.RESEND_API_KEY);
 
-  const from = process.env.RESEND_FROM || 'LocaCar <onboarding@resend.dev>';
+  const from = process.env.RESEND_FROM || 'IMP Locadora <onboarding@resend.dev>';
 
   const payload = {
     from,

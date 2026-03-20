@@ -1,6 +1,6 @@
 {
-  "appId": "com.locacar.app",
-  "appName": "LocaCar",
+  "appId": "com.implocadora.app",
+  "appName": "IMP Locadora",
   "webDir": "dist",
   "server": {
     "androidScheme": "https"

@@ -1,4 +1,4 @@
-# 🚗 LocaCar — Plataforma de Gestão de Locação de Veículos
+# 🚗 IMP Locadora — Plataforma de Gestão de Locação de Veículos
 
 Plataforma completa (Web + Android/PWA) para gestão de locação de veículos para motoristas de app, com módulos para **motorista** e **admin**, integração com **Mercado Pago** e deploy automatizado na **Hostinger**.
 
@@ -18,7 +18,7 @@ Plataforma completa (Web + Android/PWA) para gestão de locação de veículos p
 ## 📁 Estrutura
 
 ```
-locacar/
+implocadora/
 ├── backend/
 │   ├── src/
 │   │   ├── config/          # database, migrate, seed
@@ -59,8 +59,8 @@ locacar/
 
 ```bash
 # 1. Clone
-git clone https://github.com/seu-usuario/locacar.git
-cd locacar
+git clone https://github.com/seu-usuario/implocadora.git
+cd implocadora
 
 # 2. Backend
 cd backend
@@ -76,7 +76,7 @@ npm install
 npm run dev                # → http://localhost:5173
 ```
 
-**Acesso inicial:** admin@locacar.com / admin123
+**Acesso inicial:** admin@implocadora.com.br / admin123
 
 ---
 
@@ -133,13 +133,13 @@ O sistema cadastra motoristas automaticamente em outra plataforma via API HTTP P
 **1. Setup inicial (uma vez):**
 ```bash
 # No VPS via SSH
-wget https://raw.githubusercontent.com/seu-usuario/locacar/main/setup-vps.sh
+wget https://raw.githubusercontent.com/seu-usuario/implocadora/main/setup-vps.sh
 bash setup-vps.sh
 ```
 
 **2. Configure o `.env`:**
 ```bash
-nano /opt/locacar/backend/.env
+nano /opt/implocadora/backend/.env
 ```
 
 **3. Deploy pelo Windows:**
@@ -179,7 +179,7 @@ cd frontend
 
 # 1. Instale Capacitor
 npm install @capacitor/core @capacitor/cli
-npx cap init LocaCar com.locacar.app --web-dir dist
+npx cap init "IMP Locadora" com.implocadora.app --web-dir dist
 
 # 2. Adicione Android
 npm install @capacitor/android

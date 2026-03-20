@@ -1,5 +1,5 @@
 {
-  "name": "locacar-backend",
+  "name": "imp-locadora-backend",
   "version": "1.0.0",
   "description": "API backend para plataforma de locação de veículos",
   "main": "src/server.js",

@@ -1,12 +1,12 @@
 @echo off
 REM ============================================================
-REM  LocaCar - Deploy via Docker no VPS Hostinger
+REM  IMP Locadora - Deploy via Docker no VPS Hostinger
 REM  Uso: deploy-docker.bat
 REM ============================================================
 
 set "DEPLOY_HOST=SEU_IP_VPS"
 set "DEPLOY_USER=root"
-set "DEPLOY_PATH=/opt/locacar"
+set "DEPLOY_PATH=/opt/implocadora"
 set "DEPLOY_KEY=~/.ssh/hostinger_key"
 
 echo [1/3] Enviando projeto para o servidor...

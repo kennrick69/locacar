@@ -60,7 +60,7 @@ router.post('/mp', async (req, res) => {
  * O Mercado Pago pode fazer GET para verificar se o endpoint existe
  */
 router.get('/mp', (req, res) => {
-  res.status(200).json({ status: 'ok', service: 'LocaCar MP Webhook' });
+  res.status(200).json({ status: 'ok', service: 'IMP Locadora MP Webhook' });
 });
 
 module.exports = router;
