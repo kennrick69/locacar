@@ -219,34 +219,24 @@ export default function DriverPayments() {
         const totalPagoGeral = charges.reduce((s, c) => s + parseFloat(c.total_pago || c.valor_pago_total || 0), 0);
         const saldoDevedor = charges.filter(c => !c.pago).reduce((s, c) => s + Math.max(parseFloat(c.valor_final || 0) - parseFloat(c.total_pago || c.valor_pago_total || 0), 0), 0);
 
+        if (saldoDevedor <= 0.01) return null;
         return (
-          <div className="card">
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <p className="text-xs text-gray-400">Total Cobrado</p>
-                <p className="text-lg font-bold text-gray-700">R$ {fmt(totalCobrado)}</p>
-              </div>
-              <div className="bg-green-50 rounded-lg p-3">
-                <p className="text-xs text-gray-400">Total Pago</p>
-                <p className="text-lg font-bold text-green-700">R$ {fmt(totalPagoGeral)}</p>
-              </div>
-              <div className={`rounded-lg p-3 ${saldoDevedor > 0 ? 'bg-red-50' : 'bg-green-50'}`}>
-                <p className="text-xs text-gray-400">Saldo Devedor</p>
-                <p className={`text-lg font-bold ${saldoDevedor > 0 ? 'text-red-700' : 'text-green-700'}`}>R$ {fmt(saldoDevedor)}</p>
+          <div className="card border-2 border-red-200 bg-red-50">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-sm text-red-600 font-medium">Saldo Devedor</p>
+                <p className="text-3xl font-bold text-red-700">R$ {fmt(saldoDevedor)}</p>
               </div>
             </div>
-            {saldoDevedor > 0.01 && (
-              <button
-                onClick={() => {
-                  // Abre modal de pagamento para o total em aberto, usando a cobrança mais antiga não paga
-                  const oldestUnpaid = charges.find(c => !c.pago);
-                  if (oldestUnpaid) openPayModal('weekly', oldestUnpaid.id, saldoDevedor, 0);
-                }}
-                className="btn-primary w-full mt-3 py-3 flex items-center justify-center gap-2 text-base"
-              >
-                <CreditCard className="w-5 h-5" /> Pagar Total em Aberto — R$ {fmt(saldoDevedor)}
-              </button>
-            )}
+            <button
+              onClick={() => {
+                const oldestUnpaid = charges.find(c => !c.pago);
+                if (oldestUnpaid) openPayModal('weekly', oldestUnpaid.id, saldoDevedor, 0);
+              }}
+              className="btn-primary w-full py-3 flex items-center justify-center gap-2 text-base"
+            >
+              <CreditCard className="w-5 h-5" /> Pagar Total em Aberto
+            </button>
           </div>
         );
       })()}
