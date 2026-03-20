@@ -9,16 +9,12 @@ RUN npm run build
 # Imagem final
 FROM node:20-alpine
 
-# PHP para envio de email via mail() (sendmail local do Railway)
-RUN apk add --no-cache php83 && ln -sf /usr/bin/php83 /usr/bin/php
-
 WORKDIR /app
 
 COPY backend/package*.json ./
 RUN npm install --omit=dev
 
 COPY backend/src/ ./src/
-COPY backend/php/ ./php/
 
 RUN mkdir -p /app/uploads/cars /app/uploads/documents /app/uploads/contracts
 COPY --from=frontend-build /app/frontend/dist ./public/
