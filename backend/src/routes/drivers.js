@@ -464,11 +464,12 @@ router.get('/me/balance', auth, driverOnly, async (req, res) => {
 
     const driverId = profile.rows[0].id;
 
-    // Total pago, total devido, crédito
+    // Total cobrado, pago (real via payment_entries + payments), saldo devedor
     const stats = await pool.query(`
       SELECT
-        COALESCE(SUM(CASE WHEN pago = true THEN valor_final ELSE 0 END), 0) as total_pago,
-        COALESCE(SUM(CASE WHEN pago = false THEN valor_final ELSE 0 END), 0) as total_pendente,
+        COALESCE(SUM(valor_final), 0) as total_cobrado,
+        COALESCE(SUM(COALESCE(valor_pago_total, 0)), 0) as total_pago,
+        COALESCE(SUM(CASE WHEN pago = false THEN GREATEST(valor_final - COALESCE(valor_pago_total, 0), 0) ELSE 0 END), 0) as saldo_devedor,
         COALESCE(SUM(multa), 0) as total_multas,
         COALESCE(SUM(abatimentos), 0) as total_abatimentos,
         COUNT(*) as total_semanas,
@@ -477,16 +478,23 @@ router.get('/me/balance', auth, driverOnly, async (req, res) => {
       WHERE driver_id = $1
     `, [driverId]);
 
-    // Último crédito (da última semana paga)
-    const lastPaid = await pool.query(`
-      SELECT credito_anterior FROM weekly_charges
-      WHERE driver_id = $1
-      ORDER BY semana_ref DESC
-      LIMIT 1
-    `, [driverId]);
-
     const balance = stats.rows[0];
-    balance.credito_atual = lastPaid.rows[0]?.credito_anterior || 0;
+
+    // Fallback: se valor_pago_total não está populado, calcula via payment_entries
+    if (parseFloat(balance.total_pago) === 0) {
+      const entriesTotal = await pool.query(`
+        SELECT COALESCE(SUM(pe.valor_pago), 0) as total
+        FROM payment_entries pe
+        WHERE pe.driver_id = $1
+      `, [driverId]);
+      const paymentsTotal = await pool.query(`
+        SELECT COALESCE(SUM(p.valor), 0) as total
+        FROM payments p
+        WHERE p.driver_id = $1 AND p.status = 'pago' AND p.tipo = 'semanal'
+      `, [driverId]);
+      balance.total_pago = Math.max(parseFloat(entriesTotal.rows[0].total), parseFloat(paymentsTotal.rows[0].total));
+      balance.saldo_devedor = Math.max(parseFloat(balance.total_cobrado) - parseFloat(balance.total_pago), 0);
+    }
 
     res.json(balance);
   } catch (err) {
