@@ -60,23 +60,44 @@ router.get('/me/documents', auth, driverOnly, async (req, res) => {
  * Motorista seleciona/altera veículo de interesse
  */
 router.patch('/me/car-interest', auth, driverOnly, async (req, res) => {
+  const client = await pool.connect();
   try {
     const { car_id } = req.body;
     if (!car_id) return res.status(400).json({ error: 'car_id é obrigatório' });
 
-    // Verifica se carro existe e está disponível
-    const car = await pool.query('SELECT id, marca, modelo, placa FROM cars WHERE id = $1 AND disponivel = true', [car_id]);
-    if (car.rows.length === 0) return res.status(404).json({ error: 'Veículo não encontrado ou indisponível' });
+    await client.query('BEGIN');
 
-    await pool.query(
-      'UPDATE driver_profiles SET car_interesse_id = $1, updated_at = NOW() WHERE user_id = $2',
+    // Verifica se carro existe e está disponível
+    const car = await client.query('SELECT id, marca, modelo, placa, valor_semanal, valor_caucao FROM cars WHERE id = $1 AND disponivel = true', [car_id]);
+    if (car.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Veículo não encontrado ou indisponível' });
+    }
+
+    // Libera carro anterior se houver
+    const prev = await client.query('SELECT car_id FROM driver_profiles WHERE user_id = $1', [req.user.id]);
+    const prevCarId = prev.rows[0]?.car_id;
+    if (prevCarId && prevCarId !== parseInt(car_id)) {
+      await client.query('UPDATE cars SET disponivel = true, updated_at = NOW() WHERE id = $1', [prevCarId]);
+    }
+
+    // Atribui carro diretamente (sem precisar de aprovação admin)
+    await client.query(
+      'UPDATE driver_profiles SET car_id = $1, car_interesse_id = $1, updated_at = NOW() WHERE user_id = $2',
       [car_id, req.user.id]
     );
 
+    // Marca carro como indisponível
+    await client.query('UPDATE cars SET disponivel = false, updated_at = NOW() WHERE id = $1', [car_id]);
+
+    await client.query('COMMIT');
     res.json({ ok: true, car: car.rows[0] });
   } catch (err) {
-    console.error('Erro ao salvar interesse de veículo:', err);
+    await client.query('ROLLBACK');
+    console.error('Erro ao atribuir veículo:', err);
     res.status(500).json({ error: 'Erro interno' });
+  } finally {
+    client.release();
   }
 });
 

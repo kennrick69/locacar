@@ -159,8 +159,8 @@ export default function DriverJourney() {
       label: 'Pagamento da Caução',
       icon: Banknote,
       done: caucaoPaga,
-      available: isAprovado,
-      waitMsg: !isAprovado ? 'Disponível após aprovação do administrador' : null,
+      available: true,
+      waitMsg: null,
     },
     {
       id: 'vistoria',
@@ -373,38 +373,37 @@ export default function DriverJourney() {
                               </div>
                             )}
 
-                            {/* Seletor de veículo — quando car_id ainda não foi atribuído */}
-                            {!profile?.car_id && (
-                              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-3">
-                                <div className="flex items-center gap-2">
-                                  <Car className="w-4 h-4 text-yellow-600 shrink-0" />
-                                  <p className="text-sm font-semibold text-yellow-800">Selecione o veículo de interesse</p>
-                                </div>
-                                {profile?.car_interesse_id ? (
-                                  <p className="text-xs text-yellow-700">
-                                    Interesse registrado. Aguardando confirmação do administrador.
-                                  </p>
-                                ) : (
-                                  <p className="text-xs text-yellow-700">
-                                    Escolha o veículo que deseja alugar. O administrador irá confirmar a atribuição.
-                                  </p>
-                                )}
-                                <select
-                                  defaultValue={profile?.car_interesse_id || ''}
-                                  onChange={e => handleCarInterest(e.target.value)}
-                                  disabled={savingCarInterest}
-                                  className="input-field text-sm w-full"
-                                >
-                                  <option value="">Selecione um veículo...</option>
-                                  {availableCars.map(car => (
-                                    <option key={car.id} value={car.id}>
-                                      {car.marca} {car.modelo} {car.ano ? `(${car.ano})` : ''} — R$ {parseFloat(car.valor_semanal).toFixed(2).replace('.', ',')} /sem
-                                    </option>
-                                  ))}
-                                </select>
-                                {savingCarInterest && <p className="text-xs text-yellow-600">Salvando...</p>}
+                            {/* Seletor de veículo */}
+                            <div className={`border rounded-lg p-4 space-y-3 ${profile?.car_id ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
+                              <div className="flex items-center gap-2">
+                                <Car className={`w-4 h-4 shrink-0 ${profile?.car_id ? 'text-green-600' : 'text-yellow-600'}`} />
+                                <p className={`text-sm font-semibold ${profile?.car_id ? 'text-green-800' : 'text-yellow-800'}`}>
+                                  {profile?.car_id ? `Veículo: ${profile.car_marca} ${profile.car_modelo}` : 'Selecione seu veículo'}
+                                </p>
                               </div>
-                            )}
+                              {!profile?.car_id && (
+                                <p className="text-xs text-yellow-700">Escolha o veículo que deseja alugar para continuar.</p>
+                              )}
+                              <select
+                                value={profile?.car_id || ''}
+                                onChange={e => handleCarInterest(e.target.value)}
+                                disabled={savingCarInterest}
+                                className="input-field text-sm w-full"
+                              >
+                                <option value="">Selecione um veículo...</option>
+                                {profile?.car_id && (
+                                  <option value={profile.car_id}>
+                                    {profile.car_marca} {profile.car_modelo} — (atual)
+                                  </option>
+                                )}
+                                {availableCars.filter(c => c.id !== profile?.car_id).map(car => (
+                                  <option key={car.id} value={car.id}>
+                                    {car.marca} {car.modelo} {car.ano ? `(${car.ano})` : ''} — R$ {parseFloat(car.valor_semanal).toFixed(2).replace('.', ',')} /sem
+                                  </option>
+                                ))}
+                              </select>
+                              {savingCarInterest && <p className="text-xs text-yellow-600">Salvando...</p>}
+                            </div>
 
                             {/* Aceite LGPD + Geração do contrato */}
                             {!contratoGerado && allPreReqsDone && (
