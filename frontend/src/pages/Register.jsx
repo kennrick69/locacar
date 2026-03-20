@@ -188,7 +188,47 @@ export default function Register() {
   };
 
   const allDocsUploaded = DOCS.every(d => getDocDone(d));
-  const handleFinish = () => setStep(3);
+  const [selfieUploaded, setSelfieUploaded] = useState(false);
+  const [selfieUploading, setSelfieUploading] = useState(false);
+  const selfieRef = useRef(null);
+  const [lgpdAccepted, setLgpdAccepted] = useState(false);
+  const [generatingContract, setGeneratingContract] = useState(false);
+  const [contractGenerated, setContractGenerated] = useState(false);
+
+  const uploadSelfie = async (file) => {
+    if (!file) return;
+    setSelfieUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('arquivo', file);
+      await api.post('/drivers/me/documents?tipo=selfie', fd, {
+        headers: { 'Content-Type': 'multipart/form-data', Authorization: `Bearer ${authToken}` }
+      });
+      setSelfieUploaded(true);
+      toast.success('Selfie enviada!');
+    } catch (err) { toast.error(err.response?.data?.error || 'Erro no upload'); }
+    finally { setSelfieUploading(false); }
+  };
+
+  const handleGenerateContract = async () => {
+    setGeneratingContract(true);
+    try {
+      const res = await api.post('/drivers/me/generate-contract', {}, {
+        headers: { Authorization: `Bearer ${authToken}` },
+        responseType: 'blob',
+      });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `contrato_${form.nome?.replace(/\s+/g, '_') || 'locacao'}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setContractGenerated(true);
+      toast.success('Contrato gerado e enviado por email! Assine pelo Gov.br.');
+    } catch (err) { toast.error(err.response?.data?.error || 'Erro ao gerar contrato'); }
+    finally { setGeneratingContract(false); }
+  };
 
   if (carLoading) return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-50 to-blue-100">
@@ -196,13 +236,13 @@ export default function Register() {
     </div>
   );
 
-  const stepLabels = ['Dados Pessoais', 'Documentos', 'Concluído'];
+  const stepLabels = ['Dados', 'Documentos', 'Selfie', 'Contrato', 'Pronto'];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-brand-50 to-blue-100 p-4">
       <div className="w-full max-w-lg mx-auto pt-4">
         {/* Car info banner */}
-        {carInfo && !isPropertyMode && step < 3 && (
+        {carInfo && !isPropertyMode && step < 5 && (
           <div className="bg-white rounded-xl p-3 mb-4 flex items-center gap-3 shadow-sm border border-gray-200">
             <div className="w-16 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
               {carInfo.foto_url ? (
@@ -221,7 +261,7 @@ export default function Register() {
         )}
 
         {/* Property info banner */}
-        {propertyInfo && isPropertyMode && step < 3 && (
+        {propertyInfo && isPropertyMode && step < 5 && (
           <div className="bg-white rounded-xl p-3 mb-4 flex items-center gap-3 shadow-sm border border-gray-200">
             <div className="w-16 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
               {propertyInfo.foto_url ? (
@@ -418,47 +458,158 @@ export default function Register() {
                 <button onClick={() => setStep(1)} className="flex items-center gap-1 px-4 py-2.5 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium">
                   <ArrowLeft className="w-4 h-4" /> Voltar
                 </button>
-                <button onClick={handleFinish} disabled={!allDocsUploaded}
+                <button onClick={() => setStep(3)} disabled={!allDocsUploaded}
                   className={`flex-1 py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-2 ${allDocsUploaded ? 'bg-brand-600 text-white hover:bg-brand-700 shadow-md' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
-                  Enviar para Análise <ArrowRight className="w-4 h-4" />
+                  Próximo <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
           )}
 
-          {/* STEP 3 */}
+          {/* STEP 3: SELFIE */}
           {step === 3 && (
+            <div className="space-y-4">
+              <h2 className="text-lg font-bold text-gray-800">Selfie com Documento</h2>
+              <p className="text-sm text-gray-500">Tire uma foto segurando sua CNH ao lado do rosto. Isso confirma que você é o titular dos documentos.</p>
+
+              <div className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${selfieUploaded ? 'border-green-300 bg-green-50' : 'border-gray-300 hover:border-brand-400'}`}>
+                {selfieUploaded ? (
+                  <div className="space-y-2">
+                    <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto" />
+                    <p className="text-sm font-medium text-green-700">Selfie enviada!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto" />
+                    <p className="text-sm text-gray-500">Clique para enviar ou arraste a foto</p>
+                  </div>
+                )}
+                <input type="file" ref={selfieRef} accept="image/*" className="hidden"
+                  onChange={e => { if (e.target.files[0]) uploadSelfie(e.target.files[0]); e.target.value = ''; }} />
+                <button onClick={() => selfieRef.current?.click()} disabled={selfieUploading}
+                  className={`mt-3 px-4 py-2 rounded-lg text-sm font-medium ${selfieUploaded ? 'bg-green-100 text-green-700' : 'bg-brand-600 text-white hover:bg-brand-700'}`}>
+                  {selfieUploading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : selfieUploaded ? 'Reenviar' : 'Enviar Selfie'}
+                </button>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => setStep(2)} className="flex items-center gap-1 px-4 py-2.5 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium">
+                  <ArrowLeft className="w-4 h-4" /> Voltar
+                </button>
+                <button onClick={() => setStep(4)} disabled={!selfieUploaded}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-2 ${selfieUploaded ? 'bg-brand-600 text-white hover:bg-brand-700 shadow-md' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
+                  Próximo <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: CONTRATO (LGPD + gerar) */}
+          {step === 4 && (
+            <div className="space-y-4">
+              <h2 className="text-lg font-bold text-gray-800">Termos e Contrato</h2>
+
+              {!contractGenerated ? (
+                <>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700">Termo de Consentimento para Uso de Dados Pessoais</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Conforme a LGPD (Lei 13.709/2018)</p>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-lg p-3 max-h-36 overflow-y-auto text-[11px] text-gray-600 space-y-2 border border-gray-200">
+                    <p>Ao prosseguir, declaro estar ciente e autorizo a <strong>IMP Locadora</strong> a coletar, armazenar e utilizar os seguintes dados pessoais:</p>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      <li><strong>Identificação:</strong> nome, CPF, RG, endereço, telefone, e-mail</li>
+                      <li><strong>Documentos:</strong> CNH, comprovante de endereço</li>
+                      <li><strong>Imagens:</strong> selfie, fotos de vistoria, print do app</li>
+                      <li><strong>Financeiros:</strong> pagamentos, cobranças semanais</li>
+                    </ul>
+                    <p className="font-medium">Finalidade:</p>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      <li>Execução do contrato de locação</li>
+                      <li>Identificação junto a autoridades de trânsito</li>
+                      <li>Comunicação sobre pagamentos e notificações</li>
+                      <li>Cumprimento de obrigações legais</li>
+                      <li>Proteção ao crédito e prevenção a fraudes</li>
+                    </ul>
+                    <p>Você pode solicitar informações, correção ou exclusão de dados a qualquer momento.</p>
+                  </div>
+
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" checked={lgpdAccepted} onChange={e => setLgpdAccepted(e.target.checked)}
+                      className="mt-0.5 w-5 h-5 rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
+                    <span className="text-xs text-gray-700">
+                      Li e concordo com o <strong>Termo de Consentimento para Uso de Dados Pessoais</strong>.
+                    </span>
+                  </label>
+
+                  <button onClick={handleGenerateContract} disabled={generatingContract || !lgpdAccepted}
+                    className="btn-primary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                    {generatingContract ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                    Aceitar e Gerar Contrato
+                  </button>
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                    <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto mb-2" />
+                    <p className="text-sm font-medium text-green-800">Contrato gerado e enviado por email!</p>
+                    <p className="text-xs text-green-600 mt-1">O PDF foi baixado e também enviado para o seu email. Assine digitalmente pelo Gov.br e faça upload na sua área.</p>
+                  </div>
+
+                  <button onClick={() => setStep(5)}
+                    className="btn-primary w-full py-3 flex items-center justify-center gap-2">
+                    Próximo <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button onClick={() => setStep(3)} className="flex items-center gap-1 px-4 py-2.5 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium">
+                  <ArrowLeft className="w-4 h-4" /> Voltar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 5: PRONTO */}
+          {step === 5 && (
             <div className="text-center space-y-4 py-4">
               <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
                 <CheckCircle2 className="w-8 h-8 text-green-600" />
               </div>
-              <h2 className="text-lg font-bold text-gray-800">Cadastro realizado!</h2>
+              <h2 className="text-lg font-bold text-gray-800">Tudo pronto!</h2>
               <p className="text-sm text-gray-500 max-w-sm mx-auto">
-                Seus dados foram salvos. Acesse sua área para completar as próximas etapas:
-                contrato, selfie e pagamento.
+                Seu cadastro está completo. Agora é só aguardar a aprovação e pagar o caução para ativar sua conta.
               </p>
+
               <div className="bg-blue-50 rounded-lg p-3 text-sm text-blue-700">
                 <strong>Seu token de acesso:</strong>
                 <span className="font-mono font-bold text-lg ml-2 tracking-widest">{token}</span>
-                <p className="text-xs text-blue-500 mt-1">São os 6 primeiros dígitos do seu CPF</p>
+                <p className="text-xs text-blue-500 mt-1">Use para acessar sua área a qualquer momento (6 primeiros dígitos do CPF)</p>
               </div>
+
               <button
                 onClick={() => navigate('/motorista')}
                 className="btn-primary w-full py-3 inline-flex items-center justify-center gap-2"
               >
-                <ArrowRight className="w-4 h-4" /> Acessar Minha Área
+                <ArrowRight className="w-4 h-4" /> Ir para Minha Área
               </button>
-              <Link to="/" className="text-sm text-gray-400 hover:text-gray-600">
-                ← Voltar ao início
-              </Link>
             </div>
           )}
         </div>
 
-        {step < 3 && (
+        {step < 5 && step > 1 && (
+          <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
+            <p className="text-xs text-amber-700">
+              Se precisar sair, não se preocupe! Acesse sua área a qualquer momento com seu token: <strong className="font-mono">{token || 'os 6 primeiros dígitos do CPF'}</strong>
+            </p>
+          </div>
+        )}
+        {step === 1 && (
           <div className="mt-4 text-center text-sm text-gray-500">
             <Link to="/" className="text-brand-600 font-medium hover:text-brand-700">
-              {isPropertyMode ? '← Voltar para os imoveis' : '← Voltar para os carros'}
+              {isPropertyMode ? '← Voltar para os imóveis' : '← Voltar para os carros'}
             </Link>
           </div>
         )}
