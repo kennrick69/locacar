@@ -114,13 +114,18 @@ async function getMercadoPago(pool) {
   if (pool) {
     try {
       const result = await pool.query(
-        "SELECT chave, valor FROM settings WHERE chave IN ('mp_modo', 'mp_access_token', 'mp_access_token_test')"
+        "SELECT chave, valor FROM settings WHERE chave IN ('mp_modo', 'mp_access_token', 'mp_access_token_test', 'mp_webhook_url')"
       );
       const s = {};
       result.rows.forEach(r => { s[r.chave] = r.valor; });
 
       const modo = s.mp_modo || 'test';
       const token = modo === 'production' ? s.mp_access_token : s.mp_access_token_test;
+
+      // Disponibiliza webhook_url do DB como env fallback
+      if (s.mp_webhook_url && !process.env.MP_WEBHOOK_URL) {
+        process.env.MP_WEBHOOK_URL = s.mp_webhook_url;
+      }
 
       if (token && token.trim()) {
         console.log(`[MP] Usando token do DB (modo: ${modo})`);

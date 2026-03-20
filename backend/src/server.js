@@ -340,7 +340,7 @@ async function start() {
       ['multa_carencia_dias', '3', 'Dias de carência'],
       ['multa_diferida', 'true', 'Multa diferida'],
       ['evento_cadastro_externo', 'caucao_pago', 'Evento cadastro externo'],
-      ['mp_webhook_url', '', 'Webhook MP'],
+      ['mp_webhook_url', 'https://locacar-production.up.railway.app/api/webhooks/mp', 'Webhook MP'],
       ['mp_access_token', '', 'Access Token do Mercado Pago (produção)'],
       ['mp_public_key', '', 'Public Key do Mercado Pago (produção)'],
       ['mp_access_token_test', '', 'Access Token de teste do Mercado Pago'],
