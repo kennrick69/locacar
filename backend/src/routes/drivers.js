@@ -1872,6 +1872,86 @@ router.post('/:id/generate-charges', auth, adminOnly, async (req, res) => {
 });
 
 /**
+ * POST /api/drivers/:id/register-payment - Admin: registrar pagamento que abate dos débitos mais antigos
+ * Distribui o valor pelas cobranças em aberto da mais antiga para a mais nova.
+ */
+router.post('/:id/register-payment', auth, adminOnly, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const driverId = req.params.id;
+    const { valor_pago, data_pagamento, observacoes } = req.body;
+
+    if (!valor_pago || !data_pagamento) {
+      return res.status(400).json({ error: 'valor_pago e data_pagamento são obrigatórios' });
+    }
+
+    let restante = parseFloat(valor_pago);
+    if (restante <= 0) return res.status(400).json({ error: 'Valor deve ser maior que zero' });
+
+    await client.query('BEGIN');
+
+    // Busca cobranças em aberto, da mais antiga para a mais nova
+    const charges = await client.query(`
+      SELECT id, valor_final, COALESCE(valor_pago_total, 0) as pago_total, saldo_devedor
+      FROM weekly_charges
+      WHERE driver_id = $1 AND pago = false
+      ORDER BY semana_ref ASC
+    `, [driverId]);
+
+    if (charges.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Nenhuma cobrança em aberto' });
+    }
+
+    const distribuicao = [];
+
+    for (const charge of charges.rows) {
+      if (restante <= 0.01) break;
+
+      const saldo = parseFloat(charge.saldo_devedor || (parseFloat(charge.valor_final) - parseFloat(charge.pago_total)));
+      if (saldo <= 0.01) continue;
+
+      const abater = Math.min(restante, saldo);
+      restante -= abater;
+
+      // Insere entrada de pagamento
+      await client.query(`
+        INSERT INTO payment_entries (charge_id, driver_id, valor_pago, data_pagamento, observacoes)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [charge.id, driverId, abater, data_pagamento, observacoes || null]);
+
+      // Recalcula totais da cobrança
+      const entries = await client.query('SELECT SUM(valor_pago) as total FROM payment_entries WHERE charge_id = $1', [charge.id]);
+      const totalPago = parseFloat(entries.rows[0].total || 0);
+      const novoSaldo = Math.max(parseFloat(charge.valor_final) - totalPago, 0);
+      const pago = novoSaldo <= 0.01;
+
+      await client.query(`
+        UPDATE weekly_charges SET valor_pago_total = $1, saldo_devedor = $2, pago = $3,
+          data_pagamento = CASE WHEN $3 THEN $4::TIMESTAMP ELSE data_pagamento END, updated_at = NOW()
+        WHERE id = $5
+      `, [totalPago, novoSaldo, pago, data_pagamento, charge.id]);
+
+      distribuicao.push({ charge_id: charge.id, valor_abatido: abater, pago, saldo_restante: novoSaldo });
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      message: `Pagamento de R$ ${parseFloat(valor_pago).toFixed(2)} distribuído em ${distribuicao.length} cobrança(s)`,
+      distribuicao,
+      sobra: restante > 0.01 ? restante : 0,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao registrar pagamento:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  } finally {
+    client.release();
+  }
+});
+
+/**
  * POST /api/drivers/:id/charges/:chargeId/payment-entry - Admin: registrar pagamento manual
  */
 router.post('/:id/charges/:chargeId/payment-entry', auth, adminOnly, async (req, res) => {

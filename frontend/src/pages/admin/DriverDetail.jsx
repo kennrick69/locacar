@@ -98,6 +98,11 @@ export default function AdminDriverDetail() {
   // === NEW: Payment Entry ===
   const [paymentEntryModal, setPaymentEntryModal] = useState(null); // charge object
   const [paymentForm, setPaymentForm] = useState({ valor_pago: '', data_pagamento: '', observacoes: '' });
+
+  // === NEW: Register Global Payment ===
+  const [registerPayModal, setRegisterPayModal] = useState(false);
+  const [registerPayForm, setRegisterPayForm] = useState({ valor_pago: '', data_pagamento: new Date().toISOString().split('T')[0], observacoes: '' });
+  const [registeringPay, setRegisteringPay] = useState(false);
   const [paymentEntries, setPaymentEntries] = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
 
@@ -670,6 +675,12 @@ export default function AdminDriverDetail() {
               className="text-xs bg-brand-600 text-white px-3 py-1.5 rounded-lg hover:bg-brand-700 flex items-center gap-1">
               <Plus className="w-3 h-3" /> Avulsa
             </button>
+            {driver.charges?.some(c => !c.pago) && (
+              <button onClick={() => { setRegisterPayForm({ valor_pago: '', data_pagamento: new Date().toISOString().split('T')[0], observacoes: '' }); setRegisterPayModal(true); }}
+                className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 flex items-center gap-1">
+                <DollarSign className="w-3 h-3" /> Registrar Pagamento
+              </button>
+            )}
           </div>
         </div>
 
@@ -927,6 +938,80 @@ export default function AdminDriverDetail() {
             <div className="flex gap-3 mt-4">
               <button onClick={() => setChargeModal(false)} className="btn-secondary flex-1">Cancelar</button>
               <button onClick={handleCreateCharge} disabled={processing} className="btn-primary flex-1">Criar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== Modal Registrar Pagamento Global ========== */}
+      {registerPayModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setRegisterPayModal(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-gray-800 mb-1">Registrar Pagamento</h3>
+            <p className="text-xs text-gray-500 mb-4">O valor será distribuído automaticamente pelas cobranças em aberto, da mais antiga para a mais nova.</p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Valor recebido (R$) *</label>
+                <input type="number" step="0.01" min="0.01" value={registerPayForm.valor_pago}
+                  onChange={e => setRegisterPayForm({ ...registerPayForm, valor_pago: e.target.value })}
+                  className="input-field text-lg font-bold" placeholder="0,00" autoFocus />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Data do pagamento *</label>
+                <input type="date" value={registerPayForm.data_pagamento}
+                  onChange={e => setRegisterPayForm({ ...registerPayForm, data_pagamento: e.target.value })}
+                  className="input-field" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Observações</label>
+                <input type="text" value={registerPayForm.observacoes}
+                  onChange={e => setRegisterPayForm({ ...registerPayForm, observacoes: e.target.value })}
+                  className="input-field" placeholder="Ex: Pix, dinheiro, transferência..." />
+              </div>
+
+              {registerPayForm.valor_pago > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                  <p className="font-medium">Débitos em aberto (ordem de abatimento):</p>
+                  <div className="mt-1 space-y-0.5">
+                    {(() => {
+                      let rest = parseFloat(registerPayForm.valor_pago) || 0;
+                      return (driver.charges || []).filter(c => !c.pago).sort((a, b) => new Date(a.semana_ref) - new Date(b.semana_ref)).map(c => {
+                        const saldo = parseFloat(c.saldo_devedor || (parseFloat(c.valor_final) - parseFloat(c.valor_pago_total || c.total_pago || 0)));
+                        if (saldo <= 0.01) return null;
+                        const abater = Math.min(rest, saldo);
+                        rest -= abater;
+                        return (
+                          <div key={c.id} className="flex justify-between">
+                            <span>{fmtDate(c.semana_ref)} — R$ {fmt(saldo)}</span>
+                            {abater > 0 ? <span className="text-green-600 font-medium">-R$ {fmt(abater)}{abater >= saldo - 0.01 ? ' (quita)' : ''}</span> : <span className="text-gray-400">—</span>}
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={async () => {
+                  if (!registerPayForm.valor_pago || !registerPayForm.data_pagamento) return toast.warning('Preencha valor e data');
+                  setRegisteringPay(true);
+                  try {
+                    const res = await driversAPI.registerPayment(id, registerPayForm);
+                    toast.success(res.data.message);
+                    if (res.data.sobra > 0) toast.info(`Sobra de R$ ${res.data.sobra.toFixed(2).replace('.', ',')} (todas as cobranças quitadas)`);
+                    setRegisterPayModal(false);
+                    await loadData();
+                  } catch (err) { toast.error(err.response?.data?.error || 'Erro'); }
+                  finally { setRegisteringPay(false); }
+                }}
+                disabled={registeringPay || !registerPayForm.valor_pago || !registerPayForm.data_pagamento}
+                className="btn-primary w-full py-3 flex items-center justify-center gap-2"
+              >
+                {registeringPay ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <DollarSign className="w-4 h-4" />}
+                Confirmar Pagamento
+              </button>
             </div>
           </div>
         </div>

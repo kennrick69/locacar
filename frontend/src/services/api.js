@@ -114,6 +114,7 @@ export const driversAPI = {
   generateCharges: (driverId, data) => api.post(`/drivers/${driverId}/generate-charges`, data),
   addPaymentEntry: (driverId, chargeId, data) => api.post(`/drivers/${driverId}/charges/${chargeId}/payment-entry`, data),
   getPaymentEntries: (driverId, chargeId) => api.get(`/drivers/${driverId}/charges/${chargeId}/payment-entries`),
+  registerPayment: (driverId, data) => api.post(`/drivers/${driverId}/register-payment`, data),
   deleteCharge: (driverId, chargeId) => api.delete(`/drivers/${driverId}/charges/${chargeId}`),
   deletePaymentEntry: (driverId, chargeId, entryId) => api.delete(`/drivers/${driverId}/charges/${chargeId}/payment-entries/${entryId}`),
   recalculateInterest: (driverId, data) => api.post(`/drivers/${driverId}/recalculate-interest`, data),
