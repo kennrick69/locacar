@@ -567,19 +567,44 @@ router.post('/me/charges/:chargeId/abatimentos',
 
 /**
  * GET /api/drivers/me/payments
- * Histórico de pagamentos
+ * Histórico UNIFICADO de pagamentos (MP + manuais registrados pelo admin)
  */
 router.get('/me/payments', auth, driverOnly, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT p.*, wc.semana_ref
+    const profile = await pool.query('SELECT id FROM driver_profiles WHERE user_id = $1', [req.user.id]);
+    if (profile.rows.length === 0) return res.status(404).json({ error: 'Perfil não encontrado' });
+    const driverId = profile.rows[0].id;
+
+    // Pagamentos via Mercado Pago (tabela payments)
+    const mpPayments = await pool.query(`
+      SELECT p.id, p.tipo, p.metodo, p.valor as valor_pago, p.valor_total,
+             p.status, p.data_pagamento, p.created_at, p.parcelas, p.justificativa,
+             wc.semana_ref,
+             'mp' as origem
       FROM payments p
       LEFT JOIN weekly_charges wc ON wc.id = p.charge_id
       WHERE p.user_id = $1
       ORDER BY p.created_at DESC
     `, [req.user.id]);
 
-    res.json(result.rows);
+    // Pagamentos manuais registrados pelo admin (tabela payment_entries)
+    const manualPayments = await pool.query(`
+      SELECT pe.id, 'semanal' as tipo, 'manual' as metodo, pe.valor_pago,
+             pe.valor_pago as valor_total, 'pago' as status,
+             pe.data_pagamento, pe.created_at, 1 as parcelas, pe.observacoes as justificativa,
+             wc.semana_ref,
+             'admin' as origem
+      FROM payment_entries pe
+      LEFT JOIN weekly_charges wc ON wc.id = pe.charge_id
+      WHERE pe.driver_id = $1
+      ORDER BY pe.data_pagamento DESC
+    `, [driverId]);
+
+    // Combina e ordena por data (mais recente primeiro)
+    const all = [...mpPayments.rows, ...manualPayments.rows]
+      .sort((a, b) => new Date(b.data_pagamento || b.created_at) - new Date(a.data_pagamento || a.created_at));
+
+    res.json(all);
   } catch (err) {
     console.error('Erro ao listar pagamentos:', err);
     res.status(500).json({ error: 'Erro interno' });

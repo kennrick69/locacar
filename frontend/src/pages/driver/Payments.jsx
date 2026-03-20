@@ -389,48 +389,54 @@ export default function DriverPayments() {
         </div>
       )}
 
-      {/* HISTÓRICO DE PAGAMENTOS */}
+      {/* EXTRATO DE PAGAMENTOS */}
       {payments.length > 0 && (
         <div className="space-y-3">
-          <h2 className="text-lg font-semibold text-gray-700">Histórico de Pagamentos</h2>
+          <h2 className="text-lg font-semibold text-gray-700">Extrato de Pagamentos</h2>
 
           <div className="card divide-y divide-gray-100">
-            {payments.map(p => (
-              <div key={p.id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                    p.status === 'pago' ? 'bg-green-100' : p.status === 'pendente' ? 'bg-yellow-100' : 'bg-gray-100'
-                  }`}>
-                    {p.status === 'pago' ? (
-                      <CheckCircle2 className="w-4 h-4 text-green-600" />
-                    ) : p.status === 'pendente' ? (
-                      <Clock className="w-4 h-4 text-yellow-600" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-gray-400" />
-                    )}
+            {payments.map((p, idx) => {
+              const dataPag = p.data_pagamento ? new Date(p.data_pagamento).toLocaleDateString('pt-BR') : new Date(p.created_at).toLocaleDateString('pt-BR');
+              const isManual = p.origem === 'admin';
+              const metodoLabel = isManual ? 'Registrado' : p.metodo === 'pix' ? 'Pix' : p.metodo === 'cartao' ? 'Cartão' : (p.metodo || '').toUpperCase();
+
+              return (
+                <div key={`${p.origem || 'mp'}-${p.id}-${idx}`} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                      p.status === 'pago' ? 'bg-green-100' : p.status === 'pendente' ? 'bg-yellow-100' : 'bg-gray-100'
+                    }`}>
+                      {p.status === 'pago' ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-600" />
+                      ) : p.status === 'pendente' ? (
+                        <Clock className="w-4 h-4 text-yellow-600" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-gray-400" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">
+                        {p.tipo === 'caucao' ? 'Caução' : `Semana ${p.semana_ref ? new Date(p.semana_ref).toLocaleDateString('pt-BR') : ''}`}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {metodoLabel} {p.parcelas > 1 ? `· ${p.parcelas}x` : ''} · {dataPag}
+                      </p>
+                      {p.justificativa && (
+                        <p className="text-xs text-gray-500 italic mt-0.5">"{p.justificativa}"</p>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-700">
-                      {p.tipo === 'caucao' ? 'Caução' : `Semana ${p.semana_ref ? new Date(p.semana_ref).toLocaleDateString('pt-BR') : ''}`}
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-green-700">R$ {fmt(p.valor_pago || p.valor_total)}</p>
+                    <p className={`text-xs ${
+                      p.status === 'pago' ? 'text-green-600' : p.status === 'pendente' ? 'text-yellow-600' : 'text-gray-400'
+                    }`}>
+                      {p.status === 'pago' ? 'Confirmado' : p.status === 'pendente' ? 'Pendente' : p.status}
                     </p>
-                    <p className="text-xs text-gray-400">
-                      {p.metodo?.toUpperCase()} {p.parcelas > 1 ? `· ${p.parcelas}x` : ''} · {new Date(p.created_at).toLocaleDateString('pt-BR')}
-                    </p>
-                    {p.justificativa && (
-                      <p className="text-xs text-yellow-600 italic mt-0.5">"{p.justificativa}"</p>
-                    )}
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-bold text-gray-800">R$ {fmt(p.valor_total)}</p>
-                  <p className={`text-xs ${
-                    p.status === 'pago' ? 'text-green-600' : p.status === 'pendente' ? 'text-yellow-600' : 'text-gray-400'
-                  }`}>
-                    {p.status === 'pago' ? 'Pago' : p.status === 'pendente' ? 'Pendente' : p.status}
-                  </p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

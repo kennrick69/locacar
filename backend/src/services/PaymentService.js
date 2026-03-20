@@ -240,21 +240,31 @@ class PaymentService {
           await this.confirmarCaucao(payment.driver_id);
         }
 
-        // Se é semanal, verifica se totalmente pago
+        // Se é semanal, atualiza valor_pago_total e saldo_devedor
         if (payment.tipo === 'semanal' && payment.charge_id) {
-          const totalPago = await pool.query(
+          // Soma pagamentos MP confirmados
+          const mpTotal = await pool.query(
             "SELECT COALESCE(SUM(valor), 0) as total FROM payments WHERE charge_id = $1 AND status = 'pago'",
             [payment.charge_id]
           );
+          // Soma payment_entries manuais
+          const peTotal = await pool.query(
+            "SELECT COALESCE(SUM(valor_pago), 0) as total FROM payment_entries WHERE charge_id = $1",
+            [payment.charge_id]
+          );
           const chargeRes = await pool.query('SELECT valor_final FROM weekly_charges WHERE id = $1', [payment.charge_id]);
+
           if (chargeRes.rows.length > 0) {
-            const pago = parseFloat(totalPago.rows[0].total) + parseFloat(payment.valor);
-            if (pago >= parseFloat(chargeRes.rows[0].valor_final) - 0.01) {
-              await pool.query(`
-                UPDATE weekly_charges SET pago = true, data_pagamento = NOW(), updated_at = NOW()
-                WHERE id = $1
-              `, [payment.charge_id]);
-            }
+            const totalPago = parseFloat(mpTotal.rows[0].total) + parseFloat(peTotal.rows[0].total);
+            const valorFinal = parseFloat(chargeRes.rows[0].valor_final);
+            const saldo = Math.max(valorFinal - totalPago, 0);
+            const isPago = saldo <= 0.01;
+
+            await pool.query(`
+              UPDATE weekly_charges SET valor_pago_total = $1, saldo_devedor = $2, pago = $3,
+                data_pagamento = CASE WHEN $3 THEN NOW() ELSE data_pagamento END, updated_at = NOW()
+              WHERE id = $4
+            `, [totalPago, saldo, isPago, payment.charge_id]);
           }
         }
 
