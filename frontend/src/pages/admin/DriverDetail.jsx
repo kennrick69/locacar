@@ -406,13 +406,27 @@ export default function AdminDriverDetail() {
             <p className="text-xs text-amber-600 mt-0.5">⭐ Interesse: {driver.interesse_marca} {driver.interesse_modelo} {driver.interesse_ano} {driver.interesse_cor}{driver.interesse_placa ? ` (${driver.interesse_placa})` : ''}</p>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_BADGE[driver.status]}`}>{driver.status?.replace('_', ' ')}</span>
-        </div>
+        <button
+          onClick={() => {
+            if (editing) { setEditing(false); return; }
+            setEditForm({
+              nome: driver.nome || '', cpf: driver.cpf || '', rg: driver.rg || '',
+              telefone: driver.telefone || '', email: driver.email || '',
+              endereco_completo: driver.endereco_completo || '',
+              car_id: driver.car_id || '', dia_cobranca: driver.dia_cobranca || 'segunda',
+              observacoes: driver.observacoes || '',
+            });
+            setEditing(true);
+          }}
+          className={`p-2 rounded-lg transition-colors ${editing ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+          title={editing ? 'Cancelar edição' : 'Editar dados'}
+        >
+          {editing ? <X className="w-5 h-5" /> : <Pencil className="w-5 h-5" />}
+        </button>
       </div>
 
       {/* ========== EDIT FORM ========== */}
-      {false && (
+      {editing && (
         <div className="card border-2 border-brand-200 space-y-4">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2"><User className="w-4 h-4 text-brand-600" /> Editar Dados</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
