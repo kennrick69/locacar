@@ -61,11 +61,38 @@ export default function DriverJourney() {
     try {
       const formData = new FormData();
       formData.append('contrato', file);
-      await driversAPI.uploadContrato(formData);
-      toast.success('Contrato enviado!');
+      const res = await driversAPI.uploadContrato(formData);
+      const sig = res.data?.assinatura;
+      if (sig && !sig.assinado) {
+        toast.warning('Contrato enviado, mas SEM assinatura digital detectada. Assine pelo Gov.br e reenvie.', { autoClose: 8000 });
+      } else if (sig && sig.assinado && !sig.cpf_confere) {
+        toast.warning('Contrato assinado digitalmente, mas o CPF da assinatura não confere com seu cadastro.', { autoClose: 8000 });
+      } else if (sig && sig.assinado && sig.cpf_confere) {
+        toast.success('Contrato enviado e assinatura digital verificada com sucesso!');
+      } else {
+        toast.success('Contrato enviado!');
+      }
       await loadData();
     } catch (err) { toast.error(err.response?.data?.error || 'Erro no upload'); }
     finally { setUploading(prev => ({ ...prev, contrato: false })); }
+  };
+
+  const [generatingContract, setGeneratingContract] = useState(false);
+  const handleGenerateContract = async () => {
+    setGeneratingContract(true);
+    try {
+      const res = await driversAPI.generateMyContract();
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `contrato_${profile?.nome?.replace(/\s+/g, '_') || 'locacao'}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Contrato gerado! Assine digitalmente pelo Gov.br e faça upload abaixo.');
+      await loadData();
+    } catch (err) { toast.error(err.response?.data?.error || 'Erro ao gerar contrato'); }
+    finally { setGeneratingContract(false); }
   };
 
   if (loading) return <div className="flex justify-center items-center h-64"><div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" /></div>;
@@ -293,19 +320,38 @@ export default function DriverJourney() {
                   {/* ---- STEP 3: CONTRATO ---- */}
                   {step.id === 'contrato' && (
                     <div className="space-y-4">
-                      {/* Instruções */}
-                      {!hasContrato && !contratoGerado && (
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700 space-y-2">
-                          <p className="font-medium">Aguardando contrato</p>
-                          <p className="text-xs">O administrador vai gerar seu contrato de locação e você receberá por <strong>email</strong> e/ou <strong>WhatsApp</strong>.</p>
-                          <p className="text-xs text-blue-500">Enquanto isso, você já pode enviar a <strong>selfie com documento</strong> abaixo para adiantar o processo.</p>
+                      {/* Gerar contrato */}
+                      {!contratoGerado && profile?.car_id && (
+                        <div className="bg-brand-50 border border-brand-200 rounded-lg p-4 space-y-3">
+                          <div>
+                            <p className="text-sm font-medium text-brand-800">Gere seu contrato de locação</p>
+                            <p className="text-xs text-brand-600 mt-1">O contrato será preenchido automaticamente com seus dados e os do veículo.</p>
+                          </div>
+                          <button
+                            onClick={handleGenerateContract}
+                            disabled={generatingContract}
+                            className="btn-primary w-full flex items-center justify-center gap-2"
+                          >
+                            {generatingContract ? (
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            ) : (
+                              <><Download className="w-4 h-4" /> Gerar e Baixar Contrato</>
+                            )}
+                          </button>
                         </div>
                       )}
-                      {!hasContrato && contratoGerado && (
+                      {!contratoGerado && !profile?.car_id && (
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-500">
+                          <p>O contrato será disponibilizado quando um veículo for atribuído ao seu cadastro.</p>
+                        </div>
+                      )}
+
+                      {/* Instruções pós-geração */}
+                      {contratoGerado && !hasContrato && (
                         <div className="bg-purple-50 rounded-lg p-3 text-sm text-purple-700 space-y-1">
                           <p className="font-medium">Passos para assinar o contrato:</p>
                           <ol className="list-decimal list-inside space-y-0.5 text-xs">
-                            <li>Baixe o PDF do contrato abaixo</li>
+                            <li>Baixe o PDF do contrato abaixo (se ainda não baixou)</li>
                             <li>Acesse <strong>assinador.iti.br</strong> ou app <strong>Gov.br</strong></li>
                             <li>Faça login com sua conta Gov.br (nível Prata ou Ouro)</li>
                             <li>Selecione o PDF e assine digitalmente</li>

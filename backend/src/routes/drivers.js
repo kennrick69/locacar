@@ -164,6 +164,17 @@ router.post('/me/contrato',
 
       const caminho = `/uploads/contratos/${req.file.filename}`;
 
+      // Verifica assinatura digital
+      const fs = require('fs');
+      const pdfBuffer = fs.readFileSync(req.file.path);
+      const { verificarAssinatura } = require('../utils/verifyPdfSignature');
+
+      const userRes = await pool.query('SELECT nome, cpf FROM users WHERE id = $1', [req.user.id]);
+      const userData = userRes.rows[0] || {};
+      const sigResult = verificarAssinatura(pdfBuffer, userData);
+
+      console.log('[CONTRATO UPLOAD] Assinatura:', JSON.stringify(sigResult, null, 2));
+
       // Salva doc
       await pool.query(`
         INSERT INTO documents (user_id, tipo, nome_arquivo, caminho, mime_type, tamanho)
@@ -176,13 +187,109 @@ router.post('/me/contrato',
         WHERE user_id = $2
       `, [caminho, req.user.id]);
 
-      res.json({ message: 'Contrato enviado com sucesso', caminho });
+      res.json({
+        message: 'Contrato enviado com sucesso',
+        caminho,
+        assinatura: sigResult,
+      });
     } catch (err) {
       console.error('Erro no upload contrato:', err);
       res.status(500).json({ error: 'Erro interno' });
     }
   }
 );
+
+/**
+ * POST /api/drivers/me/generate-contract
+ * Motorista gera seu próprio contrato (se tiver carro atribuído)
+ */
+router.post('/me/generate-contract', auth, driverOnly, async (req, res) => {
+  try {
+    const driverRes = await pool.query(`
+      SELECT dp.*, u.nome, u.email, u.cpf, u.telefone,
+        c.marca as car_marca, c.modelo as car_modelo, c.placa as car_placa,
+        c.cor as car_cor, c.ano as car_ano, c.valor_semanal, c.valor_caucao,
+        c.renavam as car_renavam
+      FROM driver_profiles dp
+      JOIN users u ON u.id = dp.user_id
+      LEFT JOIN cars c ON c.id = dp.car_id
+      WHERE dp.user_id = $1
+    `, [req.user.id]);
+
+    if (driverRes.rows.length === 0) return res.status(404).json({ error: 'Perfil não encontrado' });
+    const driver = driverRes.rows[0];
+
+    if (!driver.car_id) return res.status(400).json({ error: 'Nenhum carro atribuído ao seu perfil ainda' });
+
+    // Busca dados do locador (settings)
+    const settingsRes = await pool.query("SELECT chave, valor FROM settings WHERE chave LIKE 'locador_%'");
+    const settings = {};
+    settingsRes.rows.forEach(r => { settings[r.chave] = r.valor; });
+
+    const { valorPorExtenso } = require('../utils/numberToWords');
+    const { gerarContrato } = require('../services/ContratoService');
+
+    const valorSemanal = parseFloat(driver.valor_semanal || 0);
+    const valorCaucao = parseFloat(driver.valor_caucao || 0);
+
+    const data = {
+      locador_nome: settings.locador_nome || 'NOME DO LOCADOR',
+      locador_cpf: settings.locador_cpf || '_______________',
+      locador_endereco: settings.locador_endereco || '_______________',
+      locador_email: settings.locador_email || '_______________',
+      locatario_nome: driver.nome,
+      locatario_cpf: driver.cpf,
+      locatario_endereco: driver.endereco_completo || '_______________',
+      veiculo_marca_modelo: (driver.car_marca || '') + ' ' + (driver.car_modelo || ''),
+      veiculo_cor: driver.car_cor || '_______________',
+      veiculo_ano: driver.car_ano ? String(driver.car_ano) : '_______________',
+      veiculo_placa: driver.car_placa || '_______________',
+      veiculo_renavam: driver.car_renavam || '_______________',
+      valor_semanal: valorSemanal.toFixed(2).replace('.', ','),
+      valor_semanal_extenso: valorPorExtenso(valorSemanal),
+      dia_pagamento: driver.dia_cobranca || 'quinta',
+      valor_caucao: valorCaucao.toFixed(2).replace('.', ','),
+      valor_caucao_extenso: valorPorExtenso(valorCaucao),
+      cidade_comarca: settings.locador_cidade || 'JARAGUA DO SUL - SC',
+      data_contrato: new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }),
+    };
+
+    const clausesRes = await pool.query('SELECT titulo, conteudo FROM contract_clauses WHERE ativo = true ORDER BY ordem');
+    if (clausesRes.rows.length === 0) {
+      return res.status(400).json({ error: 'Cláusulas do contrato ainda não foram configuradas. Aguarde o administrador.' });
+    }
+
+    const buffer = await gerarContrato(data, clausesRes.rows);
+
+    // Salva o arquivo
+    const fs = require('fs');
+    const pathMod = require('path');
+    const uploadsDir = process.env.UPLOADS_DIR
+      ? pathMod.join(process.env.UPLOADS_DIR, 'contracts')
+      : pathMod.join(__dirname, '..', '..', 'uploads', 'contracts');
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+    const fileName = `contrato_${driver.id}_${Date.now()}.pdf`;
+    const filePath = pathMod.join(uploadsDir, fileName);
+    fs.writeFileSync(filePath, buffer);
+
+    const caminho = `/uploads/contracts/${fileName}`;
+    const nomeArq = `contrato_${driver.nome?.replace(/\s+/g, '_')}.pdf`;
+
+    // Salva na tabela documents
+    await pool.query(`
+      INSERT INTO documents (user_id, tipo, nome_arquivo, caminho, mime_type, tamanho)
+      VALUES ($1, 'contrato_gerado', $2, $3, 'application/pdf', $4)
+    `, [req.user.id, nomeArq, caminho, buffer.length]);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${nomeArq}"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('Erro ao gerar contrato pelo motorista:', err);
+    res.status(500).json({ error: 'Erro ao gerar contrato' });
+  }
+});
 
 // ========================================================
 //  COBRANÇAS SEMANAIS (DÉBITOS)

@@ -83,8 +83,17 @@ export default function DriverDocuments() {
     try {
       const formData = new FormData();
       formData.append('contrato', file);
-      await driversAPI.uploadContrato(formData);
-      toast.success('Contrato enviado com sucesso!');
+      const res = await driversAPI.uploadContrato(formData);
+      const sig = res.data?.assinatura;
+      if (sig && !sig.assinado) {
+        toast.warning('Contrato enviado, mas SEM assinatura digital detectada. Assine pelo Gov.br e reenvie.', { autoClose: 8000 });
+      } else if (sig && sig.assinado && !sig.cpf_confere) {
+        toast.warning('Assinatura digital encontrada, mas o CPF não confere com seu cadastro.', { autoClose: 8000 });
+      } else if (sig && sig.assinado && sig.cpf_confere) {
+        toast.success('Contrato enviado e assinatura digital verificada!');
+      } else {
+        toast.success('Contrato enviado com sucesso!');
+      }
       await loadData();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Erro no upload do contrato');

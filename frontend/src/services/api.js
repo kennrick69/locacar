@@ -76,6 +76,7 @@ export const driversAPI = {
   uploadContrato: (formData) => api.post('/drivers/me/contrato', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
+  generateMyContract: () => api.post('/drivers/me/generate-contract', {}, { responseType: 'blob' }),
   myCharges: () => api.get('/drivers/me/charges'),
   currentCharge: () => api.get('/drivers/me/charges/current'),
   chargeDetail: (id) => api.get(`/drivers/me/charges/${id}`),
