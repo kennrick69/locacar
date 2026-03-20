@@ -330,7 +330,7 @@ export default function AdminDriverDetail() {
     { id: 'contrato', label: 'Contrato', icon: FileText, done: !!driver.contrato_url && driver.contrato_confirmado,
       action: !contratoGerado && driver.car_id ? 'Gerar contrato' : driver.contrato_url && !driver.contrato_confirmado ? 'Confirmar contrato' : null },
     { id: 'caucao', label: 'Caução & Ativação', icon: Banknote, done: driver.caucao_pago && isAtivo,
-      action: isAprovado && driver.caucao_pago && driver.contrato_confirmado && !isAtivo ? 'Ativar motorista' : null },
+      action: isAprovado && driver.caucao_pago && !isAtivo ? 'Ativar motorista' : null },
     { id: 'vistoria', label: 'Vistoria do Veículo', icon: Camera, done: vistoriaDocs.length > 0 && vistoriaDocs.some(d => d.fixado) },
     { id: 'cobrancas', label: 'Cobranças Semanais', icon: Banknote, done: (driver.charges || []).length > 0 },
   ];
@@ -576,9 +576,9 @@ export default function AdminDriverDetail() {
             </button>
           )}
         </div>
-        {isAprovado && driver.caucao_pago && driver.contrato_confirmado && !isAtivo && (
+        {isAprovado && driver.caucao_pago && !isAtivo && (
           <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-3">
-            <p className="text-sm font-medium text-green-800 mb-2">✅ Tudo pronto para ativar!</p>
+            <p className="text-sm font-medium text-green-800 mb-2">✅ Caução paga! Pronto para ativar.</p>
             <button onClick={handleActivate} className="btn-primary flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Ativar Motorista</button>
           </div>
         )}

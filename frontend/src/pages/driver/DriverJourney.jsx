@@ -105,8 +105,8 @@ export default function DriverJourney() {
       label: 'Contrato de Locação',
       icon: FileCheck,
       done: hasContrato && hasSelfie,
-      available: isAprovado,
-      waitMsg: status === 'em_analise' ? 'Aguardando aprovação do administrador...' : status === 'pendente' ? 'Envie os documentos acima primeiro' : status === 'reprovado' ? 'Cadastro reprovado' : null,
+      available: true,
+      waitMsg: null,
     },
     {
       id: 'pagamento',
@@ -114,15 +114,15 @@ export default function DriverJourney() {
       icon: Banknote,
       done: caucaoPaga,
       available: isAprovado,
-      waitMsg: !isAprovado ? 'Disponível após aprovação' : null,
+      waitMsg: !isAprovado ? 'Disponível após aprovação do administrador' : null,
     },
     {
       id: 'vistoria',
       label: 'Vistoria do Veículo',
       icon: Camera,
       done: vistoriaDocs.length > 0 && vistoriaDocs.some(d => d.fixado),
-      available: isAtivo || (isAprovado && hasContrato),
-      waitMsg: !isAprovado ? 'Disponível após ativação' : null,
+      available: true,
+      waitMsg: null,
     },
   ];
 

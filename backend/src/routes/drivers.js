@@ -794,12 +794,12 @@ router.patch('/:id/activate', auth, adminOnly, async (req, res) => {
     const result = await pool.query(`
       UPDATE driver_profiles
       SET status = 'ativo', data_inicio = NOW(), updated_at = NOW()
-      WHERE id = $1 AND status = 'aprovado' AND caucao_pago = true AND contrato_confirmado = true
+      WHERE id = $1 AND status = 'aprovado' AND caucao_pago = true
       RETURNING *
     `, [req.params.id]);
 
     if (result.rows.length === 0) {
-      return res.status(400).json({ error: 'Motorista precisa ter caução pago e contrato confirmado para ativar' });
+      return res.status(400).json({ error: 'Motorista precisa estar aprovado e com caução paga para ativar' });
     }
 
     res.json(result.rows[0]);
