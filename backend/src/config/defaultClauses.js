@@ -13,33 +13,27 @@ O veículo, objeto deste contrato, é de uso exclusivo do LOCATÁRIO. Este se co
 
 Na eventualidade de o veículo ser conduzido por terceiro sem a devida autorização do LOCADOR, o LOCATÁRIO estará sujeito à imediata rescisão deste contrato, sem prejuízo de uma multa no valor de R$ 550,00 (quinhentos e cinquenta reais) e assumirá total responsabilidade por quaisquer danos causados ao veículo.`],
 
-  [2, 'CLÁUSULA 2ª – DO CHECKLIST DE ENTREGA E VISTORIA INICIAL',
-`No ato da entrega do veículo ao LOCATÁRIO, será realizado um checklist detalhado de vistoria inicial, assinado por ambas as partes, acompanhado de registro fotográfico completo do estado do veículo. O checklist deverá conter, no mínimo, a verificação dos seguintes itens:
+  [2, 'CLÁUSULA 2ª – DA VISTORIA DIGITAL DE ENTREGA E DEVOLUÇÃO',
+`No ato da retirada do veículo, o LOCATÁRIO deverá obrigatoriamente realizar a vistoria digital de entrega através do sistema da IMP Locadora (seção "Vistoria do Veículo"), enviando registro fotográfico detalhado do estado do veículo no prazo máximo de 24 (vinte e quatro) horas após a retirada.
 
-  - Estado da carroceria (riscos, amassados, pintura);
-  - Estado dos pneus (incluindo calibragem e profundidade dos sulcos);
-  - Estepe (step) e sua condição de uso;
-  - Macaco, chave de roda e triângulo de sinalização;
-  - Tapetes e bancos (estado de conservação e limpeza);
-  - Painel de instrumentos (funcionamento de indicadores e alertas);
-  - Sistema de iluminação (faróis, lanternas, setas, luz de ré, luz de freio);
-  - Ar-condicionado e sistema de ventilação;
-  - Limpadores de para-brisa e reservatório de água;
-  - Retrovisores internos e externos;
-  - Nível de combustível no momento da entrega;
-  - Quilometragem no momento da entrega;
-  - Chaves do veículo (quantidade entregue);
-  - Documento do veículo (CRLV) e documento do GNV (quando houver);
-  - Rádio/sistema multimídia e antena;
-  - Funcionamento de vidros elétricos e travas;
-  - Estado geral do motor (ruídos, vazamentos visíveis);
-  - Qualquer avaria, imperfeição ou dano pré-existente.
+O registro fotográfico, de responsabilidade do próprio LOCATÁRIO, deverá conter, no mínimo, os seguintes itens:
 
-O checklist assinado por ambas as partes constituirá prova do estado do veículo no momento da entrega, e servirá como referência para apuração de eventuais danos causados durante a vigência do contrato.
+  a) Condição da lataria e pintura: arranhões, riscos, amassados, marcas de batida, ferrugem, pintura descascada ou retocada — todos os lados, capô, teto e para-choques;
+  b) Vidros e retrovisores: trincas, lascas ou arranhões no para-brisa, vidros laterais, traseiro e retrovisores (externos e interno);
+  c) Rodas e pneus: estado dos aros (riscos, amassados), estado dos pneus (desgaste, bolhas, cortes), e estado do estepe/step;
+  d) Interior do veículo: estofamento (rasgos, manchas, queimaduras), painel (rachaduras, luzes de alerta), volante, câmbio, pedais, tapetes, cintos de segurança, ar-condicionado, som/rádio, tomadas 12V/USB;
+  e) Sistema de iluminação e elétrica: faróis (alto/baixo), lanternas traseiras, setas, luz de ré, luz de freio, luz de placa, farol de neblina, limpadores e esguicho do para-brisa;
+  f) Itens obrigatórios de segurança (CTB): triângulo de sinalização, macaco (com manivela), chave de rodas, chave do estepe (se aplicável), estepe em bom estado e calibrado;
+  g) Documentação e acessórios: manual do proprietário, CRLV (documento do veículo), chave reserva, tapetes, calotas (se houver), antena, acabamentos externos;
+  h) Funcionamento geral: nível de combustível (foto do painel), quilometragem (hodômetro), freios, freio de mão, direção hidráulica/elétrica, vidros elétricos, travas elétricas, alarme, buzina.
 
-Caso o LOCATÁRIO não apresente ressalvas no ato da assinatura do checklist, presume-se que o veículo foi recebido em perfeito estado de conservação e funcionamento, com todos os itens acima em condições adequadas de uso.
+Cada foto deverá ser acompanhada de descrição indicando: o que é o registro, onde está localizado (lado, porta, para-choque) e o tamanho aproximado do dano ou detalhe.
 
-Na devolução do veículo, será realizado novo checklist de vistoria nas mesmas condições, sendo o LOCATÁRIO responsável por quaisquer divergências em relação ao checklist de entrega, salvo desgaste natural decorrente do uso regular.`],
+As fotos enviadas pelo LOCATÁRIO serão armazenadas no sistema e validadas pelo LOCADOR, constituindo prova documental do estado do veículo no momento da entrega. Após a validação, as fotos serão fixadas no sistema e não poderão ser alteradas por nenhuma das partes.
+
+Caso o LOCATÁRIO não envie as fotos de vistoria dentro do prazo de 24 horas, presume-se que o veículo foi recebido em perfeito estado de conservação e funcionamento, ficando o LOCATÁRIO responsável por quaisquer danos constatados posteriormente.
+
+Na devolução do veículo, será realizada nova vistoria nas mesmas condições, sendo o LOCATÁRIO responsável por quaisquer divergências em relação às fotos da vistoria de entrega, salvo desgaste natural decorrente do uso regular.`],
 
   [3, 'CLÁUSULA 3ª – DO HORÁRIO DO ALUGUEL E LOCAL DE COLETA E DEVOLUÇÃO DO VEÍCULO',
 `O veículo objeto do presente contrato permanecerá na posse do locatário por período integral, de segunda à domingo. O LOCATÁRIO tem o direito de manter a posse e o uso exclusivo do veículo 24 horas por dia, 7 dias por semana.

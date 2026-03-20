@@ -498,7 +498,7 @@ async function start() {
       for (const [ordem, titulo, conteudo] of clauses) {
         await pool.query('INSERT INTO contract_clauses (ordem, titulo, conteudo) VALUES ($1, $2, $3)', [ordem, titulo, conteudo]);
       }
-      console.log(`✅ ${clauses.length} cláusulas do contrato seedadas (v3 com checklist, LGPD, reajuste).`);
+      console.log(`✅ ${clauses.length} cláusulas do contrato seedadas (v4 com vistoria digital, LGPD, reajuste).`);
     }
 
     console.log('✅ Settings e taxas OK.');
