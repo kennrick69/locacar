@@ -82,6 +82,7 @@ export const driversAPI = {
   // Motorista logado
   me: () => api.get('/drivers/me'),
   myDocuments: () => api.get('/drivers/me/documents'),
+  setCarInterest: (car_id) => api.patch('/drivers/me/car-interest', { car_id }),
   uploadDocument: (tipo, formData) => api.post(`/drivers/me/documents?tipo=${tipo}`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),

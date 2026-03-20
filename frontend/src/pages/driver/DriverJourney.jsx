@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { driversAPI } from '../../services/api';
+import { driversAPI, carsAPI } from '../../services/api';
 import { toast } from 'react-toastify';
 import {
   User, FileText, Upload, CheckCircle2, Clock, Camera, Eye, X,
@@ -22,22 +22,40 @@ export default function DriverJourney() {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [expandedStep, setExpandedStep] = useState(null);
   const [vistoriaDesc, setVistoriaDesc] = useState('');
+  const [availableCars, setAvailableCars] = useState([]);
+  const [savingCarInterest, setSavingCarInterest] = useState(false);
   const fileInputs = useRef({});
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     try {
-      const [profileRes, docsRes, balanceRes] = await Promise.all([
+      const [profileRes, docsRes, balanceRes, carsRes] = await Promise.all([
         driversAPI.me(),
         driversAPI.myDocuments(),
         driversAPI.myBalance().catch(() => ({ data: null })),
+        carsAPI.list().catch(() => ({ data: [] })),
       ]);
       setProfile(profileRes.data);
       setDocuments(docsRes.data);
       setBalance(balanceRes.data);
+      setAvailableCars(carsRes.data || []);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
+  };
+
+  const handleCarInterest = async (car_id) => {
+    if (!car_id) return;
+    setSavingCarInterest(true);
+    try {
+      await driversAPI.setCarInterest(parseInt(car_id));
+      toast.success('Veículo de interesse registrado! Aguarde a confirmação do administrador.');
+      await loadData();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Erro ao salvar veículo');
+    } finally {
+      setSavingCarInterest(false);
+    }
   };
 
   // Upload helpers
@@ -344,14 +362,47 @@ export default function DriverJourney() {
                                     { ok: selfieOk, label: 'Selfie segurando documento' },
                                     { ok: !!profile?.car_id, label: 'Veículo atribuído ao seu cadastro' },
                                   ].map((item, i) => (
-                                    <div key={i} className="flex items-center gap-2">
+                                    <div key={i} className="flex items-start gap-2">
                                       {item.ok
-                                        ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-                                        : <div className="w-4 h-4 rounded-full border-2 border-gray-300 shrink-0" />}
+                                        ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
+                                        : <div className="w-4 h-4 rounded-full border-2 border-gray-300 shrink-0 mt-0.5" />}
                                       <span className={`text-xs ${item.ok ? 'text-green-700' : 'text-gray-500'}`}>{item.label}</span>
                                     </div>
                                   ))}
                                 </div>
+                              </div>
+                            )}
+
+                            {/* Seletor de veículo — quando car_id ainda não foi atribuído */}
+                            {!profile?.car_id && (
+                              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-3">
+                                <div className="flex items-center gap-2">
+                                  <Car className="w-4 h-4 text-yellow-600 shrink-0" />
+                                  <p className="text-sm font-semibold text-yellow-800">Selecione o veículo de interesse</p>
+                                </div>
+                                {profile?.car_interesse_id ? (
+                                  <p className="text-xs text-yellow-700">
+                                    Interesse registrado. Aguardando confirmação do administrador.
+                                  </p>
+                                ) : (
+                                  <p className="text-xs text-yellow-700">
+                                    Escolha o veículo que deseja alugar. O administrador irá confirmar a atribuição.
+                                  </p>
+                                )}
+                                <select
+                                  defaultValue={profile?.car_interesse_id || ''}
+                                  onChange={e => handleCarInterest(e.target.value)}
+                                  disabled={savingCarInterest}
+                                  className="input-field text-sm w-full"
+                                >
+                                  <option value="">Selecione um veículo...</option>
+                                  {availableCars.map(car => (
+                                    <option key={car.id} value={car.id}>
+                                      {car.marca} {car.modelo} {car.ano ? `(${car.ano})` : ''} — R$ {parseFloat(car.valor_semanal).toFixed(2).replace('.', ',')} /sem
+                                    </option>
+                                  ))}
+                                </select>
+                                {savingCarInterest && <p className="text-xs text-yellow-600">Salvando...</p>}
                               </div>
                             )}
 

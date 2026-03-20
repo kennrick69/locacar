@@ -56,6 +56,31 @@ router.get('/me/documents', auth, driverOnly, async (req, res) => {
 });
 
 /**
+ * PATCH /api/drivers/me/car-interest
+ * Motorista seleciona/altera veículo de interesse
+ */
+router.patch('/me/car-interest', auth, driverOnly, async (req, res) => {
+  try {
+    const { car_id } = req.body;
+    if (!car_id) return res.status(400).json({ error: 'car_id é obrigatório' });
+
+    // Verifica se carro existe e está disponível
+    const car = await pool.query('SELECT id, marca, modelo, placa FROM cars WHERE id = $1 AND disponivel = true', [car_id]);
+    if (car.rows.length === 0) return res.status(404).json({ error: 'Veículo não encontrado ou indisponível' });
+
+    await pool.query(
+      'UPDATE driver_profiles SET car_interesse_id = $1, updated_at = NOW() WHERE user_id = $2',
+      [car_id, req.user.id]
+    );
+
+    res.json({ ok: true, car: car.rows[0] });
+  } catch (err) {
+    console.error('Erro ao salvar interesse de veículo:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
  * POST /api/drivers/me/documents
  * Upload de documento (CNH, comprovante, selfie, contrato)
  * Query: ?tipo=cnh|comprovante|selfie|perfil_app|contrato
