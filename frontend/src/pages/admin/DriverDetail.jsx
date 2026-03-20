@@ -757,17 +757,36 @@ export default function AdminDriverDetail() {
                   {/* Expanded details */}
                   {isExpanded && (
                     <div className="mt-3 pt-3 border-t border-gray-200 space-y-3">
-                      {/* Pagamentos manuais */}
-                      {pagManuais.length > 0 && (
-                        <div>
-                          <p className="text-xs font-medium text-green-700 mb-1">💰 Pagamentos registrados:</p>
-                          {pagManuais.map((p, i) => (
-                            <div key={p.id || i} className="flex items-center justify-between bg-green-50 rounded px-2 py-1 mb-0.5">
-                              <span className="text-xs">{fmtDate(p.data_pagamento)} — <strong>R$ {fmt(p.valor_pago)}</strong>{p.observacoes ? ` (${p.observacoes})` : ''}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                      {/* Todos os pagamentos */}
+                      {(() => {
+                        const mpPags = (charge.pagamentos_mp || []).filter(p => typeof p === 'object');
+                        const manPags = pagManuais;
+                        const temPagamentos = mpPags.length > 0 || manPags.length > 0;
+                        if (!temPagamentos) return null;
+                        return (
+                          <div>
+                            <p className="text-xs font-medium text-green-700 mb-1">💰 Pagamentos:</p>
+                            {mpPags.map((p, i) => (
+                              <div key={`mp-${p.id || i}`} className="flex items-center justify-between bg-green-50 rounded px-2 py-1 mb-0.5">
+                                <span className="text-xs">
+                                  {fmtDate(p.data_pagamento || p.created_at)} — <strong>R$ {fmt(p.valor)}</strong>
+                                  {' · '}<span className="text-green-600 font-medium">{p.metodo === 'pix' ? 'Pix' : p.metodo === 'cartao' ? `Cartão ${p.parcelas > 1 ? p.parcelas + 'x' : ''}` : p.metodo}</span>
+                                  {' · '}<span className={p.status === 'pago' ? 'text-green-600' : p.status === 'pendente' ? 'text-yellow-600' : 'text-gray-400'}>{p.status === 'pago' ? '✓' : p.status === 'pendente' ? '⏳' : p.status}</span>
+                                </span>
+                              </div>
+                            ))}
+                            {manPags.map((p, i) => (
+                              <div key={`man-${p.id || i}`} className="flex items-center justify-between bg-blue-50 rounded px-2 py-1 mb-0.5">
+                                <span className="text-xs">
+                                  {fmtDate(p.data_pagamento)} — <strong>R$ {fmt(p.valor_pago)}</strong>
+                                  {' · '}<span className="text-blue-600 font-medium">Registrado</span>
+                                  {p.observacoes ? ` · ${p.observacoes}` : ''}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
 
                       {/* Acréscimos */}
                       {acrescimos.length > 0 && (

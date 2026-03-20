@@ -881,7 +881,8 @@ router.get('/:id', auth, adminOnly, async (req, res) => {
           COALESCE((SELECT SUM(pe.valor_pago) FROM payment_entries pe WHERE pe.charge_id = wc.id), 0),
           COALESCE((SELECT SUM(p.valor) FROM payments p WHERE p.charge_id = wc.id AND p.status = 'pago'), 0)
         ) as total_pago,
-        COALESCE((SELECT json_agg(pe.* ORDER BY pe.data_pagamento) FROM payment_entries pe WHERE pe.charge_id = wc.id), '[]') as pagamentos_manuais
+        COALESCE((SELECT json_agg(pe.* ORDER BY pe.data_pagamento) FROM payment_entries pe WHERE pe.charge_id = wc.id), '[]') as pagamentos_manuais,
+        COALESCE((SELECT json_agg(json_build_object('id', p.id, 'metodo', p.metodo, 'valor', p.valor, 'status', p.status, 'data_pagamento', p.data_pagamento, 'created_at', p.created_at, 'parcelas', p.parcelas) ORDER BY p.created_at) FROM payments p WHERE p.charge_id = wc.id), '[]') as pagamentos_mp
       FROM weekly_charges wc WHERE wc.driver_id = $1
       ORDER BY wc.semana_ref DESC LIMIT 50
     `, [req.params.id]);
