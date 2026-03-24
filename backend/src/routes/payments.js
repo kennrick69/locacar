@@ -302,6 +302,79 @@ router.post('/:id/confirm', auth, async (req, res) => {
 });
 
 /**
+ * GET /api/payments/public-key
+ * Retorna a Public Key do MP para o frontend inicializar o SDK JS
+ */
+router.get('/public-key', auth, async (req, res) => {
+  try {
+    // Tenta pegar do DB primeiro
+    const s = await pool.query(
+      "SELECT valor FROM settings WHERE chave = 'mp_public_key' LIMIT 1"
+    );
+    const publicKey = s.rows[0]?.valor || process.env.MP_PUBLIC_KEY || null;
+    res.json({ publicKey });
+  } catch (err) {
+    res.json({ publicKey: process.env.MP_PUBLIC_KEY || null });
+  }
+});
+
+/**
+ * POST /api/payments/card-token
+ * Pagamento com cartão via Secure Fields (Checkout Transparente)
+ * Recebe token gerado pelo SDK JS do MP — nunca toca dados brutos do cartão
+ * Body: { tipo: 'caucao'|'semanal', charge_id?, token, parcelas }
+ */
+router.post('/card-token', auth, driverOnly, async (req, res) => {
+  try {
+    const { tipo, charge_id, token, parcelas } = req.body;
+    if (!token) return res.status(400).json({ error: 'Token do cartão obrigatório' });
+    if (!tipo) return res.status(400).json({ error: 'tipo obrigatório (caucao ou semanal)' });
+
+    const profile = await pool.query(
+      'SELECT dp.id, dp.caucao_pago, dp.car_id, dp.contrato_confirmado, c.valor_caucao FROM driver_profiles dp LEFT JOIN cars c ON c.id = dp.car_id WHERE dp.user_id = $1',
+      [req.user.id]
+    );
+    if (profile.rows.length === 0) return res.status(404).json({ error: 'Perfil não encontrado' });
+    const p = profile.rows[0];
+
+    let valor, chargeId = null;
+
+    if (tipo === 'caucao') {
+      if (p.caucao_pago) return res.status(400).json({ error: 'Caução já foi pago' });
+      if (!p.car_id || !p.valor_caucao) return res.status(400).json({ error: 'Nenhum carro atribuído' });
+      if (!p.contrato_confirmado) return res.status(400).json({ error: 'Assine o contrato antes de pagar o caução' });
+      valor = parseFloat(p.valor_caucao);
+    } else if (tipo === 'semanal') {
+      if (!charge_id) return res.status(400).json({ error: 'charge_id obrigatório para pagamento semanal' });
+      const charge = await pool.query(
+        'SELECT valor_final FROM weekly_charges WHERE id = $1 AND driver_id = $2',
+        [charge_id, p.id]
+      );
+      if (charge.rows.length === 0) return res.status(404).json({ error: 'Cobrança não encontrada' });
+      valor = parseFloat(charge.rows[0].valor_final);
+      chargeId = charge_id;
+    } else {
+      return res.status(400).json({ error: 'tipo inválido' });
+    }
+
+    const resultado = await PaymentService.criarCartaoToken({
+      userId: req.user.id,
+      driverId: p.id,
+      chargeId,
+      tipo,
+      valor,
+      parcelas: parseInt(parcelas) || 1,
+      token,
+    });
+
+    res.status(201).json(resultado);
+  } catch (err) {
+    console.error('Erro ao processar cartão token:', err.message);
+    res.status(500).json({ error: err.message || 'Erro interno' });
+  }
+});
+
+/**
  * GET /api/payments/installment-options
  */
 router.get('/installment-options', auth, async (req, res) => {

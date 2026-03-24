@@ -47,6 +47,9 @@ class PaymentService {
     const user = userRes.rows[0] || {};
     const driverRes = await pool.query('SELECT endereco_completo FROM driver_profiles WHERE id = $1', [driverId]);
     const driverProfile = driverRes.rows[0] || {};
+    // Tenta extrair número do endereço (ex: "Rua X, 123 - Bairro")
+    const enderecoMatch = (driverProfile.endereco_completo || '').match(/,?\s*(\d+)/);
+    const enderecoNumero = enderecoMatch ? enderecoMatch[1] : null;
 
     // Cria registro de pagamento no banco
     const result = await pool.query(`
@@ -73,6 +76,7 @@ class PaymentService {
             nome: user.nome,
             telefone: user.telefone,
             endereco: driverProfile.endereco_completo,
+            numero: enderecoNumero,
             external_reference: externalRef,
             idempotencyKey,
           });
@@ -130,6 +134,82 @@ class PaymentService {
     }
 
     return { payment, calculo };
+  }
+
+  /**
+   * Cria pagamento com cartão via token do Secure Fields (Checkout Transparente)
+   * O token é gerado pelo SDK JS do MP no frontend — nunca passa dados brutos do cartão pelo servidor
+   */
+  static async criarCartaoToken({ userId, driverId, chargeId, tipo, valor, parcelas = 1, token }) {
+    const calculo = await this.calcularValorComJuros(valor, parcelas);
+    const mp = await getMercadoPago(pool);
+    if (!mp) throw new Error('Mercado Pago não configurado');
+
+    const userRes = await pool.query('SELECT nome, email, cpf, telefone FROM users WHERE id = $1', [userId]);
+    const user = userRes.rows[0] || {};
+    const driverRes = await pool.query('SELECT endereco_completo FROM driver_profiles WHERE id = $1', [driverId]);
+    const driverProfile = driverRes.rows[0] || {};
+    const enderecoMatch = (driverProfile.endereco_completo || '').match(/,?\s*(\d+)/);
+    const enderecoNumero = enderecoMatch ? enderecoMatch[1] : null;
+
+    // Cria registro de pagamento no banco
+    const result = await pool.query(`
+      INSERT INTO payments (user_id, driver_id, charge_id, tipo, metodo, valor, parcelas, juros, valor_total, status)
+      VALUES ($1, $2, $3, $4, 'cartao', $5, $6, $7, $8, 'pendente')
+      RETURNING *
+    `, [userId, driverId, chargeId, tipo, calculo.valor_base, parcelas, calculo.taxa_percentual, calculo.valor_total]);
+
+    const payment = result.rows[0];
+    const descricao = tipo === 'caucao' ? 'IMP Locadora - Caução' : `IMP Locadora - Semana ${chargeId}`;
+    const externalRef = `payment_${payment.id}`;
+
+    const mpData = await mp.criarCartaoToken({
+      valor: calculo.valor_total,
+      descricao,
+      email: user.email,
+      cpf: user.cpf,
+      nome: user.nome,
+      telefone: user.telefone,
+      endereco: driverProfile.endereco_completo,
+      numero: enderecoNumero,
+      external_reference: externalRef,
+      idempotencyKey: `locacar_card_${payment.id}_${Date.now()}`,
+    }, token, parcelas);
+
+    // Salva mp_payment_id
+    await pool.query(
+      'UPDATE payments SET mp_payment_id = $1 WHERE id = $2',
+      [mpData.mp_payment_id, payment.id]
+    );
+    payment.mp_payment_id = mpData.mp_payment_id;
+
+    // Processa confirmação imediata (cartão aprovado na hora)
+    if (mpData.status === 'approved') {
+      await pool.query(
+        "UPDATE payments SET status = 'pago', data_pagamento = NOW() WHERE id = $1",
+        [payment.id]
+      );
+      payment.status = 'pago';
+
+      if (tipo === 'caucao') {
+        await this.confirmarCaucao(driverId);
+      }
+      if (tipo === 'semanal' && chargeId) {
+        const totalPago = parseFloat(calculo.valor_total);
+        const chargeRes = await pool.query('SELECT valor_final FROM weekly_charges WHERE id = $1', [chargeId]);
+        if (chargeRes.rows.length > 0) {
+          const valorFinal = parseFloat(chargeRes.rows[0].valor_final);
+          if (totalPago >= valorFinal - 0.01) {
+            await pool.query(
+              'UPDATE weekly_charges SET pago = true, data_pagamento = NOW() WHERE id = $1',
+              [chargeId]
+            );
+          }
+        }
+      }
+    }
+
+    return { payment, calculo, mp_status: mpData.status, mp_status_detail: mpData.status_detail };
   }
 
   /**

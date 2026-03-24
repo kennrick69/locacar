@@ -140,6 +140,8 @@ export const paymentsAPI = {
   payWeekly: (chargeId, data) => api.post(`/payments/weekly/${chargeId}`, data),
   confirm: (id) => api.post(`/payments/${id}/confirm`),
   installmentOptions: () => api.get('/payments/installment-options'),
+  publicKey: () => api.get('/payments/public-key'),
+  cardToken: (data) => api.post('/payments/card-token', data),
 };
 
 // ========== CONTRACT CLAUSES ==========

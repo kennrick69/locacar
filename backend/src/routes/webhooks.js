@@ -43,9 +43,25 @@ router.post('/mp', async (req, res) => {
       }
     }
 
-    // Processa apenas notificações de pagamento
+    // Extrai payment_id — MP envia em 3 formatos diferentes
+    let paymentId = null;
     if (type === 'payment' && data?.id) {
-      const result = await PaymentService.processarWebhook(data.id);
+      // Formato 1: { type: 'payment', data: { id } }
+      paymentId = String(data.id);
+    } else if (action && action.startsWith('payment.') && data?.id) {
+      // Formato 2: { action: 'payment.created', data: { id } }
+      paymentId = String(data.id);
+    } else {
+      // Formato 3: query string ?id=X&topic=payment ou ?data.id=X&type=payment
+      const queryId = req.query.id || req.query['data.id'];
+      const queryTopic = req.query.topic || req.query.type;
+      if ((queryTopic === 'payment') && queryId) {
+        paymentId = String(queryId);
+      }
+    }
+
+    if (paymentId) {
+      const result = await PaymentService.processarWebhook(paymentId);
       console.log(`[WEBHOOK MP] Resultado: ${JSON.stringify(result)}`);
     }
 

@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { driversAPI, paymentsAPI } from '../../services/api';
 import { toast } from 'react-toastify';
 import {
   CreditCard, QrCode, Banknote, CheckCircle2, Clock,
   AlertCircle, ChevronDown, ChevronUp, Upload, Receipt,
-  Shield, ArrowRight, X, Copy
+  Shield, ArrowRight, X, Copy, Lock
 } from 'lucide-react';
 
 const fmt = (v) => parseFloat(v || 0).toFixed(2).replace('.', ',');
@@ -27,6 +27,12 @@ export default function DriverPayments() {
   const [justificativa, setJustificativa] = useState('');
   const [showParcial, setShowParcial] = useState(false);
 
+  // Secure Fields (cartão)
+  const cardFormRef = useRef(null);
+  const mpSdkRef = useRef(null);
+  const [cardReady, setCardReady] = useState(false);
+  const [cardError, setCardError] = useState(null);
+
   // Abatimento modal
   const [abatModal, setAbatModal] = useState(null); // chargeId
   const [abatForm, setAbatForm] = useState({ descricao: '', valor: '' });
@@ -35,7 +41,99 @@ export default function DriverPayments() {
 
   useEffect(() => {
     loadData();
+    // Carrega SDK do Mercado Pago (necessário para Secure Fields)
+    if (!document.getElementById('mp-sdk')) {
+      const script = document.createElement('script');
+      script.id = 'mp-sdk';
+      script.src = 'https://sdk.mercadopago.com/js/v2';
+      script.async = true;
+      document.body.appendChild(script);
+    }
   }, []);
+
+  // Monta/desmonta CardForm quando método cartão é selecionado
+  useEffect(() => {
+    if (payMethod === 'cartao' && payModal && !paymentResult) {
+      // Pequeno delay para os divs do DOM estarem renderizados
+      const timer = setTimeout(() => initCardForm(), 300);
+      return () => {
+        clearTimeout(timer);
+        destroyCardForm();
+      };
+    } else {
+      destroyCardForm();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payMethod, payModal?.type, payModal?.chargeId]);
+
+  const destroyCardForm = () => {
+    if (cardFormRef.current) {
+      try { cardFormRef.current.unmount(); } catch (_) {}
+      cardFormRef.current = null;
+    }
+    setCardReady(false);
+    setCardError(null);
+  };
+
+  const initCardForm = useCallback(async () => {
+    try {
+      destroyCardForm();
+      setCardError(null);
+
+      const keyRes = await paymentsAPI.publicKey();
+      const publicKey = keyRes.data?.publicKey;
+      if (!publicKey) {
+        setCardError('Chave pública do Mercado Pago não configurada.');
+        return;
+      }
+
+      const MercadoPago = window.MercadoPago;
+      if (!MercadoPago) {
+        setCardError('SDK do Mercado Pago não carregou. Recarregue a página.');
+        return;
+      }
+
+      if (!mpSdkRef.current) {
+        mpSdkRef.current = new MercadoPago(publicKey, { locale: 'pt-BR' });
+      }
+
+      const amount = payModal ? String(parseFloat(payModal.valor).toFixed(2)) : '0';
+
+      cardFormRef.current = mpSdkRef.current.cardForm({
+        amount,
+        iframe: true, // Secure Fields — PCI compliance
+        form: {
+          id: 'mp-card-form',
+          cardNumber: { id: 'mp-card-number', placeholder: 'Número do cartão' },
+          expirationDate: { id: 'mp-card-expiry', placeholder: 'MM/AA' },
+          securityCode: { id: 'mp-card-cvv', placeholder: 'CVV' },
+          cardholderName: { id: 'mp-card-name', placeholder: 'Nome como no cartão' },
+          issuer: { id: 'mp-card-issuer' },
+          installments: { id: 'mp-card-installments' },
+          identificationType: { id: 'mp-card-doc-type' },
+          identificationNumber: { id: 'mp-card-doc-number' },
+          cardholderEmail: { id: 'mp-card-email' },
+        },
+        callbacks: {
+          onFormMounted: (err) => {
+            if (err) { setCardError('Erro ao carregar formulário do cartão.'); return; }
+            setCardReady(true);
+          },
+          onSubmit: async (e) => {
+            e.preventDefault();
+            await handleCardTokenSubmit();
+          },
+          onError: (err) => {
+            console.error('[CardForm]', err);
+          },
+        },
+      });
+    } catch (err) {
+      console.error('Erro ao inicializar CardForm:', err);
+      setCardError('Erro ao inicializar formulário do cartão.');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payModal]);
 
   const loadData = async () => {
     try {
@@ -112,6 +210,53 @@ export default function DriverPayments() {
     }
   };
 
+  // ========== PAGAMENTO COM CARTÃO (Secure Fields) ==========
+  const handleCardTokenSubmit = async () => {
+    if (!cardFormRef.current) return;
+    setProcessing(true);
+    try {
+      const fd = cardFormRef.current.getCardFormData();
+      if (!fd?.token) throw new Error('Token do cartão não gerado');
+
+      const res = await paymentsAPI.cardToken({
+        tipo: payModal.type,
+        charge_id: payModal.chargeId || undefined,
+        token: fd.token,
+        parcelas: fd.installments || 1,
+      });
+
+      const { mp_status, mp_status_detail } = res.data;
+      setPaymentResult({ ...res.data, metodo: 'cartao' });
+
+      if (mp_status === 'approved') {
+        toast.success('Pagamento aprovado!');
+        await loadData();
+      } else if (mp_status === 'in_process') {
+        toast.info('Pagamento em análise pelo banco.');
+      } else {
+        const erros = {
+          cc_rejected_bad_filled_card_number: 'Número do cartão inválido',
+          cc_rejected_bad_filled_date: 'Data de validade inválida',
+          cc_rejected_bad_filled_security_code: 'CVV inválido',
+          cc_rejected_call_for_authorize: 'Ligue para sua operadora e autorize',
+          cc_rejected_card_disabled: 'Cartão desabilitado',
+          cc_rejected_duplicated_payment: 'Pagamento duplicado',
+          cc_rejected_high_risk: 'Recusado por segurança',
+          cc_rejected_insufficient_amount: 'Saldo insuficiente',
+          cc_rejected_max_attempts: 'Limite de tentativas atingido',
+          cc_rejected_other_reason: 'Recusado pela operadora',
+        };
+        throw new Error(erros[mp_status_detail] || mp_status_detail || 'Pagamento recusado');
+      }
+    } catch (err) {
+      toast.error(err.message || 'Erro ao processar cartão');
+      // Token é de uso único — reinicializar o form para novo token
+      setTimeout(() => initCardForm(), 500);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   // ========== CONFIRMAR PAGAMENTO (simulação) ==========
   const confirmPayment = async (paymentId) => {
     try {
@@ -177,8 +322,8 @@ export default function DriverPayments() {
         <p className="text-gray-500 text-sm mt-1">Gerencie seus pagamentos e cobranças semanais</p>
       </div>
 
-      {/* CAUÇÃO */}
-      {profile?.status === 'aprovado' && !profile?.caucao_pago && (
+      {/* CAUÇÃO — visível para motoristas com carro atribuído + contrato confirmado */}
+      {!profile?.caucao_pago && profile?.car_id && profile?.contrato_confirmado && (
         <div className="card border-2 border-brand-200">
           <div className="flex items-center gap-3 mb-4">
             <Shield className="w-6 h-6 text-brand-600" />
@@ -568,7 +713,74 @@ export default function DriverPayments() {
                     </div>
                   )}
 
-                  {/* Botão pagar */}
+                  {/* Formulário Secure Fields (cartão) — iframes PCI do MP */}
+                  {payMethod === 'cartao' && (
+                    <form id="mp-card-form" onSubmit={e => e.preventDefault()} className="space-y-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Lock className="w-3 h-3 text-green-600" />
+                        <p className="text-xs text-green-700 font-medium">Formulário seguro — dados do cartão não passam pelo servidor</p>
+                      </div>
+
+                      {cardError && (
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700">{cardError}</div>
+                      )}
+
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Número do cartão</label>
+                        <div id="mp-card-number" className="w-full h-10 border border-gray-300 rounded-lg px-3 bg-white" />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Nome no cartão</label>
+                        <input id="mp-card-name" type="text" className="input-field" placeholder="Nome como no cartão" style={{ textTransform: 'uppercase' }} />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Validade</label>
+                          <div id="mp-card-expiry" className="w-full h-10 border border-gray-300 rounded-lg px-3 bg-white" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">CVV</label>
+                          <div id="mp-card-cvv" className="w-full h-10 border border-gray-300 rounded-lg px-3 bg-white" />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Parcelas</label>
+                        <select id="mp-card-installments" className="input-field" />
+                      </div>
+
+                      {/* Campos ocultos necessários pelo SDK */}
+                      <select id="mp-card-issuer" style={{ display: 'none' }} />
+                      <select id="mp-card-doc-type" style={{ display: 'none' }} />
+                      <input id="mp-card-doc-number" type="hidden" />
+                      <input id="mp-card-email" type="hidden" value={profile?.email || ''} />
+
+                      {!cardReady && !cardError && (
+                        <div className="flex items-center gap-2 text-xs text-gray-400">
+                          <div className="w-3 h-3 border-2 border-gray-300 border-t-brand-600 rounded-full animate-spin" />
+                          Carregando formulário seguro...
+                        </div>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={processing || !cardReady}
+                        onClick={handleCardTokenSubmit}
+                        className="btn-primary w-full py-3 flex items-center justify-center gap-2"
+                      >
+                        {processing ? (
+                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                          <><CreditCard className="w-4 h-4" /> Pagar com Cartão</>
+                        )}
+                      </button>
+                    </form>
+                  )}
+
+                  {/* Botão pagar (Pix) */}
+                  {payMethod === 'pix' && (
                   <button
                     onClick={processPayment}
                     disabled={processing || (showParcial && (!valorCustom || parseFloat(valorCustom) <= 0))}
@@ -580,12 +792,13 @@ export default function DriverPayments() {
                       <>
                         <ArrowRight className="w-4 h-4" />
                         {showParcial && parseFloat(valorCustom) > 0
-                          ? `Pagar R$ ${fmt(valorCustom)}`
-                          : payMethod === 'pix' ? 'Gerar QR Code Pix' : `Pagar ${parcelas}x no Cartão`
+                          ? `Gerar Pix R$ ${fmt(valorCustom)}`
+                          : 'Gerar QR Code Pix'
                         }
                       </>
                     )}
                   </button>
+                  )}
 
                   {/* Link pagamento parcial (exceção) */}
                   {payModal.type !== 'caucao' && (
@@ -715,58 +928,30 @@ export default function DriverPayments() {
                     </div>
                   )}
 
-                  {payMethod === 'cartao' && (
+                  {/* Resultado cartão Secure Fields (transparente) */}
+                  {(paymentResult?.metodo === 'cartao' || payMethod === 'cartao') && paymentResult?.mp_status && (
                     <div className="text-center space-y-4">
-                      <div className="bg-blue-50 rounded-lg p-4">
-                        <CreditCard className="w-12 h-12 text-blue-600 mx-auto mb-2" />
-                        <p className="font-semibold text-blue-800">Pagamento Gerado</p>
-                        <p className="text-sm text-gray-600 mt-1">
-                          {paymentResult.calculo?.parcelas}x de R$ {fmt(paymentResult.calculo?.valor_parcela)}
-                        </p>
-                      </div>
-
-                      {paymentResult.payment?.checkout_url ? (
-                        <div className="space-y-3">
-                          <a
-                            href={paymentResult.payment.checkout_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="btn-primary w-full py-3 flex items-center justify-center gap-2 text-base"
-                          >
-                            <CreditCard className="w-5 h-5" /> Pagar com Cartão
-                          </a>
-                          <p className="text-xs text-gray-400">
-                            Você será redirecionado para o ambiente seguro do Mercado Pago para inserir os dados do cartão.
+                      {paymentResult.mp_status === 'approved' ? (
+                        <div className="bg-green-50 rounded-lg p-4">
+                          <CheckCircle2 className="w-12 h-12 text-green-600 mx-auto mb-2" />
+                          <p className="font-semibold text-green-800">Pagamento Aprovado!</p>
+                          <p className="text-sm text-gray-600 mt-1">
+                            {paymentResult.calculo?.parcelas}x de R$ {fmt(paymentResult.calculo?.valor_parcela)}
                           </p>
-                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
-                            <p>Após o pagamento, volte a esta página. A confirmação será automática em alguns instantes.</p>
-                          </div>
                         </div>
-                      ) : paymentResult.payment?.sandbox_url ? (
-                        <div className="space-y-3">
-                          <a
-                            href={paymentResult.payment.sandbox_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="btn-primary w-full py-3 flex items-center justify-center gap-2 text-base bg-amber-600 hover:bg-amber-700"
-                          >
-                            <CreditCard className="w-5 h-5" /> Pagar (Sandbox)
-                          </a>
-                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
-                            <p className="font-medium">Modo Teste (Sandbox)</p>
-                            <p className="mt-1">Este é um pagamento de teste. Use os cartões de teste do Mercado Pago.</p>
-                          </div>
+                      ) : paymentResult.mp_status === 'in_process' ? (
+                        <div className="bg-yellow-50 rounded-lg p-4">
+                          <Clock className="w-12 h-12 text-yellow-600 mx-auto mb-2" />
+                          <p className="font-semibold text-yellow-800">Em análise pelo banco</p>
+                          <p className="text-xs text-gray-500 mt-1">A confirmação será automática assim que aprovado.</p>
                         </div>
                       ) : (
-                        <div className="bg-yellow-50 rounded-lg p-3 text-xs text-yellow-700">
-                          <p className="font-medium">Checkout não disponível</p>
-                          <p className="mt-1">O link de pagamento não foi gerado. Verifique as credenciais do Mercado Pago nas configurações.</p>
-                          <button
-                            onClick={() => confirmPayment(paymentResult.payment.id)}
-                            className="btn-primary text-xs mt-2"
-                          >
-                            Confirmar manualmente
-                          </button>
+                        <div className="bg-red-50 rounded-lg p-4">
+                          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-2" />
+                          <p className="font-semibold text-red-700">Pagamento recusado</p>
+                          <p className="text-xs text-gray-500 mt-1">{paymentResult.mp_status_detail}</p>
+                          <button onClick={() => { setPaymentResult(null); setTimeout(() => initCardForm(), 300); }}
+                            className="btn-primary text-xs mt-3">Tentar novamente</button>
                         </div>
                       )}
                     </div>
