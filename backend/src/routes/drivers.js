@@ -195,9 +195,8 @@ router.post('/me/contrato',
         return res.status(400).json({ error: 'Nenhum arquivo enviado' });
       }
 
-      if (req.file.mimetype !== 'application/pdf') {
-        return res.status(400).json({ error: 'O contrato deve ser um arquivo PDF' });
-      }
+      // Aceita PDF e imagem (motorista pode fotografar o contrato assinado)
+      const isPdf = req.file.mimetype === 'application/pdf';
 
       // Verificar se contrato está fixado
       const fixadoCheck = await pool.query(
@@ -208,18 +207,22 @@ router.post('/me/contrato',
         return res.status(403).json({ error: 'O contrato foi fixado pelo administrador e não pode ser substituído.' });
       }
 
+      // Lê buffer ANTES do processUpload (Cloudinary deleta o arquivo local após upload)
+      let sigResult = null;
+      if (isPdf) {
+        const fs = require('fs');
+        try {
+          const pdfBuffer = fs.readFileSync(req.file.path);
+          const { verificarAssinatura } = require('../utils/verifyPdfSignature');
+          const userRes = await pool.query('SELECT nome, cpf FROM users WHERE id = $1', [req.user.id]);
+          sigResult = verificarAssinatura(pdfBuffer, userRes.rows[0] || {});
+          console.log('[CONTRATO UPLOAD] Assinatura:', JSON.stringify(sigResult, null, 2));
+        } catch (e) {
+          console.warn('[CONTRATO UPLOAD] Não foi possível verificar assinatura:', e.message);
+        }
+      }
+
       const caminho = await processUpload(req.file, 'contratos') || `/uploads/contratos/${req.file.filename}`;
-
-      // Verifica assinatura digital
-      const fs = require('fs');
-      const pdfBuffer = fs.readFileSync(req.file.path);
-      const { verificarAssinatura } = require('../utils/verifyPdfSignature');
-
-      const userRes = await pool.query('SELECT nome, cpf FROM users WHERE id = $1', [req.user.id]);
-      const userData = userRes.rows[0] || {};
-      const sigResult = verificarAssinatura(pdfBuffer, userData);
-
-      console.log('[CONTRATO UPLOAD] Assinatura:', JSON.stringify(sigResult, null, 2));
 
       // Salva doc
       await pool.query(`
