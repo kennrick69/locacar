@@ -11,22 +11,53 @@ class MercadoPagoService {
     this.preference = new Preference(this.client);
   }
 
-  async criarPix({ valor, descricao, email, cpf, nome }) {
+  async criarPix({ valor, descricao, email, cpf, nome, telefone, endereco, external_reference, idempotencyKey }) {
     try {
+      const nomePartes = (nome || 'Motorista').split(' ');
+      const firstName = nomePartes[0];
+      const lastName = nomePartes.slice(1).join(' ') || '-';
+      const cpfLimpo = cpf ? cpf.replace(/\D/g, '') : undefined;
+      const valorFloat = parseFloat(valor);
+
       const body = {
-        transaction_amount: parseFloat(valor),
+        transaction_amount: valorFloat,
         description: descricao || 'IMP Locadora - Pagamento',
+        statement_descriptor: 'IMP LOCADORA',
         payment_method_id: 'pix',
+        external_reference: external_reference || undefined,
+        notification_url: process.env.MP_WEBHOOK_URL || undefined,
         payer: {
           email: email,
-          first_name: nome?.split(' ')[0] || 'Motorista',
-          last_name: nome?.split(' ').slice(1).join(' ') || '',
-          identification: cpf ? { type: 'CPF', number: cpf.replace(/\D/g, '') } : undefined,
+          first_name: firstName,
+          last_name: lastName,
+          identification: cpfLimpo ? { type: 'CPF', number: cpfLimpo } : undefined,
+          phone: telefone ? { area_code: telefone.replace(/\D/g, '').slice(0, 2), number: telefone.replace(/\D/g, '').slice(2) } : undefined,
+          address: endereco ? { street_name: endereco } : undefined,
         },
-        notification_url: process.env.MP_WEBHOOK_URL || undefined,
+        additional_info: {
+          items: [{
+            id: external_reference || 'pagamento',
+            title: descricao || 'IMP Locadora - Pagamento',
+            description: descricao || 'IMP Locadora - Pagamento',
+            quantity: 1,
+            unit_price: valorFloat,
+            currency_id: 'BRL',
+          }],
+          payer: {
+            first_name: firstName,
+            last_name: lastName,
+            phone: telefone ? {
+              area_code: telefone.replace(/\D/g, '').slice(0, 2),
+              number: telefone.replace(/\D/g, '').slice(2),
+            } : undefined,
+            address: endereco ? { street_name: endereco } : undefined,
+          },
+          shipments: { receiver_address: endereco ? { street_name: endereco } : undefined },
+        },
       };
 
-      const result = await this.payment.create({ body });
+      const requestOptions = idempotencyKey ? { idempotencyKey } : undefined;
+      const result = await this.payment.create({ body, requestOptions });
 
       return {
         mp_payment_id: String(result.id),
@@ -42,16 +73,26 @@ class MercadoPagoService {
     }
   }
 
-  async criarPreferenciaCartao({ valor, descricao, parcelas_max = 12, email, external_reference }) {
+  async criarPreferenciaCartao({ valor, descricao, parcelas_max = 12, email, nome, cpf, telefone, external_reference }) {
     try {
+      const valorFloat = parseFloat(valor);
+      const nomePartes = (nome || '').split(' ');
       const body = {
         items: [{
+          id: external_reference || 'pagamento',
           title: descricao || 'IMP Locadora - Pagamento',
+          description: descricao || 'IMP Locadora - Pagamento',
           quantity: 1,
-          unit_price: parseFloat(valor),
+          unit_price: valorFloat,
           currency_id: 'BRL',
         }],
-        payer: { email },
+        payer: {
+          email,
+          name: nomePartes[0] || undefined,
+          surname: nomePartes.slice(1).join(' ') || undefined,
+          identification: cpf ? { type: 'CPF', number: cpf.replace(/\D/g, '') } : undefined,
+          phone: telefone ? { area_code: telefone.replace(/\D/g, '').slice(0, 2), number: telefone.replace(/\D/g, '').slice(2) } : undefined,
+        },
         payment_methods: {
           installments: parcelas_max,
           excluded_payment_types: [{ id: 'ticket' }],

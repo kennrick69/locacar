@@ -145,7 +145,7 @@ router.post('/caucao', auth, driverOnly, async (req, res) => {
     const { metodo, parcelas } = req.body;
 
     const profile = await pool.query(`
-      SELECT dp.id, dp.caucao_pago, dp.status, dp.car_id, c.valor_caucao
+      SELECT dp.id, dp.caucao_pago, dp.status, dp.car_id, dp.contrato_confirmado, c.valor_caucao
       FROM driver_profiles dp
       LEFT JOIN cars c ON c.id = dp.car_id
       WHERE dp.user_id = $1
@@ -154,8 +154,8 @@ router.post('/caucao', auth, driverOnly, async (req, res) => {
     if (profile.rows.length === 0) return res.status(404).json({ error: 'Perfil não encontrado' });
     const p = profile.rows[0];
     if (p.caucao_pago) return res.status(400).json({ error: 'Caução já foi pago' });
-    if (p.status !== 'aprovado') return res.status(400).json({ error: 'Você precisa ser aprovado antes de pagar o caução' });
     if (!p.car_id || !p.valor_caucao) return res.status(400).json({ error: 'Nenhum carro atribuído' });
+    if (!p.contrato_confirmado) return res.status(400).json({ error: 'Assine o contrato antes de pagar o caução' });
 
     const resultado = await PaymentService.criarPagamento({
       userId: req.user.id,

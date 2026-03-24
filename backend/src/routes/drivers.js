@@ -1156,6 +1156,9 @@ router.post('/:id/charges', auth, adminOnly, async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Erro ao criar cobrança:', err);
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Já existe uma cobrança para esta semana neste motorista' });
+    }
     res.status(500).json({ error: 'Erro interno' });
   } finally {
     client.release();

@@ -43,8 +43,10 @@ class PaymentService {
     const mp = await getMercadoPago(pool);
 
     // Busca dados do motorista para enviar ao MP
-    const userRes = await pool.query('SELECT nome, email, cpf FROM users WHERE id = $1', [userId]);
+    const userRes = await pool.query('SELECT nome, email, cpf, telefone FROM users WHERE id = $1', [userId]);
     const user = userRes.rows[0] || {};
+    const driverRes = await pool.query('SELECT endereco_completo FROM driver_profiles WHERE id = $1', [driverId]);
+    const driverProfile = driverRes.rows[0] || {};
 
     // Cria registro de pagamento no banco
     const result = await pool.query(`
@@ -55,6 +57,8 @@ class PaymentService {
 
     const payment = result.rows[0];
     const descricao = tipo === 'caucao' ? 'IMP Locadora - Caução' : `IMP Locadora - Semana ${chargeId}`;
+    const externalRef = `payment_${payment.id}`;
+    const idempotencyKey = `locacar_pay_${payment.id}_${Date.now()}`;
 
     // ========== PIX ==========
     if (metodo === 'pix') {
@@ -67,6 +71,10 @@ class PaymentService {
             email: user.email,
             cpf: user.cpf,
             nome: user.nome,
+            telefone: user.telefone,
+            endereco: driverProfile.endereco_completo,
+            external_reference: externalRef,
+            idempotencyKey,
           });
 
           await pool.query(`
@@ -97,7 +105,10 @@ class PaymentService {
             descricao,
             parcelas_max: parcelas,
             email: user.email,
-            external_reference: `payment_${payment.id}`,
+            nome: user.nome,
+            cpf: user.cpf,
+            telefone: user.telefone,
+            external_reference: externalRef,
           });
 
           await pool.query(`
@@ -150,8 +161,10 @@ class PaymentService {
     const payment = payRes.rows[0];
     if (payment.status === 'pago') throw new Error('Pagamento já foi pago');
 
-    const userRes = await pool.query('SELECT nome, email, cpf FROM users WHERE id = $1', [userId]);
+    const userRes = await pool.query('SELECT nome, email, cpf, telefone FROM users WHERE id = $1', [userId]);
     const user = userRes.rows[0] || {};
+    const driverRes = await pool.query('SELECT endereco_completo FROM driver_profiles WHERE id = $1', [payment.driver_id]);
+    const driverProfile = driverRes.rows[0] || {};
 
     if (mp) {
       const pixData = await mp.criarPix({
@@ -160,6 +173,10 @@ class PaymentService {
         email: user.email,
         cpf: user.cpf,
         nome: user.nome,
+        telefone: user.telefone,
+        endereco: driverProfile.endereco_completo,
+        external_reference: `payment_${paymentId}`,
+        idempotencyKey: `locacar_regen_${paymentId}_${Date.now()}`,
       });
 
       await pool.query(`
