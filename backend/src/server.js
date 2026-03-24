@@ -394,10 +394,10 @@ async function start() {
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_payments_driver_id ON payments (driver_id)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents (user_id)`);
 
-        // Constraint para evitar cobranças duplicadas
+        // Remove constraint que bloqueava cobranças avulsas na mesma semana
         try {
-          await pool.query(`ALTER TABLE weekly_charges ADD CONSTRAINT unique_driver_week UNIQUE (driver_id, semana_ref)`);
-        } catch (_) { /* já existe */ }
+          await pool.query(`ALTER TABLE weekly_charges DROP CONSTRAINT IF EXISTS unique_driver_week`);
+        } catch (_) { /* ignora */ }
 
         // Fixação de documentos pelo admin
         await pool.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS fixado BOOLEAN DEFAULT false`);
