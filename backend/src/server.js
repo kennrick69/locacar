@@ -19,9 +19,10 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       imgSrc: ["'self'", 'data:', 'blob:', 'https://res.cloudinary.com'],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'https://sdk.mercadopago.com'],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      connectSrc: ["'self'", 'https://api.mercadopago.com'],
+      connectSrc: ["'self'", 'https://api.mercadopago.com', 'https://sdk.mercadopago.com'],
+      frameSrc: ["'self'", 'https://www.mercadopago.com', 'https://secure.mlstatic.com'],
     },
   },
 }));

@@ -59,6 +59,23 @@ router.get('/admin', auth, adminOnly, async (req, res) => {
 });
 
 /**
+ * GET /api/payments/public-key
+ * Retorna a Public Key do MP para o frontend inicializar o SDK JS
+ * DEVE ficar antes de /:id para não ser capturado pelo catch-all
+ */
+router.get('/public-key', auth, async (req, res) => {
+  try {
+    const s = await pool.query(
+      "SELECT valor FROM settings WHERE chave = 'mp_public_key' LIMIT 1"
+    );
+    const publicKey = s.rows[0]?.valor || process.env.MP_PUBLIC_KEY || null;
+    res.json({ publicKey });
+  } catch (err) {
+    res.json({ publicKey: process.env.MP_PUBLIC_KEY || null });
+  }
+});
+
+/**
  * GET /api/payments/:id
  * Detalhe de um pagamento (dono ou admin)
  */
@@ -298,23 +315,6 @@ router.post('/:id/confirm', auth, async (req, res) => {
     res.status(500).json({ error: 'Erro interno' });
   } finally {
     client.release();
-  }
-});
-
-/**
- * GET /api/payments/public-key
- * Retorna a Public Key do MP para o frontend inicializar o SDK JS
- */
-router.get('/public-key', auth, async (req, res) => {
-  try {
-    // Tenta pegar do DB primeiro
-    const s = await pool.query(
-      "SELECT valor FROM settings WHERE chave = 'mp_public_key' LIMIT 1"
-    );
-    const publicKey = s.rows[0]?.valor || process.env.MP_PUBLIC_KEY || null;
-    res.json({ publicKey });
-  } catch (err) {
-    res.json({ publicKey: process.env.MP_PUBLIC_KEY || null });
   }
 });
 
