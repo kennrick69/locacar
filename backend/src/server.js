@@ -18,11 +18,18 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      imgSrc: ["'self'", 'data:', 'blob:', 'https://res.cloudinary.com'],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'https://sdk.mercadopago.com'],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      connectSrc: ["'self'", 'https://api.mercadopago.com', 'https://sdk.mercadopago.com'],
-      frameSrc: ["'self'", 'https://www.mercadopago.com', 'https://secure.mlstatic.com'],
+      imgSrc: ["'self'", 'data:', 'blob:', 'https://res.cloudinary.com',
+        'https://*.mercadopago.com', 'https://*.mercadolibre.com', 'https://*.mercadolivre.com', 'https://*.mlstatic.com'],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'",
+        'https://sdk.mercadopago.com', 'https://*.mercadolibre.com', 'https://*.mlstatic.com'],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://*.mlstatic.com'],
+      connectSrc: ["'self'",
+        'https://api.mercadopago.com', 'https://*.mercadopago.com',
+        'https://*.mercadolibre.com', 'https://*.mercadolivre.com',
+        'https://*.mlstatic.com', 'https://sdk.mercadopago.com'],
+      frameSrc: ["'self'",
+        'https://*.mercadopago.com', 'https://*.mercadolibre.com',
+        'https://*.mercadolivre.com', 'https://secure.mlstatic.com'],
     },
   },
 }));
