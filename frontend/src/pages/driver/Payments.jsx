@@ -222,7 +222,7 @@ export default function DriverPayments() {
         tipo: payModal.type,
         charge_id: payModal.chargeId || undefined,
         token: fd.token,
-        parcelas: fd.installments || 1,
+        parcelas: parcelas || 1, // usa o parcelamento escolhido no nosso seletor, não o do MP
       });
 
       const { mp_status, mp_status_detail } = res.data;
@@ -746,12 +746,8 @@ export default function DriverPayments() {
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Parcelas</label>
-                        <select id="mp-card-installments" className="input-field" />
-                      </div>
-
-                      {/* Campos ocultos necessários pelo SDK */}
+                      {/* Campos ocultos — o SDK precisa mas usamos nosso próprio seletor de parcelas */}
+                      <select id="mp-card-installments" style={{ display: 'none' }} />
                       <select id="mp-card-issuer" style={{ display: 'none' }} />
                       <select id="mp-card-doc-type" style={{ display: 'none' }} />
                       <input id="mp-card-doc-number" type="hidden" />

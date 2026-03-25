@@ -119,9 +119,11 @@ class MercadoPagoService {
 
   async criarCartaoToken(dados, token, parcelas = 1) {
     try {
+      // installments: 1 — o juros já foi calculado no nosso sistema e
+      // embutido no transaction_amount. O MP cobra o total de uma vez.
       const body = this._buildFullBody(dados, {
         token,
-        installments: parseInt(parcelas),    // INTEGER
+        installments: 1,
       });
       const idempotencyKey = dados.idempotencyKey || `card-${dados.external_reference}-${Date.now()}`;
       const result = await this.payment.create({ body, requestOptions: { idempotencyKey } });
@@ -162,7 +164,8 @@ class MercadoPagoService {
           } : undefined,
         },
         payment_methods: {
-          installments: parcelas_max,
+          // installments: 1 — juros já embutido no valor, MP não parcela por conta própria
+          installments: 1,
           excluded_payment_types: [{ id: 'ticket' }],
         },
         back_urls: {
