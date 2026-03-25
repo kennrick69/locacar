@@ -27,6 +27,9 @@ export default function DriverPayments() {
   const [justificativa, setJustificativa] = useState('');
   const [showParcial, setShowParcial] = useState(false);
 
+  // Polling Pix
+  const pollIntervalRef = useRef(null);
+
   // Secure Fields (cartão)
   const cardFormRef = useRef(null);
   const mpSdkRef = useRef(null);
@@ -50,6 +53,35 @@ export default function DriverPayments() {
       document.body.appendChild(script);
     }
   }, []);
+
+  // Inicia polling quando QR Code Pix é gerado (pagamento real, não simulação)
+  useEffect(() => {
+    const paymentId = paymentResult?.payment?.id;
+    const isRealPix = payMethod === 'pix' && paymentId && !paymentResult?.payment?.mp_payment_id?.startsWith('SIM_');
+
+    if (isRealPix) {
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const res = await paymentsAPI.getPayment(paymentId);
+          if (res.data?.status === 'pago') {
+            clearInterval(pollIntervalRef.current);
+            toast.success('Pagamento confirmado! ✓');
+            setPayModal(null);
+            setPaymentResult(null);
+            await loadData();
+          }
+        } catch (_) {}
+      }, 4000);
+    }
+
+    return () => clearInterval(pollIntervalRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentResult?.payment?.id]);
+
+  // Para polling quando modal fecha
+  useEffect(() => {
+    if (!payModal) clearInterval(pollIntervalRef.current);
+  }, [payModal]);
 
   // Monta/desmonta CardForm quando método cartão é selecionado
   useEffect(() => {

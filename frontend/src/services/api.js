@@ -142,6 +142,7 @@ export const paymentsAPI = {
   installmentOptions: () => api.get('/payments/installment-options'),
   publicKey: () => api.get('/payments/public-key'),
   cardToken: (data) => api.post('/payments/card-token', data),
+  getPayment: (id) => api.get(`/payments/${id}`),
 };
 
 // ========== CONTRACT CLAUSES ==========
