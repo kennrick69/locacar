@@ -344,7 +344,7 @@ router.post('/card-token', auth, driverOnly, async (req, res) => {
       if (!p.car_id || !p.valor_caucao) return res.status(400).json({ error: 'Nenhum carro atribuído' });
       if (!p.contrato_confirmado) return res.status(400).json({ error: 'Assine o contrato antes de pagar o caução' });
       valor = parseFloat(p.valor_caucao);
-    } else if (tipo === 'semanal') {
+    } else if (tipo === 'semanal' || tipo === 'weekly') {
       if (!charge_id) return res.status(400).json({ error: 'charge_id obrigatório para pagamento semanal' });
       const charge = await pool.query(
         'SELECT valor_final FROM weekly_charges WHERE id = $1 AND driver_id = $2',
@@ -361,7 +361,7 @@ router.post('/card-token', auth, driverOnly, async (req, res) => {
       userId: req.user.id,
       driverId: p.id,
       chargeId,
-      tipo,
+      tipo: tipo === 'weekly' ? 'semanal' : tipo, // normaliza para o valor do banco
       valor,
       parcelas: parseInt(parcelas) || 1,
       token,
