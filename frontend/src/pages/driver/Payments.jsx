@@ -36,7 +36,11 @@ export default function DriverPayments() {
   const [cardReady, setCardReady] = useState(false);
   const [cardError, setCardError] = useState(null);
   // Ref para valores atuais — evita closure stale nos callbacks do CardForm
-  const cardContextRef = useRef({ payModal: null, parcelas: 1 });
+  const cardContextRef = useRef({ payModal: null, parcelas: 1, payerMode: 'meus-dados', payerForm: {} });
+
+  // Dados do pagador (pode ser o próprio motorista ou terceiro)
+  const [payerMode, setPayerMode] = useState('meus-dados'); // 'meus-dados' | 'outro'
+  const [payerForm, setPayerForm] = useState({ nome: '', cpf: '', email: '', endereco: '', numero: '', bairro: '', cidade: '', estado: '', cep: '' });
 
   // Abatimento modal
   const [abatModal, setAbatModal] = useState(null); // chargeId
@@ -87,8 +91,8 @@ export default function DriverPayments() {
 
   // Mantém ref com valores atuais para callbacks do CardForm (evita stale closure)
   useEffect(() => {
-    cardContextRef.current = { payModal, parcelas };
-  }, [payModal, parcelas]);
+    cardContextRef.current = { payModal, parcelas, payerMode, payerForm };
+  }, [payModal, parcelas, payerMode, payerForm]);
 
   // Monta/desmonta CardForm quando método cartão é selecionado
   useEffect(() => {
@@ -160,7 +164,6 @@ export default function DriverPayments() {
           cardholderName:     { id: 'mp-card-name',          placeholder: 'Nome como no cartão' },
           issuer:             { id: 'mp-card-issuer' },
           installments:       { id: 'mp-card-installments' },
-          identificationType: { id: 'mp-card-doc-type' },
           identificationNumber: { id: 'mp-card-doc-number' },
           cardholderEmail:    { id: 'mp-card-email' },
         },
@@ -173,7 +176,7 @@ export default function DriverPayments() {
           onSubmit: async (e) => {
             e.preventDefault();
             // Lê contexto atual via ref (sem closure stale)
-            const { payModal: modal, parcelas: parc } = cardContextRef.current;
+            const { payModal: modal, parcelas: parc, payerMode: pMode, payerForm: pForm } = cardContextRef.current;
             if (!modal) return;
 
             setProcessing(true);
@@ -181,12 +184,29 @@ export default function DriverPayments() {
               const fd = cardFormRef.current.getCardFormData();
               if (!fd?.token) throw new Error('Token não gerado. Verifique os dados e tente novamente.');
 
-              const res = await paymentsAPI.cardToken({
+              const payload = {
                 tipo: modal.type,
                 charge_id: modal.chargeId || undefined,
                 token: fd.token,
                 parcelas: parc || 1,
-              });
+              };
+
+              // Dados do pagador terceiro (somente se não usar dados do cadastro)
+              if (pMode === 'outro') {
+                payload.payer_data = {
+                  nome: pForm.nome,
+                  cpf: pForm.cpf,
+                  email: pForm.email,
+                  endereco: pForm.endereco,
+                  numero: pForm.numero,
+                  bairro: pForm.bairro,
+                  cidade: pForm.cidade,
+                  estado: pForm.estado,
+                  cep: pForm.cep,
+                };
+              }
+
+              const res = await paymentsAPI.cardToken(payload);
 
               setPaymentResult({ ...res.data, metodo: 'cartao' });
 
@@ -221,7 +241,7 @@ export default function DriverPayments() {
               setProcessing(false);
             }
           },
-          onError: (err) => console.error('[CardForm]', err),
+          onError: (err) => console.warn('[CardForm] onError (esperado durante remount):', err),
         },
       });
     } catch (err) {
@@ -258,6 +278,8 @@ export default function DriverPayments() {
     setValorCustom(restante.toFixed(2));
     setJustificativa('');
     setShowParcial(false);
+    setPayerMode('meus-dados');
+    setPayerForm({ nome: '', cpf: '', email: '', endereco: '', numero: '', bairro: '', cidade: '', estado: '', cep: '' });
 
     try {
       const res = await paymentsAPI.simulate(restante);
@@ -762,6 +784,153 @@ export default function DriverPayments() {
                     </div>
                   )}
 
+                  {/* Dados do pagador (cartão) */}
+                  {payMethod === 'cartao' && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-gray-700">Dados do pagador</p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPayerMode('meus-dados')}
+                          className={`flex-1 py-2 px-3 rounded-lg border text-xs font-medium transition-all ${
+                            payerMode === 'meus-dados'
+                              ? 'border-brand-600 bg-brand-50 text-brand-700'
+                              : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                          }`}
+                        >
+                          Usar meus dados
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPayerMode('outro')}
+                          className={`flex-1 py-2 px-3 rounded-lg border text-xs font-medium transition-all ${
+                            payerMode === 'outro'
+                              ? 'border-brand-600 bg-brand-50 text-brand-700'
+                              : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                          }`}
+                        >
+                          Cartão de terceiro
+                        </button>
+                      </div>
+
+                      {payerMode === 'meus-dados' ? (
+                        <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 space-y-1">
+                          <div className="flex justify-between"><span className="text-gray-400">Nome</span><span>{profile?.nome || '—'}</span></div>
+                          <div className="flex justify-between"><span className="text-gray-400">CPF</span><span>{profile?.cpf || '—'}</span></div>
+                          <div className="flex justify-between"><span className="text-gray-400">E-mail</span><span>{profile?.email || '—'}</span></div>
+                          <div className="flex justify-between"><span className="text-gray-400">Endereço</span><span className="text-right max-w-[180px]">{profile?.endereco_completo || '—'}</span></div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2 border border-yellow-200 bg-yellow-50 rounded-lg p-3">
+                          <p className="text-xs text-yellow-700 font-medium">Informe os dados do titular do cartão</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="col-span-2">
+                              <label className="block text-xs text-gray-500 mb-1">Nome completo *</label>
+                              <input
+                                type="text"
+                                className="input-field text-sm"
+                                placeholder="Nome como no cadastro do cartão"
+                                value={payerForm.nome}
+                                onChange={e => setPayerForm(f => ({ ...f, nome: e.target.value }))}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">CPF *</label>
+                              <input
+                                type="text"
+                                className="input-field text-sm"
+                                placeholder="000.000.000-00"
+                                maxLength={14}
+                                value={payerForm.cpf}
+                                onChange={e => {
+                                  const v = e.target.value.replace(/\D/g, '').slice(0, 11);
+                                  setPayerForm(f => ({ ...f, cpf: v.replace(/(\d{3})(\d{3})(\d{3})(\d{0,2})/, (_, a, b, c, d) => d ? `${a}.${b}.${c}-${d}` : c ? `${a}.${b}.${c}` : b ? `${a}.${b}` : a) }));
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">E-mail *</label>
+                              <input
+                                type="email"
+                                className="input-field text-sm"
+                                placeholder="email@exemplo.com"
+                                value={payerForm.email}
+                                onChange={e => setPayerForm(f => ({ ...f, email: e.target.value }))}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">CEP</label>
+                              <input
+                                type="text"
+                                className="input-field text-sm"
+                                placeholder="00000-000"
+                                maxLength={9}
+                                value={payerForm.cep}
+                                onChange={e => {
+                                  const v = e.target.value.replace(/\D/g, '').slice(0, 8);
+                                  setPayerForm(f => ({ ...f, cep: v.replace(/(\d{5})(\d{0,3})/, (_, a, b) => b ? `${a}-${b}` : a) }));
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Número</label>
+                              <input
+                                type="text"
+                                className="input-field text-sm"
+                                placeholder="123"
+                                value={payerForm.numero}
+                                onChange={e => setPayerForm(f => ({ ...f, numero: e.target.value }))}
+                              />
+                            </div>
+                            <div className="col-span-2">
+                              <label className="block text-xs text-gray-500 mb-1">Rua / Logradouro</label>
+                              <input
+                                type="text"
+                                className="input-field text-sm"
+                                placeholder="Rua Exemplo"
+                                value={payerForm.endereco}
+                                onChange={e => setPayerForm(f => ({ ...f, endereco: e.target.value }))}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Bairro</label>
+                              <input
+                                type="text"
+                                className="input-field text-sm"
+                                placeholder="Centro"
+                                value={payerForm.bairro}
+                                onChange={e => setPayerForm(f => ({ ...f, bairro: e.target.value }))}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Cidade</label>
+                              <input
+                                type="text"
+                                className="input-field text-sm"
+                                placeholder="São Paulo"
+                                value={payerForm.cidade}
+                                onChange={e => setPayerForm(f => ({ ...f, cidade: e.target.value }))}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Estado (UF)</label>
+                              <select
+                                className="input-field text-sm"
+                                value={payerForm.estado}
+                                onChange={e => setPayerForm(f => ({ ...f, estado: e.target.value }))}
+                              >
+                                <option value="">Selecione</option>
+                                {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => (
+                                  <option key={uf} value={uf}>{uf}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Formulário Secure Fields (cartão) — iframes PCI do MP */}
                   {payMethod === 'cartao' && (
                     <form id="mp-card-form" onSubmit={e => e.preventDefault()} className="space-y-3">
@@ -795,12 +964,11 @@ export default function DriverPayments() {
                         </div>
                       </div>
 
-                      {/* Campos ocultos — o SDK precisa mas usamos nosso próprio seletor de parcelas */}
+                      {/* Campos ocultos — SDK precisa; pré-preenchidos com dados do motorista */}
                       <select id="mp-card-installments" style={{ display: 'none' }} />
                       <select id="mp-card-issuer" style={{ display: 'none' }} />
-                      <select id="mp-card-doc-type" style={{ display: 'none' }} />
-                      <input id="mp-card-doc-number" type="hidden" />
-                      <input id="mp-card-email" type="hidden" value={profile?.email || ''} />
+                      <input id="mp-card-doc-number" type="hidden" value={payerMode === 'outro' ? (payerForm.cpf || '').replace(/\D/g, '') : (profile?.cpf || '').replace(/\D/g, '')} />
+                      <input id="mp-card-email" type="hidden" value={payerMode === 'outro' ? (payerForm.email || '') : (profile?.email || '')} />
 
                       {!cardReady && !cardError && (
                         <div className="flex items-center gap-2 text-xs text-gray-400">

@@ -140,7 +140,7 @@ class PaymentService {
    * Cria pagamento com cartão via token do Secure Fields (Checkout Transparente)
    * O token é gerado pelo SDK JS do MP no frontend — nunca passa dados brutos do cartão pelo servidor
    */
-  static async criarCartaoToken({ userId, driverId, chargeId, tipo, valor, parcelas = 1, token }) {
+  static async criarCartaoToken({ userId, driverId, chargeId, tipo, valor, parcelas = 1, token, payerData = null }) {
     const calculo = await this.calcularValorComJuros(valor, parcelas);
     const mp = await getMercadoPago(pool);
     if (!mp) throw new Error('Mercado Pago não configurado');
@@ -151,6 +151,17 @@ class PaymentService {
     const driverProfile = driverRes.rows[0] || {};
     const enderecoMatch = (driverProfile.endereco_completo || '').match(/,?\s*(\d+)/);
     const enderecoNumero = enderecoMatch ? enderecoMatch[1] : null;
+
+    // Dados do pagador: usa dados do terceiro se fornecidos, senão usa dados do motorista
+    const payerNome = payerData?.nome || user.nome;
+    const payerCpf = payerData?.cpf || user.cpf;
+    const payerEmail = payerData?.email || user.email;
+    const payerEndereco = payerData?.endereco || driverProfile.endereco_completo;
+    const payerNumero = payerData?.numero || enderecoNumero;
+    const payerBairro = payerData?.bairro || null;
+    const payerCidade = payerData?.cidade || null;
+    const payerEstado = payerData?.estado || null;
+    const payerCep = payerData?.cep || null;
 
     // Cria registro de pagamento no banco
     const result = await pool.query(`
@@ -166,12 +177,16 @@ class PaymentService {
     const mpData = await mp.criarCartaoToken({
       valor: calculo.valor_total,
       descricao,
-      email: user.email,
-      cpf: user.cpf,
-      nome: user.nome,
+      email: payerEmail,
+      cpf: payerCpf,
+      nome: payerNome,
       telefone: user.telefone,
-      endereco: driverProfile.endereco_completo,
-      numero: enderecoNumero,
+      endereco: payerEndereco,
+      numero: payerNumero,
+      bairro: payerBairro,
+      cidade: payerCidade,
+      estado: payerEstado,
+      cep: payerCep,
       external_reference: externalRef,
       idempotencyKey: `locacar_card_${payment.id}_${Date.now()}`,
     }, token, parcelas);

@@ -326,7 +326,7 @@ router.post('/:id/confirm', auth, async (req, res) => {
  */
 router.post('/card-token', auth, driverOnly, async (req, res) => {
   try {
-    const { tipo, charge_id, token, parcelas } = req.body;
+    const { tipo, charge_id, token, parcelas, payer_data } = req.body;
     if (!token) return res.status(400).json({ error: 'Token do cartão obrigatório' });
     if (!tipo) return res.status(400).json({ error: 'tipo obrigatório (caucao ou semanal)' });
 
@@ -361,10 +361,11 @@ router.post('/card-token', auth, driverOnly, async (req, res) => {
       userId: req.user.id,
       driverId: p.id,
       chargeId,
-      tipo: tipo === 'weekly' ? 'semanal' : tipo, // normaliza para o valor do banco
+      tipo: tipo === 'weekly' ? 'semanal' : tipo,
       valor,
       parcelas: parseInt(parcelas) || 1,
       token,
+      payerData: payer_data || null,
     });
 
     res.status(201).json(resultado);
