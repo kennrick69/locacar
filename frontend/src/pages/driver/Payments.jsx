@@ -111,11 +111,86 @@ export default function DriverPayments() {
 
   const destroyCardForm = () => {
     if (cardFormRef.current) {
-      try { cardFormRef.current.unmount(); } catch (_) {}
+      try {
+        if (cardFormRef.current._type === 'fields') {
+          cardFormRef.current.cardNumber?.unmount();
+          cardFormRef.current.expirationDate?.unmount();
+          cardFormRef.current.securityCode?.unmount();
+        } else {
+          cardFormRef.current.unmount?.();
+        }
+      } catch (_) {}
       cardFormRef.current = null;
     }
     setCardReady(false);
     setCardError(null);
+  };
+
+  const handleCardSubmit = async () => {
+    const { payModal: modal, parcelas: parc, payerMode: pMode, payerForm: pForm } = cardContextRef.current;
+    if (!modal || !cardFormRef.current) return;
+
+    const cardholderName = document.getElementById('mp-card-name')?.value?.trim();
+    if (!cardholderName) { toast.error('Informe o nome do titular do cartão.'); return; }
+
+    setProcessing(true);
+    try {
+      const { token } = await mpSdkRef.current.fields.createCardToken({
+        cardholderName,
+        identificationType: 'CPF',
+        identificationNumber: pMode === 'outro'
+          ? (pForm.cpf || '').replace(/\D/g, '')
+          : (profile?.cpf || '').replace(/\D/g, ''),
+      });
+
+      if (!token) throw new Error('Token não gerado. Verifique os dados do cartão.');
+
+      const payload = {
+        tipo: modal.type,
+        charge_id: modal.chargeId || undefined,
+        token,
+        parcelas: parc || 1,
+      };
+      if (pMode === 'outro') {
+        payload.payer_data = {
+          nome: pForm.nome, cpf: pForm.cpf, email: pForm.email,
+          endereco: pForm.endereco, numero: pForm.numero,
+          bairro: pForm.bairro, cidade: pForm.cidade,
+          estado: pForm.estado, cep: pForm.cep,
+        };
+      }
+
+      const res = await paymentsAPI.cardToken(payload);
+      setPaymentResult({ ...res.data, metodo: 'cartao' });
+
+      if (res.data.mp_status === 'approved') {
+        toast.success('Pagamento aprovado!');
+        setPayModal(null);
+        await loadData();
+      } else if (res.data.mp_status === 'in_process') {
+        toast.info('Pagamento em análise pelo banco.');
+      } else {
+        const erros = {
+          cc_rejected_bad_filled_card_number: 'Número do cartão inválido',
+          cc_rejected_bad_filled_date: 'Data de validade inválida',
+          cc_rejected_bad_filled_security_code: 'CVV inválido',
+          cc_rejected_call_for_authorize: 'Ligue para sua operadora e autorize',
+          cc_rejected_card_disabled: 'Cartão desabilitado',
+          cc_rejected_duplicated_payment: 'Pagamento duplicado',
+          cc_rejected_high_risk: 'Recusado por segurança',
+          cc_rejected_insufficient_amount: 'Saldo insuficiente',
+          cc_rejected_max_attempts: 'Limite de tentativas atingido',
+          cc_rejected_other_reason: 'Recusado pela operadora',
+        };
+        toast.error(erros[res.data.mp_status_detail] || res.data.mp_status_detail || 'Pagamento recusado');
+        setTimeout(() => initCardForm(), 500);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'Erro ao processar cartão');
+      setTimeout(() => initCardForm(), 500);
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const initCardForm = useCallback(async () => {
@@ -123,7 +198,7 @@ export default function DriverPayments() {
       destroyCardForm();
       setCardError(null);
 
-      // Aguarda SDK carregar (pode demorar alguns ms após injeção do script)
+      // Aguarda SDK carregar
       let MercadoPago = window.MercadoPago;
       if (!MercadoPago) {
         await new Promise((resolve, reject) => {
@@ -134,121 +209,32 @@ export default function DriverPayments() {
         });
         MercadoPago = window.MercadoPago;
       }
-      if (!MercadoPago) {
-        setCardError('SDK do Mercado Pago não carregou. Recarregue a página.');
-        return;
-      }
+      if (!MercadoPago) { setCardError('SDK do Mercado Pago não carregou. Recarregue a página.'); return; }
 
       const keyRes = await paymentsAPI.publicKey();
       const publicKey = keyRes.data?.publicKey;
-      if (!publicKey) {
-        setCardError('Chave pública do Mercado Pago não configurada nas configurações.');
-        return;
-      }
+      if (!publicKey) { setCardError('Chave pública do Mercado Pago não configurada.'); return; }
 
-      // Recria instância se public key mudou
-      if (!mpSdkRef.current) {
-        mpSdkRef.current = new MercadoPago(publicKey, { locale: 'pt-BR' });
-      }
+      // Sempre recria instância para garantir public key atualizada
+      mpSdkRef.current = new MercadoPago(publicKey, { locale: 'pt-BR', advancedFraudPrevention: false });
 
-      const amount = String(parseFloat(cardContextRef.current.payModal?.valor || 0).toFixed(2));
+      // Usa mp.fields.create() — NÃO chama /payment_methods/search como cardForm faz
+      const cardNumber = mpSdkRef.current.fields.create('cardNumber', { placeholder: 'Número do cartão' });
+      const expirationDate = mpSdkRef.current.fields.create('expirationDate', { placeholder: 'MM/AA' });
+      const securityCode = mpSdkRef.current.fields.create('securityCode', { placeholder: 'CVV' });
 
-      cardFormRef.current = mpSdkRef.current.cardForm({
-        amount,
-        iframe: true,
-        form: {
-          id: 'mp-card-form',
-          cardNumber:         { id: 'mp-card-number',       placeholder: 'Número do cartão' },
-          expirationDate:     { id: 'mp-card-expiry',        placeholder: 'MM/AA' },
-          securityCode:       { id: 'mp-card-cvv',           placeholder: 'CVV' },
-          cardholderName:     { id: 'mp-card-name',          placeholder: 'Nome como no cartão' },
-        },
-        callbacks: {
-          onFormMounted: (err) => {
-            if (err && err.length > 0) console.warn('[CardForm] onFormMounted warnings:', JSON.stringify(err));
-            setCardReady(true); // Prossegue mesmo com warnings — iframes podem estar OK
-          },
-          // onSubmit é chamado PELO SDK após gerar o token — aqui é seguro chamar getCardFormData()
-          onSubmit: async (e) => {
-            e.preventDefault();
-            // Lê contexto atual via ref (sem closure stale)
-            const { payModal: modal, parcelas: parc, payerMode: pMode, payerForm: pForm } = cardContextRef.current;
-            if (!modal) return;
+      await Promise.all([
+        cardNumber.mount('mp-card-number'),
+        expirationDate.mount('mp-card-expiry'),
+        securityCode.mount('mp-card-cvv'),
+      ]);
 
-            setProcessing(true);
-            try {
-              const fd = cardFormRef.current.getCardFormData();
-              if (!fd?.token) throw new Error('Token não gerado. Verifique os dados e tente novamente.');
-
-              const payload = {
-                tipo: modal.type,
-                charge_id: modal.chargeId || undefined,
-                token: fd.token,
-                parcelas: parc || 1,
-              };
-
-              // Dados do pagador terceiro (somente se não usar dados do cadastro)
-              if (pMode === 'outro') {
-                payload.payer_data = {
-                  nome: pForm.nome,
-                  cpf: pForm.cpf,
-                  email: pForm.email,
-                  endereco: pForm.endereco,
-                  numero: pForm.numero,
-                  bairro: pForm.bairro,
-                  cidade: pForm.cidade,
-                  estado: pForm.estado,
-                  cep: pForm.cep,
-                };
-              }
-
-              const res = await paymentsAPI.cardToken(payload);
-
-              setPaymentResult({ ...res.data, metodo: 'cartao' });
-
-              if (res.data.mp_status === 'approved') {
-                toast.success('Pagamento aprovado!');
-                setPayModal(null);
-                await loadData();
-              } else if (res.data.mp_status === 'in_process') {
-                toast.info('Pagamento em análise pelo banco.');
-              } else {
-                const erros = {
-                  cc_rejected_bad_filled_card_number: 'Número do cartão inválido',
-                  cc_rejected_bad_filled_date: 'Data de validade inválida',
-                  cc_rejected_bad_filled_security_code: 'CVV inválido',
-                  cc_rejected_call_for_authorize: 'Ligue para sua operadora e autorize',
-                  cc_rejected_card_disabled: 'Cartão desabilitado',
-                  cc_rejected_duplicated_payment: 'Pagamento duplicado',
-                  cc_rejected_high_risk: 'Recusado por segurança',
-                  cc_rejected_insufficient_amount: 'Saldo insuficiente',
-                  cc_rejected_max_attempts: 'Limite de tentativas atingido',
-                  cc_rejected_other_reason: 'Recusado pela operadora',
-                };
-                const msg = erros[res.data.mp_status_detail] || res.data.mp_status_detail || 'Pagamento recusado';
-                toast.error(msg);
-                // Token é de uso único — reinicia form para nova tentativa
-                setTimeout(() => initCardForm(), 500);
-              }
-            } catch (err) {
-              toast.error(err.response?.data?.error || err.message || 'Erro ao processar cartão');
-              setTimeout(() => initCardForm(), 500);
-            } finally {
-              setProcessing(false);
-            }
-          },
-          onError: (err) => console.warn('[CardForm] onError (esperado durante remount):', err),
-        },
-      });
+      // Guarda as instâncias dos fields para uso no submit
+      cardFormRef.current = { cardNumber, expirationDate, securityCode, _type: 'fields' };
+      setCardReady(true);
     } catch (err) {
-      console.warn('[CardForm] catch na inicialização:', err);
-      // Array de erros internos do SDK (ex: /payment_methods/search 404) — tenta prosseguir
-      if (Array.isArray(err)) {
-        setCardReady(true);
-      } else {
-        setCardError('Erro ao inicializar formulário do cartão. Recarregue a página.');
-      }
-    }
+      console.error('[Fields] Erro ao inicializar:', err);
+      setCardError('Erro ao carregar formulário seguro. Recarregue a página.');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1034,7 +1020,8 @@ export default function DriverPayments() {
                       )}
 
                       <button
-                        type="submit"
+                        type="button"
+                        onClick={handleCardSubmit}
                         disabled={processing || !cardReady}
                         className="btn-primary w-full py-3 flex items-center justify-center gap-2"
                       >
