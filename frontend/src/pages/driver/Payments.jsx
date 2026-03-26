@@ -164,8 +164,6 @@ export default function DriverPayments() {
           cardholderName:     { id: 'mp-card-name',          placeholder: 'Nome como no cartão' },
           issuer:             { id: 'mp-card-issuer' },
           installments:       { id: 'mp-card-installments' },
-          identificationNumber: { id: 'mp-card-doc-number' },
-          cardholderEmail:    { id: 'mp-card-email' },
         },
         callbacks: {
           onFormMounted: (err) => {
@@ -1026,8 +1024,6 @@ export default function DriverPayments() {
                       {/* Campos ocultos — SDK precisa; pré-preenchidos com dados do motorista */}
                       <select id="mp-card-installments" style={{ display: 'none' }} />
                       <select id="mp-card-issuer" style={{ display: 'none' }} />
-                      <input id="mp-card-doc-number" type="hidden" value={payerMode === 'outro' ? (payerForm.cpf || '').replace(/\D/g, '') : (profile?.cpf || '').replace(/\D/g, '')} />
-                      <input id="mp-card-email" type="hidden" value={payerMode === 'outro' ? (payerForm.email || '') : (profile?.email || '')} />
 
                       {!cardReady && !cardError && (
                         <div className="flex items-center gap-2 text-xs text-gray-400">
