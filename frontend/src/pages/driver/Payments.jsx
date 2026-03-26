@@ -931,6 +931,57 @@ export default function DriverPayments() {
                     </div>
                   )}
 
+                  {/* Helper de dados de teste MP */}
+                  {payMethod === 'cartao' && (
+                    <details className="rounded-lg border border-dashed border-yellow-400 bg-yellow-50">
+                      <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-yellow-700 select-none">
+                        🧪 Dados de teste (Mercado Pago)
+                      </summary>
+                      <div className="px-3 pb-3 space-y-2">
+                        {[
+                          { label: 'Mastercard (aprovado)', number: '5031 4332 1540 6351', cvv: '123', exp: '11/30' },
+                          { label: 'Visa (aprovado)', number: '4235 6477 2802 5682', cvv: '123', exp: '11/30' },
+                        ].map(card => (
+                          <div key={card.number} className="bg-white rounded-lg border border-yellow-200 p-2 space-y-1">
+                            <p className="text-xs font-semibold text-gray-600">{card.label}</p>
+                            <div className="grid grid-cols-3 gap-1 text-xs">
+                              {[
+                                { l: 'Número', v: card.number },
+                                { l: 'Validade', v: card.exp },
+                                { l: 'CVV', v: card.cvv },
+                              ].map(({ l, v }) => (
+                                <button
+                                  key={l}
+                                  type="button"
+                                  onClick={() => navigator.clipboard.writeText(v.replace(/\s/g, ''))}
+                                  className="flex flex-col items-center bg-gray-50 hover:bg-yellow-100 border border-gray-200 rounded p-1 transition-colors"
+                                  title={`Copiar ${l}`}
+                                >
+                                  <span className="text-gray-400" style={{ fontSize: '10px' }}>{l}</span>
+                                  <span className="font-mono font-bold text-gray-700">{v}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Preenche o que é possível via JS
+                            const nameInput = document.getElementById('mp-card-name');
+                            if (nameInput) { nameInput.value = 'APRO'; nameInput.dispatchEvent(new Event('input', { bubbles: true })); }
+                            setPayerMode('outro');
+                            setPayerForm(f => ({ ...f, nome: 'APRO', cpf: '123.456.789-09', email: f.email || 'teste@teste.com' }));
+                          }}
+                          className="w-full py-1.5 text-xs font-medium bg-yellow-400 hover:bg-yellow-500 text-yellow-900 rounded-lg transition-colors"
+                        >
+                          ✨ Auto-preencher nome e CPF (APRO aprovado)
+                        </button>
+                        <p className="text-xs text-yellow-600 text-center">Número, validade e CVV: clique nos campos acima para copiar, depois cole manualmente.</p>
+                      </div>
+                    </details>
+                  )}
+
                   {/* Formulário Secure Fields (cartão) — iframes PCI do MP */}
                   {payMethod === 'cartao' && (
                     <form id="mp-card-form" onSubmit={e => e.preventDefault()} className="space-y-3">
