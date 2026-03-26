@@ -68,7 +68,8 @@ router.get('/public-key', auth, async (req, res) => {
     const s = await pool.query(
       "SELECT valor FROM settings WHERE chave = 'mp_public_key' LIMIT 1"
     );
-    const publicKey = s.rows[0]?.valor || process.env.MP_PUBLIC_KEY || null;
+    // Env var tem prioridade (permite sobrescrever chave do DB via Railway)
+    const publicKey = process.env.MP_PUBLIC_KEY || s.rows[0]?.valor || null;
     res.json({ publicKey });
   } catch (err) {
     res.json({ publicKey: process.env.MP_PUBLIC_KEY || null });

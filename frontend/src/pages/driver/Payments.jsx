@@ -724,29 +724,37 @@ export default function DriverPayments() {
                   </div>
 
                   {/* Parcelas (cartão) */}
-                  {payMethod === 'cartao' && simulacao.length > 0 && (
-                    <div>
-                      <p className="text-sm font-medium text-gray-700 mb-2">Parcelas</p>
-                      <div className="space-y-1 max-h-48 overflow-auto">
-                        {simulacao.map(s => (
-                          <button
-                            key={s.parcelas}
-                            onClick={() => setParcelas(s.parcelas)}
-                            className={`w-full flex items-center justify-between p-3 rounded-lg border transition-all text-sm ${
-                              parcelas === s.parcelas
-                                ? 'border-brand-600 bg-brand-50'
-                                : 'border-gray-200 hover:border-gray-300'
-                            }`}
-                          >
-                            <span className="font-medium">{s.parcelas}x de R$ {fmt(s.valor_parcela)}</span>
-                            <span className="text-xs text-gray-400">
-                              {s.taxa_percentual > 0 ? `Total R$ ${fmt(s.valor_total)} (+${s.taxa_percentual}%)` : 'Sem juros'}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  {payMethod === 'cartao' && simulacao.length > 0 && (() => {
+                    const sel = simulacao.find(s => s.parcelas === parcelas) || simulacao[0];
+                    return (
+                      <details className="rounded-lg border border-gray-200 overflow-hidden">
+                        <summary className="flex items-center justify-between px-3 py-2.5 cursor-pointer select-none bg-white hover:bg-gray-50 text-sm">
+                          <span className="text-gray-500">Parcelas</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-gray-800">{sel.parcelas}x de R$ {fmt(sel.valor_parcela)}</span>
+                            <span className="text-xs text-gray-400">{sel.taxa_percentual > 0 ? `+${sel.taxa_percentual}%` : 'sem juros'}</span>
+                            <ChevronDown className="w-4 h-4 text-gray-400" />
+                          </div>
+                        </summary>
+                        <div className="border-t border-gray-100 divide-y divide-gray-100">
+                          {simulacao.map(s => (
+                            <button
+                              key={s.parcelas}
+                              onClick={() => { setParcelas(s.parcelas); document.querySelector('details')?.removeAttribute('open'); }}
+                              className={`w-full flex items-center justify-between px-3 py-2.5 transition-colors text-sm ${
+                                parcelas === s.parcelas ? 'bg-brand-50 text-brand-700' : 'hover:bg-gray-50 text-gray-700'
+                              }`}
+                            >
+                              <span className="font-medium">{s.parcelas}x de R$ {fmt(s.valor_parcela)}</span>
+                              <span className="text-xs text-gray-400">
+                                {s.taxa_percentual > 0 ? `Total R$ ${fmt(s.valor_total)} (+${s.taxa_percentual}%)` : 'Sem juros'}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </details>
+                    );
+                  })()}
 
                   {/* Resumo cartão */}
                   {selectedSim && payMethod === 'cartao' && !showParcial && (
