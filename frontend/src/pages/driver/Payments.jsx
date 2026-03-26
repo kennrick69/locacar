@@ -165,8 +165,8 @@ export default function DriverPayments() {
         },
         callbacks: {
           onFormMounted: (err) => {
-            if (err) { setCardError('Erro ao carregar formulário seguro.'); return; }
-            setCardReady(true);
+            if (err && err.length > 0) console.warn('[CardForm] onFormMounted warnings:', JSON.stringify(err));
+            setCardReady(true); // Prossegue mesmo com warnings — iframes podem estar OK
           },
           // onSubmit é chamado PELO SDK após gerar o token — aqui é seguro chamar getCardFormData()
           onSubmit: async (e) => {
@@ -241,8 +241,13 @@ export default function DriverPayments() {
         },
       });
     } catch (err) {
-      console.error('Erro ao inicializar CardForm:', err);
-      setCardError('Erro ao inicializar formulário do cartão. Recarregue a página.');
+      console.warn('[CardForm] catch na inicialização:', err);
+      // Array de erros internos do SDK (ex: /payment_methods/search 404) — tenta prosseguir
+      if (Array.isArray(err)) {
+        setCardReady(true);
+      } else {
+        setCardError('Erro ao inicializar formulário do cartão. Recarregue a página.');
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
