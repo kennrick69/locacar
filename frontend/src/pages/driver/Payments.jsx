@@ -126,24 +126,51 @@ export default function DriverPayments() {
     setCardError(null);
   };
 
+  // Tokenização direta via API REST do MP — sem SDK, sem getPaymentMethods
+  const createMPToken = async ({ cardNumber, expMonth, expYear, cvv, cardholderName, cpf, publicKey }) => {
+    const res = await fetch(`https://api.mercadopago.com/v1/card_tokens?public_key=${encodeURIComponent(publicKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        card_number: cardNumber.replace(/\D/g, ''),
+        expiration_month: parseInt(expMonth),
+        expiration_year: parseInt(expYear) < 100 ? 2000 + parseInt(expYear) : parseInt(expYear),
+        security_code: cvv,
+        cardholder: {
+          name: cardholderName,
+          identification: { type: 'CPF', number: cpf.replace(/\D/g, '') || '00000000000' },
+        },
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.cause?.[0]?.description || data.message || 'Erro ao tokenizar cartão');
+    return data.id;
+  };
+
   const handleCardSubmit = async () => {
     const { payModal: modal, parcelas: parc, payerMode: pMode, payerForm: pForm } = cardContextRef.current;
-    if (!modal || !cardFormRef.current) return;
+    if (!modal) return;
 
+    const cardNumber = document.getElementById('mp-card-number-input')?.value?.trim();
     const cardholderName = document.getElementById('mp-card-name')?.value?.trim();
-    if (!cardholderName) { toast.error('Informe o nome do titular do cartão.'); return; }
+    const expiry = document.getElementById('mp-card-expiry-input')?.value?.trim(); // MM/AA
+    const cvv = document.getElementById('mp-card-cvv-input')?.value?.trim();
+
+    if (!cardNumber || cardNumber.replace(/\D/g,'').length < 13) { toast.error('Número do cartão inválido.'); return; }
+    if (!cardholderName) { toast.error('Informe o nome do titular.'); return; }
+    if (!expiry || !/^\d{2}\/\d{2,4}$/.test(expiry)) { toast.error('Data de validade inválida (MM/AA).'); return; }
+    if (!cvv || cvv.length < 3) { toast.error('CVV inválido.'); return; }
+
+    const [expMonth, expYear] = expiry.split('/');
+    const cpf = pMode === 'outro' ? (pForm.cpf || '') : (profile?.cpf || '');
 
     setProcessing(true);
     try {
-      const { token } = await mpSdkRef.current.fields.createCardToken({
-        cardholderName,
-        identificationType: 'CPF',
-        identificationNumber: pMode === 'outro'
-          ? (pForm.cpf || '').replace(/\D/g, '')
-          : (profile?.cpf || '').replace(/\D/g, ''),
-      });
+      const keyRes = await paymentsAPI.publicKey();
+      const publicKey = keyRes.data?.publicKey;
+      if (!publicKey) throw new Error('Chave pública MP não configurada.');
 
-      if (!token) throw new Error('Token não gerado. Verifique os dados do cartão.');
+      const token = await createMPToken({ cardNumber, expMonth, expYear, cvv, cardholderName, cpf, publicKey });
 
       const payload = {
         tipo: modal.type,
@@ -183,59 +210,16 @@ export default function DriverPayments() {
           cc_rejected_other_reason: 'Recusado pela operadora',
         };
         toast.error(erros[res.data.mp_status_detail] || res.data.mp_status_detail || 'Pagamento recusado');
-        setTimeout(() => initCardForm(), 500);
       }
     } catch (err) {
       toast.error(err.response?.data?.error || err.message || 'Erro ao processar cartão');
-      setTimeout(() => initCardForm(), 500);
     } finally {
       setProcessing(false);
     }
   };
 
-  const initCardForm = useCallback(async () => {
-    try {
-      destroyCardForm();
-      setCardError(null);
-
-      // Aguarda SDK carregar
-      let MercadoPago = window.MercadoPago;
-      if (!MercadoPago) {
-        await new Promise((resolve, reject) => {
-          const script = document.getElementById('mp-sdk');
-          if (!script) return reject(new Error('Script MP não encontrado'));
-          script.addEventListener('load', resolve, { once: true });
-          setTimeout(() => reject(new Error('Timeout SDK')), 8000);
-        });
-        MercadoPago = window.MercadoPago;
-      }
-      if (!MercadoPago) { setCardError('SDK do Mercado Pago não carregou. Recarregue a página.'); return; }
-
-      const keyRes = await paymentsAPI.publicKey();
-      const publicKey = keyRes.data?.publicKey;
-      if (!publicKey) { setCardError('Chave pública do Mercado Pago não configurada.'); return; }
-
-      // Sempre recria instância para garantir public key atualizada
-      mpSdkRef.current = new MercadoPago(publicKey, { locale: 'pt-BR', advancedFraudPrevention: false });
-
-      // Usa mp.fields.create() — NÃO chama /payment_methods/search como cardForm faz
-      const cardNumber = mpSdkRef.current.fields.create('cardNumber', { placeholder: 'Número do cartão' });
-      const expirationDate = mpSdkRef.current.fields.create('expirationDate', { placeholder: 'MM/AA' });
-      const securityCode = mpSdkRef.current.fields.create('securityCode', { placeholder: 'CVV' });
-
-      await Promise.all([
-        cardNumber.mount('mp-card-number'),
-        expirationDate.mount('mp-card-expiry'),
-        securityCode.mount('mp-card-cvv'),
-      ]);
-
-      // Guarda as instâncias dos fields para uso no submit
-      cardFormRef.current = { cardNumber, expirationDate, securityCode, _type: 'fields' };
-      setCardReady(true);
-    } catch (err) {
-      console.error('[Fields] Erro ao inicializar:', err);
-      setCardError('Erro ao carregar formulário seguro. Recarregue a página.');
-    }
+  const initCardForm = useCallback(() => {
+    setCardReady(true); // Inputs normais — sempre prontos
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -983,7 +967,7 @@ export default function DriverPayments() {
                     <form id="mp-card-form" onSubmit={e => e.preventDefault()} className="space-y-3">
                       <div className="flex items-center gap-2 mb-1">
                         <Lock className="w-3 h-3 text-green-600" />
-                        <p className="text-xs text-green-700 font-medium">Formulário seguro — dados do cartão não passam pelo servidor</p>
+                        <p className="text-xs text-green-700 font-medium">Dados criptografados — token gerado no browser, cartão nunca passa pelo servidor</p>
                       </div>
 
                       {cardError && (
@@ -992,7 +976,18 @@ export default function DriverPayments() {
 
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Número do cartão</label>
-                        <div id="mp-card-number" className="w-full h-10 border border-gray-300 rounded-lg px-3 bg-white" />
+                        <input
+                          id="mp-card-number-input"
+                          type="text"
+                          className="input-field"
+                          placeholder="0000 0000 0000 0000"
+                          maxLength={19}
+                          inputMode="numeric"
+                          onChange={e => {
+                            const v = e.target.value.replace(/\D/g,'').slice(0,16);
+                            e.target.value = v.replace(/(.{4})/g,'$1 ').trim();
+                          }}
+                        />
                       </div>
 
                       <div>
@@ -1002,23 +997,33 @@ export default function DriverPayments() {
 
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-xs text-gray-500 mb-1">Validade</label>
-                          <div id="mp-card-expiry" className="w-full h-10 border border-gray-300 rounded-lg px-3 bg-white" />
+                          <label className="block text-xs text-gray-500 mb-1">Validade (MM/AA)</label>
+                          <input
+                            id="mp-card-expiry-input"
+                            type="text"
+                            className="input-field"
+                            placeholder="MM/AA"
+                            maxLength={5}
+                            inputMode="numeric"
+                            onChange={e => {
+                              const v = e.target.value.replace(/\D/g,'').slice(0,4);
+                              e.target.value = v.length > 2 ? `${v.slice(0,2)}/${v.slice(2)}` : v;
+                            }}
+                          />
                         </div>
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">CVV</label>
-                          <div id="mp-card-cvv" className="w-full h-10 border border-gray-300 rounded-lg px-3 bg-white" />
+                          <input
+                            id="mp-card-cvv-input"
+                            type="text"
+                            className="input-field"
+                            placeholder="123"
+                            maxLength={4}
+                            inputMode="numeric"
+                            onChange={e => { e.target.value = e.target.value.replace(/\D/g,'').slice(0,4); }}
+                          />
                         </div>
                       </div>
-
-                      {/* Campos ocultos — SDK precisa; pré-preenchidos com dados do motorista */}
-
-                      {!cardReady && !cardError && (
-                        <div className="flex items-center gap-2 text-xs text-gray-400">
-                          <div className="w-3 h-3 border-2 border-gray-300 border-t-brand-600 rounded-full animate-spin" />
-                          Carregando formulário seguro...
-                        </div>
-                      )}
 
                       <button
                         type="button"
