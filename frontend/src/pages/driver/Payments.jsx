@@ -162,8 +162,6 @@ export default function DriverPayments() {
           expirationDate:     { id: 'mp-card-expiry',        placeholder: 'MM/AA' },
           securityCode:       { id: 'mp-card-cvv',           placeholder: 'CVV' },
           cardholderName:     { id: 'mp-card-name',          placeholder: 'Nome como no cartão' },
-          issuer:             { id: 'mp-card-issuer' },
-          installments:       { id: 'mp-card-installments' },
         },
         callbacks: {
           onFormMounted: (err) => {
@@ -1022,8 +1020,6 @@ export default function DriverPayments() {
                       </div>
 
                       {/* Campos ocultos — SDK precisa; pré-preenchidos com dados do motorista */}
-                      <select id="mp-card-installments" style={{ display: 'none' }} />
-                      <select id="mp-card-issuer" style={{ display: 'none' }} />
 
                       {!cardReady && !cardError && (
                         <div className="flex items-center gap-2 text-xs text-gray-400">
