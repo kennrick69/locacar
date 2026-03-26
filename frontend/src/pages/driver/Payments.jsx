@@ -235,6 +235,7 @@ export default function DriverPayments() {
     } catch (err) {
       console.error('[Fields] Erro ao inicializar:', err);
       setCardError('Erro ao carregar formulário seguro. Recarregue a página.');
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
