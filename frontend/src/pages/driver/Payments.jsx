@@ -933,7 +933,6 @@ export default function DriverPayments() {
                             // Preenche o que é possível via JS
                             const nameInput = document.getElementById('mp-card-name');
                             if (nameInput) { nameInput.value = 'APRO'; nameInput.dispatchEvent(new Event('input', { bubbles: true })); }
-                            setPayerMode('outro');
                             setPayerForm(f => ({ ...f, nome: 'APRO', cpf: '123.456.789-09', email: f.email || 'teste@teste.com' }));
                           }}
                           className="w-full py-1.5 text-xs font-medium bg-yellow-400 hover:bg-yellow-500 text-yellow-900 rounded-lg transition-colors"
