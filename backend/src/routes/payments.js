@@ -135,27 +135,33 @@ router.post('/tokenize-card', auth, driverOnly, async (req, res) => {
       return res.status(400).json({ error: 'Dados do cartão incompletos' });
     }
 
-    // Busca public key + access token do DB e env
+    // Busca credenciais MP do DB (respeitando modo test/production)
     const s = await pool.query(
-      "SELECT chave, valor FROM settings WHERE chave IN ('mp_public_key', 'mp_modo', 'mp_access_token', 'mp_access_token_test')"
+      "SELECT chave, valor FROM settings WHERE chave IN ('mp_public_key', 'mp_public_key_test', 'mp_modo', 'mp_access_token', 'mp_access_token_test')"
     );
     const sMap = {};
     s.rows.forEach(r => { sMap[r.chave] = r.valor; });
     const mpModo = sMap.mp_modo || 'test';
-    const publicKey = process.env.MP_PUBLIC_KEY || sMap.mp_public_key || null;
-    const accessToken = (mpModo === 'production' ? sMap.mp_access_token : sMap.mp_access_token_test)
-      || process.env.MP_ACCESS_TOKEN
+
+    // Public key: usa a correta para o modo atual
+    const publicKey = process.env.MP_PUBLIC_KEY
+      || (mpModo === 'production' ? sMap.mp_public_key : (sMap.mp_public_key_test || sMap.mp_public_key))
+      || null;
+
+    // Access token: usado no header Authorization (server-to-server)
+    const accessToken = process.env.MP_ACCESS_TOKEN
       || process.env.MERCADOPAGO_ACCESS_TOKEN
+      || (mpModo === 'production' ? sMap.mp_access_token : (sMap.mp_access_token_test || sMap.mp_access_token))
       || null;
 
     if (!publicKey && !accessToken) {
-      return res.status(500).json({ error: 'Credenciais MP não configuradas (MP_PUBLIC_KEY ou MP_ACCESS_TOKEN)' });
+      return res.status(500).json({ error: 'Credenciais MP não configuradas. Configure MP_PUBLIC_KEY ou MP_ACCESS_TOKEN no Railway.' });
     }
 
-    // Usa public_key se disponível, senão access_token como query param
-    const qsKey = publicKey
-      ? `public_key=${encodeURIComponent(publicKey)}`
-      : `access_token=${encodeURIComponent(accessToken)}`;
+    // public_key como query param (obrigatório ou access_token no header é suficiente)
+    const mpPath = publicKey
+      ? `/v1/card_tokens?public_key=${encodeURIComponent(publicKey)}`
+      : `/v1/card_tokens`;
 
     const payload = JSON.stringify({
       card_number: cardNumber.replace(/\D/g, ''),
@@ -174,12 +180,12 @@ router.post('/tokenize-card', auth, driverOnly, async (req, res) => {
     };
     if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
 
-    console.log('[tokenize-card] publicKey:', publicKey ? publicKey.slice(0,20)+'...' : 'null', '| accessToken:', accessToken ? 'sim' : 'não');
+    console.log('[tokenize-card] modo:', mpModo, '| publicKey:', publicKey ? publicKey.slice(0,15)+'...' : 'null', '| accessToken:', accessToken ? 'sim' : 'não', '| path:', mpPath);
 
     const tokenId = await new Promise((resolve, reject) => {
       const mpReq = https.request({
         hostname: 'api.mercadopago.com',
-        path: `/v1/card_tokens?${qsKey}`,
+        path: mpPath,
         method: 'POST',
         headers,
       }, (mpRes) => {
