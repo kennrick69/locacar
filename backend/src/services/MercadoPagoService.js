@@ -3,6 +3,7 @@
  * Pix, Cartão (Transparent Checkout) e Checkout Pro
  * Implementação seguindo guia de qualidade (83+ pontos)
  */
+const https = require('https');
 const { MercadoPagoConfig, Payment, Preference } = require('mercadopago');
 
 class MercadoPagoService {
@@ -122,8 +123,7 @@ class MercadoPagoService {
    * publicKey é a chave pública — obrigatória para tokenização
    */
   async tokenizarCartao({ publicKey, cardNumber, expMonth, expYear, securityCode, cardholderName, cpf }) {
-    const url = `https://api.mercadopago.com/v1/card_tokens?public_key=${encodeURIComponent(publicKey)}`;
-    const body = {
+    const payload = JSON.stringify({
       card_number: cardNumber.replace(/\D/g, ''),
       expiration_month: parseInt(expMonth),
       expiration_year: parseInt(expYear) < 100 ? 2000 + parseInt(expYear) : parseInt(expYear),
@@ -132,18 +132,35 @@ class MercadoPagoService {
         name: cardholderName,
         identification: { type: 'CPF', number: cpf ? cpf.replace(/\D/g, '') : '00000000000' },
       },
-    };
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      const desc = data.cause?.[0]?.description || data.message || `HTTP ${res.status}`;
-      throw new Error(`Erro ao tokenizar cartão MP: ${desc}`);
-    }
-    return data.id;
+
+    return new Promise((resolve, reject) => {
+      const req = https.request({
+        hostname: 'api.mercadopago.com',
+        path: `/v1/card_tokens?public_key=${encodeURIComponent(publicKey)}`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+      }, (res) => {
+        let raw = '';
+        res.on('data', chunk => { raw += chunk; });
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(raw);
+            if (res.statusCode >= 400) {
+              const desc = data.cause?.[0]?.description || data.message || `HTTP ${res.statusCode}`;
+              reject(new Error(`Erro ao tokenizar cartão MP: ${desc}`));
+            } else {
+              resolve(data.id);
+            }
+          } catch (e) {
+            reject(new Error('Resposta inválida do MP'));
+          }
+        });
+      });
+      req.on('error', reject);
+      req.write(payload);
+      req.end();
+    });
   }
 
   async criarCartaoToken(dados, token, parcelas = 1) {
