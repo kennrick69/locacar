@@ -4,6 +4,7 @@ const pool = require('../config/database');
 const { auth, driverOnly, adminOnly } = require('../middleware/auth');
 const PaymentService = require('../services/PaymentService');
 const { getMercadoPago } = require('../services/MercadoPagoService');
+const { MercadoPagoConfig, CardToken } = require('mercadopago');
 
 const router = express.Router();
 
@@ -143,72 +144,39 @@ router.post('/tokenize-card', auth, driverOnly, async (req, res) => {
     s.rows.forEach(r => { sMap[r.chave] = r.valor; });
     const mpModo = sMap.mp_modo || 'test';
 
-    // Public key: usa a correta para o modo atual
-    const publicKey = process.env.MP_PUBLIC_KEY
-      || (mpModo === 'production' ? sMap.mp_public_key : (sMap.mp_public_key_test || sMap.mp_public_key))
-      || null;
-
-    // Access token: usado no header Authorization (server-to-server)
+    // Access token: autenticação server-to-server para CardToken SDK
     const accessToken = process.env.MP_ACCESS_TOKEN
       || process.env.MERCADOPAGO_ACCESS_TOKEN
       || (mpModo === 'production' ? sMap.mp_access_token : (sMap.mp_access_token_test || sMap.mp_access_token))
       || null;
 
-    if (!publicKey && !accessToken) {
-      return res.status(500).json({ error: 'Credenciais MP não configuradas. Configure MP_PUBLIC_KEY ou MP_ACCESS_TOKEN no Railway.' });
+    if (!accessToken) {
+      return res.status(500).json({ error: 'Token MP não configurado. Configure MP_ACCESS_TOKEN no Railway ou nas configurações.' });
     }
 
-    // public_key como query param (obrigatório ou access_token no header é suficiente)
-    const mpPath = publicKey
-      ? `/v1/card_tokens?public_key=${encodeURIComponent(publicKey)}`
-      : `/v1/card_tokens`;
+    const expYearInt = parseInt(expYear) < 100 ? 2000 + parseInt(expYear) : parseInt(expYear);
 
-    const payload = JSON.stringify({
-      card_number: cardNumber.replace(/\D/g, ''),
-      expiration_month: parseInt(expMonth),
-      expiration_year: parseInt(expYear) < 100 ? 2000 + parseInt(expYear) : parseInt(expYear),
-      security_code: securityCode,
-      cardholder: {
-        name: cardholderName,
-        identification: { type: 'CPF', number: cpf ? cpf.replace(/\D/g, '') : '00000000000' },
+    console.log('[tokenize-card] modo:', mpModo, '| accessToken:', accessToken.slice(0,15)+'...');
+
+    // Usa o SDK do MP (CardToken) com o access token — não precisa de public key
+    const mpClient = new MercadoPagoConfig({ accessToken });
+    const cardTokenApi = new CardToken(mpClient);
+
+    const result = await cardTokenApi.create({
+      body: {
+        card_number: cardNumber.replace(/\D/g, ''),
+        expiration_month: parseInt(expMonth),
+        expiration_year: expYearInt,
+        security_code: securityCode,
+        cardholder: {
+          name: cardholderName,
+          identification: { type: 'CPF', number: cpf ? cpf.replace(/\D/g, '') : '00000000000' },
+        },
       },
     });
 
-    const headers = {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(payload),
-    };
-    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
-
-    console.log('[tokenize-card] modo:', mpModo, '| publicKey:', publicKey ? publicKey.slice(0,15)+'...' : 'null', '| accessToken:', accessToken ? 'sim' : 'não', '| path:', mpPath);
-
-    const tokenId = await new Promise((resolve, reject) => {
-      const mpReq = https.request({
-        hostname: 'api.mercadopago.com',
-        path: mpPath,
-        method: 'POST',
-        headers,
-      }, (mpRes) => {
-        let raw = '';
-        mpRes.on('data', chunk => { raw += chunk; });
-        mpRes.on('end', () => {
-          try {
-            const data = JSON.parse(raw);
-            console.log('[tokenize-card] MP status:', mpRes.statusCode, 'data:', JSON.stringify(data).slice(0, 300));
-            if (mpRes.statusCode >= 400) {
-              reject(new Error(data.cause?.[0]?.description || data.message || `MP HTTP ${mpRes.statusCode}`));
-            } else {
-              resolve(data.id);
-            }
-          } catch (e) { reject(new Error('Resposta inválida do MP')); }
-        });
-      });
-      mpReq.on('error', reject);
-      mpReq.write(payload);
-      mpReq.end();
-    });
-
-    res.json({ token: tokenId });
+    console.log('[tokenize-card] OK, token:', result.id ? result.id.slice(0,10)+'...' : 'null');
+    res.json({ token: result.id });
   } catch (err) {
     console.error('Erro ao tokenizar cartão:', err.message, err.stack);
     res.status(500).json({ error: err.message || 'Erro interno' });
