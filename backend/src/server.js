@@ -107,8 +107,10 @@ const publicPath = path.join(__dirname, '..', 'public');
 const indexPath = path.join(publicPath, 'index.html');
 
 if (fs.existsSync(indexPath)) {
-  console.log('📁 Frontend encontrado em /public. Servindo SPA...');
-  app.use(express.static(publicPath));
+  const assetsPath = path.join(publicPath, 'assets');
+  const assetFiles = fs.existsSync(assetsPath) ? fs.readdirSync(assetsPath) : [];
+  console.log('📁 Frontend em /public. Assets:', assetFiles.join(', ') || 'VAZIO!');
+  app.use(express.static(publicPath, { maxAge: '1d', etag: true }));
   app.get('*', (req, res) => {
     if (!req.path.startsWith('/api/') && !req.path.startsWith('/uploads/')) {
       res.sendFile(indexPath);

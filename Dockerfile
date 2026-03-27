@@ -4,6 +4,8 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm install
 COPY frontend/ ./
+# ARG force-invalida cache do Docker a cada build (garante rebuild do frontend)
+ARG BUILD_DATE=unknown
 RUN npm run build
 
 # Imagem final
