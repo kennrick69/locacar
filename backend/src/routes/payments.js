@@ -135,10 +135,27 @@ router.post('/tokenize-card', auth, driverOnly, async (req, res) => {
       return res.status(400).json({ error: 'Dados do cartão incompletos' });
     }
 
-    // Apenas a public key é necessária — não precisa de access token
-    const s = await pool.query("SELECT valor FROM settings WHERE chave = 'mp_public_key' LIMIT 1");
-    const publicKey = process.env.MP_PUBLIC_KEY || s.rows[0]?.valor || null;
-    if (!publicKey) return res.status(500).json({ error: 'Chave pública MP não configurada' });
+    // Busca public key + access token do DB e env
+    const s = await pool.query(
+      "SELECT chave, valor FROM settings WHERE chave IN ('mp_public_key', 'mp_modo', 'mp_access_token', 'mp_access_token_test')"
+    );
+    const sMap = {};
+    s.rows.forEach(r => { sMap[r.chave] = r.valor; });
+    const mpModo = sMap.mp_modo || 'test';
+    const publicKey = process.env.MP_PUBLIC_KEY || sMap.mp_public_key || null;
+    const accessToken = (mpModo === 'production' ? sMap.mp_access_token : sMap.mp_access_token_test)
+      || process.env.MP_ACCESS_TOKEN
+      || process.env.MERCADOPAGO_ACCESS_TOKEN
+      || null;
+
+    if (!publicKey && !accessToken) {
+      return res.status(500).json({ error: 'Credenciais MP não configuradas (MP_PUBLIC_KEY ou MP_ACCESS_TOKEN)' });
+    }
+
+    // Usa public_key se disponível, senão access_token como query param
+    const qsKey = publicKey
+      ? `public_key=${encodeURIComponent(publicKey)}`
+      : `access_token=${encodeURIComponent(accessToken)}`;
 
     const payload = JSON.stringify({
       card_number: cardNumber.replace(/\D/g, ''),
@@ -151,28 +168,18 @@ router.post('/tokenize-card', auth, driverOnly, async (req, res) => {
       },
     });
 
-    // Lê access token para Authorization header (obrigatório em algumas contas MP)
-    const stok = await pool.query(
-      "SELECT chave, valor FROM settings WHERE chave IN ('mp_modo', 'mp_access_token', 'mp_access_token_test')"
-    );
-    const stokMap = {};
-    stok.rows.forEach(r => { stokMap[r.chave] = r.valor; });
-    const mpModo = stokMap.mp_modo || 'test';
-    const accessToken = (mpModo === 'production' ? stokMap.mp_access_token : stokMap.mp_access_token_test)
-      || process.env.MP_ACCESS_TOKEN
-      || process.env.MERCADOPAGO_ACCESS_TOKEN
-      || null;
-
     const headers = {
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(payload),
     };
     if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
 
+    console.log('[tokenize-card] publicKey:', publicKey ? publicKey.slice(0,20)+'...' : 'null', '| accessToken:', accessToken ? 'sim' : 'não');
+
     const tokenId = await new Promise((resolve, reject) => {
       const mpReq = https.request({
         hostname: 'api.mercadopago.com',
-        path: `/v1/card_tokens?public_key=${encodeURIComponent(publicKey)}`,
+        path: `/v1/card_tokens?${qsKey}`,
         method: 'POST',
         headers,
       }, (mpRes) => {
