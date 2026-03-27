@@ -151,19 +151,37 @@ router.post('/tokenize-card', auth, driverOnly, async (req, res) => {
       },
     });
 
+    // Lê access token para Authorization header (obrigatório em algumas contas MP)
+    const stok = await pool.query(
+      "SELECT chave, valor FROM settings WHERE chave IN ('mp_modo', 'mp_access_token', 'mp_access_token_test')"
+    );
+    const stokMap = {};
+    stok.rows.forEach(r => { stokMap[r.chave] = r.valor; });
+    const mpModo = stokMap.mp_modo || 'test';
+    const accessToken = (mpModo === 'production' ? stokMap.mp_access_token : stokMap.mp_access_token_test)
+      || process.env.MP_ACCESS_TOKEN
+      || process.env.MERCADOPAGO_ACCESS_TOKEN
+      || null;
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload),
+    };
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+
     const tokenId = await new Promise((resolve, reject) => {
-      const req = https.request({
+      const mpReq = https.request({
         hostname: 'api.mercadopago.com',
         path: `/v1/card_tokens?public_key=${encodeURIComponent(publicKey)}`,
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+        headers,
       }, (mpRes) => {
         let raw = '';
         mpRes.on('data', chunk => { raw += chunk; });
         mpRes.on('end', () => {
           try {
             const data = JSON.parse(raw);
-            console.log('[tokenize-card] MP status:', mpRes.statusCode, 'data:', JSON.stringify(data).slice(0, 200));
+            console.log('[tokenize-card] MP status:', mpRes.statusCode, 'data:', JSON.stringify(data).slice(0, 300));
             if (mpRes.statusCode >= 400) {
               reject(new Error(data.cause?.[0]?.description || data.message || `MP HTTP ${mpRes.statusCode}`));
             } else {
@@ -172,9 +190,9 @@ router.post('/tokenize-card', auth, driverOnly, async (req, res) => {
           } catch (e) { reject(new Error('Resposta inválida do MP')); }
         });
       });
-      req.on('error', reject);
-      req.write(payload);
-      req.end();
+      mpReq.on('error', reject);
+      mpReq.write(payload);
+      mpReq.end();
     });
 
     res.json({ token: tokenId });
