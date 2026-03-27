@@ -117,6 +117,35 @@ class MercadoPagoService {
     }
   }
 
+  /**
+   * Cria token de cartão via API REST do MP (server-side, sem CORS)
+   * publicKey é a chave pública — obrigatória para tokenização
+   */
+  async tokenizarCartao({ publicKey, cardNumber, expMonth, expYear, securityCode, cardholderName, cpf }) {
+    const url = `https://api.mercadopago.com/v1/card_tokens?public_key=${encodeURIComponent(publicKey)}`;
+    const body = {
+      card_number: cardNumber.replace(/\D/g, ''),
+      expiration_month: parseInt(expMonth),
+      expiration_year: parseInt(expYear) < 100 ? 2000 + parseInt(expYear) : parseInt(expYear),
+      security_code: securityCode,
+      cardholder: {
+        name: cardholderName,
+        identification: { type: 'CPF', number: cpf ? cpf.replace(/\D/g, '') : '00000000000' },
+      },
+    };
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const desc = data.cause?.[0]?.description || data.message || `HTTP ${res.status}`;
+      throw new Error(`Erro ao tokenizar cartão MP: ${desc}`);
+    }
+    return data.id;
+  }
+
   async criarCartaoToken(dados, token, parcelas = 1) {
     try {
       // installments: 1 — o juros já foi calculado no nosso sistema e

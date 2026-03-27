@@ -126,25 +126,12 @@ export default function DriverPayments() {
     setCardError(null);
   };
 
-  // Tokenização direta via API REST do MP — sem SDK, sem getPaymentMethods
-  const createMPToken = async ({ cardNumber, expMonth, expYear, cvv, cardholderName, cpf, publicKey }) => {
-    const res = await fetch(`https://api.mercadopago.com/v1/card_tokens?public_key=${encodeURIComponent(publicKey)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        card_number: cardNumber.replace(/\D/g, ''),
-        expiration_month: parseInt(expMonth),
-        expiration_year: parseInt(expYear) < 100 ? 2000 + parseInt(expYear) : parseInt(expYear),
-        security_code: cvv,
-        cardholder: {
-          name: cardholderName,
-          identification: { type: 'CPF', number: cpf.replace(/\D/g, '') || '00000000000' },
-        },
-      }),
+  // Tokenização via backend (evita CORS: browser → MP API)
+  const createMPToken = async ({ cardNumber, expMonth, expYear, cvv, cardholderName, cpf }) => {
+    const res = await paymentsAPI.tokenizeCard({
+      cardNumber, expMonth, expYear, securityCode: cvv, cardholderName, cpf,
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.cause?.[0]?.description || data.message || 'Erro ao tokenizar cartão');
-    return data.id;
+    return res.data.token;
   };
 
   const handleCardSubmit = async () => {
@@ -166,11 +153,7 @@ export default function DriverPayments() {
 
     setProcessing(true);
     try {
-      const keyRes = await paymentsAPI.publicKey();
-      const publicKey = keyRes.data?.publicKey;
-      if (!publicKey) throw new Error('Chave pública MP não configurada.');
-
-      const token = await createMPToken({ cardNumber, expMonth, expYear, cvv, cardholderName, cpf, publicKey });
+      const token = await createMPToken({ cardNumber, expMonth, expYear, cvv, cardholderName, cpf });
 
       const payload = {
         tipo: modal.type,

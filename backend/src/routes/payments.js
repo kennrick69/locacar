@@ -2,6 +2,7 @@ const express = require('express');
 const pool = require('../config/database');
 const { auth, driverOnly, adminOnly } = require('../middleware/auth');
 const PaymentService = require('../services/PaymentService');
+const { getMercadoPago } = require('../services/MercadoPagoService');
 
 const router = express.Router();
 
@@ -119,6 +120,33 @@ router.post('/:id/cancel', auth, adminOnly, async (req, res) => {
   } catch (err) {
     console.error('Erro ao cancelar pagamento:', err);
     res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
+ * POST /api/payments/tokenize-card
+ * Tokeniza cartão server-side (evita CORS do browser → MP API)
+ */
+router.post('/tokenize-card', auth, driverOnly, async (req, res) => {
+  try {
+    const { cardNumber, expMonth, expYear, securityCode, cardholderName, cpf } = req.body;
+    if (!cardNumber || !expMonth || !expYear || !securityCode || !cardholderName) {
+      return res.status(400).json({ error: 'Dados do cartão incompletos' });
+    }
+
+    const mpService = await getMercadoPago(pool);
+    if (!mpService) return res.status(500).json({ error: 'Mercado Pago não configurado' });
+
+    // Lê public key — env var tem prioridade
+    const s = await pool.query("SELECT valor FROM settings WHERE chave = 'mp_public_key' LIMIT 1");
+    const publicKey = process.env.MP_PUBLIC_KEY || s.rows[0]?.valor || null;
+    if (!publicKey) return res.status(500).json({ error: 'Chave pública MP não configurada' });
+
+    const tokenId = await mpService.tokenizarCartao({ publicKey, cardNumber, expMonth, expYear, securityCode, cardholderName, cpf });
+    res.json({ token: tokenId });
+  } catch (err) {
+    console.error('Erro ao tokenizar cartão:', err.message);
+    res.status(500).json({ error: err.message || 'Erro interno' });
   }
 });
 

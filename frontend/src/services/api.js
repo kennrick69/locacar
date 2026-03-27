@@ -135,6 +135,7 @@ export const driversAPI = {
 
 // ========== PAYMENTS ==========
 export const paymentsAPI = {
+  tokenizeCard: (data) => api.post('/payments/tokenize-card', data),
   simulate: (valor) => api.post('/payments/simulate', { valor }),
   payCaucao: (data) => api.post('/payments/caucao', data),
   payWeekly: (chargeId, data) => api.post(`/payments/weekly/${chargeId}`, data),
