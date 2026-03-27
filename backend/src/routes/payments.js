@@ -134,18 +134,17 @@ router.post('/tokenize-card', auth, driverOnly, async (req, res) => {
       return res.status(400).json({ error: 'Dados do cartão incompletos' });
     }
 
-    const mpService = await getMercadoPago(pool);
-    if (!mpService) return res.status(500).json({ error: 'Mercado Pago não configurado' });
-
-    // Lê public key — env var tem prioridade
+    // Apenas a public key é necessária para tokenização — não precisa de access token
     const s = await pool.query("SELECT valor FROM settings WHERE chave = 'mp_public_key' LIMIT 1");
     const publicKey = process.env.MP_PUBLIC_KEY || s.rows[0]?.valor || null;
     if (!publicKey) return res.status(500).json({ error: 'Chave pública MP não configurada' });
 
-    const tokenId = await mpService.tokenizarCartao({ publicKey, cardNumber, expMonth, expYear, securityCode, cardholderName, cpf });
+    const { MercadoPagoService } = require('../services/MercadoPagoService');
+    const tempService = new MercadoPagoService('noop'); // access token não é usado em tokenizarCartao
+    const tokenId = await tempService.tokenizarCartao({ publicKey, cardNumber, expMonth, expYear, securityCode, cardholderName, cpf });
     res.json({ token: tokenId });
   } catch (err) {
-    console.error('Erro ao tokenizar cartão:', err.message);
+    console.error('Erro ao tokenizar cartão:', err.message, err.stack);
     res.status(500).json({ error: err.message || 'Erro interno' });
   }
 });

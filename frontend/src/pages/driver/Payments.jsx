@@ -94,144 +94,93 @@ export default function DriverPayments() {
     cardContextRef.current = { payModal, parcelas, payerMode, payerForm };
   }, [payModal, parcelas, payerMode, payerForm]);
 
-  // Contador para forçar reinicialização do CardForm após erro (token é de uso único)
-  const [cardFormKey, setCardFormKey] = useState(0);
-
   // Monta/desmonta CardForm quando método cartão é selecionado
   useEffect(() => {
     if (payMethod === 'cartao' && payModal && !paymentResult) {
-      const timer = setTimeout(() => initCardForm(), 300);
-      return () => {
-        clearTimeout(timer);
-        destroyCardForm();
-      };
+      setCardReady(true);
     } else {
-      destroyCardForm();
+      setCardReady(false);
+      setCardError(null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payMethod, payModal?.type, payModal?.chargeId, cardFormKey]);
+  }, [payMethod, payModal?.type, payModal?.chargeId]);
 
   const destroyCardForm = () => {
-    if (cardFormRef.current) {
-      try { cardFormRef.current.unmount?.(); } catch (_) {}
-      cardFormRef.current = null;
-    }
     setCardReady(false);
     setCardError(null);
   };
 
-  const initCardForm = async () => {
+  const handleCardSubmit = async () => {
+    const { payModal: modal, parcelas: parc, payerMode: pMode, payerForm: pForm } = cardContextRef.current;
+    if (!modal) return;
+
+    const cardNumber = document.getElementById('mp-card-number-input')?.value?.trim();
+    const cardholderName = document.getElementById('mp-card-name')?.value?.trim();
+    const expiry = document.getElementById('mp-card-expiry-input')?.value?.trim();
+    const cvv = document.getElementById('mp-card-cvv-input')?.value?.trim();
+
+    if (!cardNumber || cardNumber.replace(/\D/g,'').length < 13) { toast.error('Número do cartão inválido.'); return; }
+    if (!cardholderName) { toast.error('Informe o nome do titular.'); return; }
+    if (!expiry || !/^\d{2}\/\d{2,4}$/.test(expiry)) { toast.error('Data de validade inválida (MM/AA).'); return; }
+    if (!cvv || cvv.length < 3) { toast.error('CVV inválido.'); return; }
+
+    const [expMonth, expYear] = expiry.split('/');
+    const cpf = pMode === 'outro' ? (pForm.cpf || '') : (profile?.cpf || '');
+
+    setProcessing(true);
     try {
-      if (!window.MercadoPago) throw new Error('SDK do Mercado Pago não carregado');
-
-      const keyRes = await paymentsAPI.publicKey();
-      const publicKey = keyRes.data?.publicKey;
-      if (!publicKey) throw new Error('Chave pública MP não configurada');
-
-      const mpInstance = new window.MercadoPago(publicKey, { locale: 'pt-BR' });
-
-      // Preenche campos hidden antes de montar (CPF/email do motorista para o SDK)
-      const cpfEl = document.getElementById('form-checkout__identificationNumber');
-      const emailEl = document.getElementById('form-checkout__cardholderEmail');
-      if (cpfEl) cpfEl.value = (profile?.cpf || '').replace(/\D/g, '') || '00000000000';
-      if (emailEl) emailEl.value = profile?.email || 'motorista@implocadora.com';
-
-      const { payModal: modal } = cardContextRef.current;
-
-      cardFormRef.current = mpInstance.cardForm({
-        amount: String(parseFloat(modal?.valor || 0).toFixed(2)),
-        iframe: true,
-        form: {
-          id: 'form-checkout',
-          cardNumber: { id: 'form-checkout__cardNumber', placeholder: 'Número do cartão', style: { fontSize: '14px', color: '#111827', 'placeholder-color': '#9ca3af' } },
-          expirationDate: { id: 'form-checkout__expirationDate', placeholder: 'MM/AA', style: { fontSize: '14px', color: '#111827', 'placeholder-color': '#9ca3af' } },
-          securityCode: { id: 'form-checkout__securityCode', placeholder: 'CVV', style: { fontSize: '14px', color: '#111827', 'placeholder-color': '#9ca3af' } },
-          cardholderName: { id: 'form-checkout__cardholderName', placeholder: 'Nome no cartão' },
-          issuer: { id: 'form-checkout__issuer', placeholder: 'Banco emissor' },
-          installments: { id: 'form-checkout__installments', placeholder: 'Parcelas' },
-          identificationType: { id: 'form-checkout__identificationType' },
-          identificationNumber: { id: 'form-checkout__identificationNumber' },
-          cardholderEmail: { id: 'form-checkout__cardholderEmail' },
-        },
-        callbacks: {
-          onFormMounted: (err) => {
-            if (err) { console.warn('[CardForm] mount error:', err); setCardError('Erro ao carregar formulário. Recarregue a página.'); return; }
-            setCardReady(true);
-            setCardError(null);
-          },
-          onSubmit: async (event) => {
-            event.preventDefault();
-            const { payModal: modal, parcelas: parc, payerMode: pMode, payerForm: pForm } = cardContextRef.current;
-            if (!modal) return;
-
-            setProcessing(true);
-            try {
-              const fd = cardFormRef.current.getCardFormData();
-              if (!fd.token) throw new Error('Token não gerado. Verifique os dados do cartão.');
-
-              const payload = {
-                tipo: modal.type,
-                charge_id: modal.chargeId || undefined,
-                token: fd.token,
-                parcelas: Number(fd.installments) || parc || 1,
-              };
-              if (pMode === 'outro') {
-                payload.payer_data = {
-                  nome: pForm.nome, cpf: pForm.cpf, email: pForm.email,
-                  endereco: pForm.endereco, numero: pForm.numero,
-                  bairro: pForm.bairro, cidade: pForm.cidade,
-                  estado: pForm.estado, cep: pForm.cep,
-                };
-              }
-
-              const res = await paymentsAPI.cardToken(payload);
-              setPaymentResult({ ...res.data, metodo: 'cartao' });
-
-              if (res.data.mp_status === 'approved') {
-                toast.success('Pagamento aprovado!');
-                setPayModal(null);
-                await loadData();
-              } else if (res.data.mp_status === 'in_process') {
-                toast.info('Pagamento em análise pelo banco.');
-              } else {
-                const erros = {
-                  cc_rejected_bad_filled_card_number: 'Número do cartão inválido',
-                  cc_rejected_bad_filled_date: 'Data de validade inválida',
-                  cc_rejected_bad_filled_security_code: 'CVV inválido',
-                  cc_rejected_call_for_authorize: 'Ligue para sua operadora e autorize',
-                  cc_rejected_card_disabled: 'Cartão desabilitado',
-                  cc_rejected_duplicated_payment: 'Pagamento duplicado',
-                  cc_rejected_high_risk: 'Recusado por segurança',
-                  cc_rejected_insufficient_amount: 'Saldo insuficiente',
-                  cc_rejected_max_attempts: 'Limite de tentativas atingido',
-                  cc_rejected_other_reason: 'Recusado pela operadora',
-                };
-                toast.error(erros[res.data.mp_status_detail] || res.data.mp_status_detail || 'Pagamento recusado');
-                // Token é de uso único — reinicializar form para nova tentativa
-                destroyCardForm();
-                setCardFormKey(k => k + 1);
-              }
-            } catch (err) {
-              toast.error(err.response?.data?.error || err.message || 'Erro ao processar cartão');
-              destroyCardForm();
-              setCardFormKey(k => k + 1);
-            } finally {
-              setProcessing(false);
-            }
-          },
-          onFetching: (resource) => {
-            const btn = document.getElementById('form-checkout__submit');
-            if (btn) btn.textContent = 'Carregando...';
-            return () => { if (btn) btn.textContent = 'Pagar com Cartão'; };
-          },
-          onError: (err) => console.error('[CardForm] error:', err),
-        },
+      const tokenRes = await paymentsAPI.tokenizeCard({
+        cardNumber, expMonth, expYear, securityCode: cvv, cardholderName, cpf,
       });
-    } catch (e) {
-      console.error('[CardForm] catch na inicialização:', e);
-      setCardError('Erro ao inicializar formulário. Recarregue a página.');
+      const token = tokenRes.data.token;
+
+      const payload = {
+        tipo: modal.type,
+        charge_id: modal.chargeId || undefined,
+        token,
+        parcelas: parc || 1,
+      };
+      if (pMode === 'outro') {
+        payload.payer_data = {
+          nome: pForm.nome, cpf: pForm.cpf, email: pForm.email,
+          endereco: pForm.endereco, numero: pForm.numero,
+          bairro: pForm.bairro, cidade: pForm.cidade,
+          estado: pForm.estado, cep: pForm.cep,
+        };
+      }
+
+      const res = await paymentsAPI.cardToken(payload);
+      setPaymentResult({ ...res.data, metodo: 'cartao' });
+
+      if (res.data.mp_status === 'approved') {
+        toast.success('Pagamento aprovado!');
+        setPayModal(null);
+        await loadData();
+      } else if (res.data.mp_status === 'in_process') {
+        toast.info('Pagamento em análise pelo banco.');
+      } else {
+        const erros = {
+          cc_rejected_bad_filled_card_number: 'Número do cartão inválido',
+          cc_rejected_bad_filled_date: 'Data de validade inválida',
+          cc_rejected_bad_filled_security_code: 'CVV inválido',
+          cc_rejected_call_for_authorize: 'Ligue para sua operadora e autorize',
+          cc_rejected_card_disabled: 'Cartão desabilitado',
+          cc_rejected_duplicated_payment: 'Pagamento duplicado',
+          cc_rejected_high_risk: 'Recusado por segurança',
+          cc_rejected_insufficient_amount: 'Saldo insuficiente',
+          cc_rejected_max_attempts: 'Limite de tentativas atingido',
+          cc_rejected_other_reason: 'Recusado pela operadora',
+        };
+        toast.error(erros[res.data.mp_status_detail] || res.data.mp_status_detail || 'Pagamento recusado');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'Erro ao processar cartão');
+    } finally {
+      setProcessing(false);
     }
   };
+
+  const initCardForm = () => { setCardReady(true); };
 
   const loadData = async () => {
     try {
@@ -957,74 +906,85 @@ export default function DriverPayments() {
                         <button
                           type="button"
                           onClick={() => {
-                            // Preenche o que é possível via JS
-                            const nameInput = document.getElementById('mp-card-name');
-                            if (nameInput) { nameInput.value = 'APRO'; nameInput.dispatchEvent(new Event('input', { bubbles: true })); }
+                            const set = (id, val) => { const el = document.getElementById(id); if (el) { el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); } };
+                            set('mp-card-number-input', '5031 4332 1540 6351');
+                            set('mp-card-name', 'APRO');
+                            set('mp-card-expiry-input', '11/30');
+                            set('mp-card-cvv-input', '123');
                             setPayerForm(f => ({ ...f, nome: 'APRO', cpf: '123.456.789-09', email: f.email || 'teste@teste.com' }));
                           }}
                           className="w-full py-1.5 text-xs font-medium bg-yellow-400 hover:bg-yellow-500 text-yellow-900 rounded-lg transition-colors"
                         >
-                          ✨ Auto-preencher nome e CPF (APRO aprovado)
+                          ✨ Auto-preencher tudo (Mastercard APRO aprovado)
                         </button>
-                        <p className="text-xs text-yellow-600 text-center">Número, validade e CVV: clique nos campos acima para copiar, depois cole manualmente.</p>
                       </div>
                     </details>
                   )}
 
                   {/* Formulário Secure Fields (cartão) — iframes PCI do MP */}
                   {payMethod === 'cartao' && (
-                    <form id="form-checkout" className="space-y-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Lock className="w-3 h-3 text-green-600" />
-                        <p className="text-xs text-green-700 font-medium">Formulário seguro — dados do cartão nunca passam pelo servidor</p>
-                      </div>
-
-                      {cardError && (
-                        <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700">{cardError}</div>
-                      )}
-
+                    <div className="space-y-3">
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Número do cartão</label>
-                        <div id="form-checkout__cardNumber" className="input-field" style={{ height: '42px', padding: '10px 12px' }} />
+                        <input
+                          id="mp-card-number-input"
+                          type="text"
+                          className="input-field"
+                          placeholder="0000 0000 0000 0000"
+                          maxLength={19}
+                          inputMode="numeric"
+                          onChange={e => {
+                            const v = e.target.value.replace(/\D/g,'').slice(0,16);
+                            e.target.value = v.replace(/(.{4})/g,'$1 ').trim();
+                          }}
+                        />
                       </div>
-
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Nome no cartão</label>
-                        <input id="form-checkout__cardholderName" type="text" className="input-field" placeholder="Nome como no cartão" style={{ textTransform: 'uppercase' }} />
+                        <input id="mp-card-name" type="text" className="input-field" placeholder="Nome como no cartão" style={{ textTransform: 'uppercase' }} />
                       </div>
-
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-xs text-gray-500 mb-1">Validade</label>
-                          <div id="form-checkout__expirationDate" className="input-field" style={{ height: '42px', padding: '10px 12px' }} />
+                          <label className="block text-xs text-gray-500 mb-1">Validade (MM/AA)</label>
+                          <input
+                            id="mp-card-expiry-input"
+                            type="text"
+                            className="input-field"
+                            placeholder="MM/AA"
+                            maxLength={5}
+                            inputMode="numeric"
+                            onChange={e => {
+                              const v = e.target.value.replace(/\D/g,'').slice(0,4);
+                              e.target.value = v.length > 2 ? `${v.slice(0,2)}/${v.slice(2)}` : v;
+                            }}
+                          />
                         </div>
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">CVV</label>
-                          <div id="form-checkout__securityCode" className="input-field" style={{ height: '42px', padding: '10px 12px' }} />
+                          <input
+                            id="mp-card-cvv-input"
+                            type="text"
+                            className="input-field"
+                            placeholder="123"
+                            maxLength={4}
+                            inputMode="numeric"
+                            onChange={e => { e.target.value = e.target.value.replace(/\D/g,'').slice(0,4); }}
+                          />
                         </div>
                       </div>
-
-                      <select id="form-checkout__installments" className="input-field" style={{ display: cardReady ? 'block' : 'none' }} />
-                      <select id="form-checkout__issuer" style={{ display: 'none' }} />
-                      <select id="form-checkout__identificationType" style={{ display: 'none' }} />
-                      <input type="hidden" id="form-checkout__identificationNumber" />
-                      <input type="hidden" id="form-checkout__cardholderEmail" />
-
                       <button
-                        id="form-checkout__submit"
-                        type="submit"
-                        disabled={processing || !cardReady}
+                        type="button"
+                        onClick={handleCardSubmit}
+                        disabled={processing}
                         className="btn-primary w-full py-3 flex items-center justify-center gap-2"
                       >
                         {processing ? (
                           <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        ) : !cardReady ? (
-                          'Carregando formulário...'
                         ) : (
                           <><CreditCard className="w-4 h-4" /> Pagar com Cartão</>
                         )}
                       </button>
-                    </form>
+                    </div>
                   )}
 
                   {/* Botão pagar (Pix) */}
