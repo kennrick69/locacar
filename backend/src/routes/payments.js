@@ -62,6 +62,37 @@ router.get('/admin', auth, adminOnly, async (req, res) => {
 });
 
 /**
+ * GET /api/payments/mp-diag
+ * Diagnóstico das credenciais MP (temporário)
+ */
+router.get('/mp-diag', auth, async (req, res) => {
+  try {
+    const s = await pool.query(
+      "SELECT chave, valor FROM settings WHERE chave IN ('mp_public_key', 'mp_public_key_test', 'mp_modo', 'mp_access_token', 'mp_access_token_test')"
+    );
+    const sMap = {};
+    s.rows.forEach(r => { sMap[r.chave] = r.valor; });
+    const mpModo = sMap.mp_modo || 'test';
+    const accessToken = process.env.MP_ACCESS_TOKEN
+      || process.env.MERCADOPAGO_ACCESS_TOKEN
+      || (mpModo === 'production' ? sMap.mp_access_token : (sMap.mp_access_token_test || sMap.mp_access_token))
+      || null;
+    res.json({
+      mp_modo: mpModo,
+      env_MP_ACCESS_TOKEN: process.env.MP_ACCESS_TOKEN ? process.env.MP_ACCESS_TOKEN.slice(0,15)+'...' : 'NÃO SET',
+      env_MERCADOPAGO_ACCESS_TOKEN: process.env.MERCADOPAGO_ACCESS_TOKEN ? process.env.MERCADOPAGO_ACCESS_TOKEN.slice(0,15)+'...' : 'NÃO SET',
+      db_mp_access_token: sMap.mp_access_token ? sMap.mp_access_token.slice(0,15)+'...' : 'vazio',
+      db_mp_access_token_test: sMap.mp_access_token_test ? sMap.mp_access_token_test.slice(0,15)+'...' : 'vazio',
+      db_mp_public_key: sMap.mp_public_key ? sMap.mp_public_key.slice(0,15)+'...' : 'vazio',
+      db_mp_public_key_test: sMap.mp_public_key_test ? sMap.mp_public_key_test.slice(0,15)+'...' : 'vazio',
+      accessToken_will_use: accessToken ? accessToken.slice(0,15)+'...' : 'NENHUM — VAI FALHAR',
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * GET /api/payments/public-key
  * Retorna a Public Key do MP para o frontend inicializar o SDK JS
  * DEVE ficar antes de /:id para não ser capturado pelo catch-all
