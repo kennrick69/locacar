@@ -1,10 +1,8 @@
 const express = require('express');
-const https = require('https');
 const pool = require('../config/database');
 const { auth, driverOnly, adminOnly } = require('../middleware/auth');
 const PaymentService = require('../services/PaymentService');
-const { getMercadoPago } = require('../services/MercadoPagoService');
-const { MercadoPagoConfig, CardToken } = require('mercadopago');
+const { getMercadoPago, mpInstance } = require('../services/MercadoPagoService');
 
 const router = express.Router();
 
@@ -67,25 +65,17 @@ router.get('/admin', auth, adminOnly, async (req, res) => {
  */
 router.get('/mp-diag', auth, async (req, res) => {
   try {
-    const s = await pool.query(
-      "SELECT chave, valor FROM settings WHERE chave IN ('mp_public_key', 'mp_public_key_test', 'mp_modo', 'mp_access_token', 'mp_access_token_test')"
-    );
-    const sMap = {};
-    s.rows.forEach(r => { sMap[r.chave] = r.valor; });
-    const mpModo = sMap.mp_modo || 'test';
-    const accessToken = process.env.MP_ACCESS_TOKEN
-      || process.env.MERCADOPAGO_ACCESS_TOKEN
-      || (mpModo === 'production' ? sMap.mp_access_token : (sMap.mp_access_token_test || sMap.mp_access_token))
-      || null;
+    const mp = await getMercadoPago(pool);
+    const inst = mpInstance; // singleton always exists even if not configured
     res.json({
-      mp_modo: mpModo,
+      mp_modo: inst.modo,
+      configurado: inst.isConfigured(),
+      accessToken_preview: inst.accessToken ? inst.accessToken.slice(0,15)+'...' : 'NENHUM — VAI FALHAR',
+      publicKey_preview: inst.publicKey ? inst.publicKey.slice(0,15)+'...' : 'vazio',
+      webhookUrl: inst.webhookUrl || 'NÃO SET',
       env_MP_ACCESS_TOKEN: process.env.MP_ACCESS_TOKEN ? process.env.MP_ACCESS_TOKEN.slice(0,15)+'...' : 'NÃO SET',
       env_MERCADOPAGO_ACCESS_TOKEN: process.env.MERCADOPAGO_ACCESS_TOKEN ? process.env.MERCADOPAGO_ACCESS_TOKEN.slice(0,15)+'...' : 'NÃO SET',
-      db_mp_access_token: sMap.mp_access_token ? sMap.mp_access_token.slice(0,15)+'...' : 'vazio',
-      db_mp_access_token_test: sMap.mp_access_token_test ? sMap.mp_access_token_test.slice(0,15)+'...' : 'vazio',
-      db_mp_public_key: sMap.mp_public_key ? sMap.mp_public_key.slice(0,15)+'...' : 'vazio',
-      db_mp_public_key_test: sMap.mp_public_key_test ? sMap.mp_public_key_test.slice(0,15)+'...' : 'vazio',
-      accessToken_will_use: accessToken ? accessToken.slice(0,15)+'...' : 'NENHUM — VAI FALHAR',
+      sdk: 'fetch() direto (sem SDK npm)',
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -167,49 +157,20 @@ router.post('/tokenize-card', auth, driverOnly, async (req, res) => {
       return res.status(400).json({ error: 'Dados do cartão incompletos' });
     }
 
-    // Busca credenciais MP do DB (respeitando modo test/production)
-    const s = await pool.query(
-      "SELECT chave, valor FROM settings WHERE chave IN ('mp_public_key', 'mp_public_key_test', 'mp_modo', 'mp_access_token', 'mp_access_token_test')"
-    );
-    const sMap = {};
-    s.rows.forEach(r => { sMap[r.chave] = r.valor; });
-    const mpModo = sMap.mp_modo || 'test';
-
-    // Access token: autenticação server-to-server para CardToken SDK
-    const accessToken = process.env.MP_ACCESS_TOKEN
-      || process.env.MERCADOPAGO_ACCESS_TOKEN
-      || (mpModo === 'production' ? sMap.mp_access_token : (sMap.mp_access_token_test || sMap.mp_access_token))
-      || null;
-
-    if (!accessToken) {
-      return res.status(500).json({ error: 'Token MP não configurado. Configure MP_ACCESS_TOKEN no Railway ou nas configurações.' });
+    // Usa o singleton do MercadoPagoService (fetch direto, sem SDK)
+    const mp = await getMercadoPago(pool);
+    if (!mp) {
+      return res.status(500).json({ error: 'Mercado Pago não configurado. Configure as credenciais nas Configurações.' });
     }
 
-    const expYearInt = parseInt(expYear) < 100 ? 2000 + parseInt(expYear) : parseInt(expYear);
+    console.log('[tokenize-card] modo:', mp.modo, '| publicKey:', mp.publicKey ? mp.publicKey.slice(0,15)+'...' : 'NÃO SET');
 
-    console.log('[tokenize-card] modo:', mpModo, '| accessToken:', accessToken.slice(0,15)+'...');
+    const token = await mp.tokenizarCartao({ cardNumber, expMonth, expYear, securityCode, cardholderName, cpf });
 
-    // Usa o SDK do MP (CardToken) com o access token — não precisa de public key
-    const mpClient = new MercadoPagoConfig({ accessToken });
-    const cardTokenApi = new CardToken(mpClient);
-
-    const result = await cardTokenApi.create({
-      body: {
-        card_number: cardNumber.replace(/\D/g, ''),
-        expiration_month: parseInt(expMonth),
-        expiration_year: expYearInt,
-        security_code: securityCode,
-        cardholder: {
-          name: cardholderName,
-          identification: { type: 'CPF', number: cpf ? cpf.replace(/\D/g, '') : '00000000000' },
-        },
-      },
-    });
-
-    console.log('[tokenize-card] OK, token:', result.id ? result.id.slice(0,10)+'...' : 'null');
-    res.json({ token: result.id });
+    console.log('[tokenize-card] OK, token:', token ? token.slice(0,10)+'...' : 'null');
+    res.json({ token });
   } catch (err) {
-    console.error('Erro ao tokenizar cartão:', err.message, err.stack);
+    console.error('Erro ao tokenizar cartão:', err.message);
     res.status(500).json({ error: err.message || 'Erro interno' });
   }
 });

@@ -1,6 +1,7 @@
 const express = require('express');
 const pool = require('../config/database');
 const { auth, adminOnly } = require('../middleware/auth');
+const { reloadMercadoPago } = require('../services/MercadoPagoService');
 
 const router = express.Router();
 
@@ -40,6 +41,14 @@ router.put('/', auth, adminOnly, async (req, res) => {
     }
 
     await client.query('COMMIT');
+
+    // Se atualizou credenciais do MP, recarrega o serviço
+    const mpKeys = Object.keys(updates).filter(k => k.startsWith('mp_'));
+    if (mpKeys.length > 0) {
+      const ok = await reloadMercadoPago(pool);
+      console.log(`[Settings] Credenciais MP recarregadas. Configurado: ${ok}`);
+    }
+
     res.json({ message: 'Configurações atualizadas' });
   } catch (err) {
     await client.query('ROLLBACK');

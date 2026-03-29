@@ -31,8 +31,6 @@ export default function DriverPayments() {
   const pollIntervalRef = useRef(null);
 
   // Secure Fields (cartão)
-  const cardFormRef = useRef(null);
-  const mpSdkRef = useRef(null);
   const [cardReady, setCardReady] = useState(false);
   const [cardError, setCardError] = useState(null);
   // Ref para valores atuais — evita closure stale nos callbacks do CardForm
@@ -50,14 +48,6 @@ export default function DriverPayments() {
 
   useEffect(() => {
     loadData();
-    // Carrega SDK do Mercado Pago (necessário para Secure Fields)
-    if (!document.getElementById('mp-sdk')) {
-      const script = document.createElement('script');
-      script.id = 'mp-sdk';
-      script.src = 'https://sdk.mercadopago.com/js/v2';
-      script.async = true;
-      document.body.appendChild(script);
-    }
   }, []);
 
   // Inicia polling quando QR Code Pix é gerado (pagamento real, não simulação)

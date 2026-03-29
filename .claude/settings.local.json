@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r @.*locacar /c/Users/sss/Pictures/locacar --include=*.ts --include=*.tsx --include=*.js --include=*.jsx --include=*.json --include=*.html)",
+      "Bash(grep -r locacar /c/Users/sss/Pictures/locacar/backend --include=*.json --include=*.env*)",
+      "Bash(grep -r locacar /c/Users/sss/Pictures/locacar/frontend --include=*.json --include=*.config.*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(npm install:*)"
+    ]
+  }
+}
