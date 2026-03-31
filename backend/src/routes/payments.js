@@ -90,13 +90,15 @@ router.get('/mp-diag', auth, async (req, res) => {
 router.get('/public-key', auth, async (req, res) => {
   try {
     const s = await pool.query(
-      "SELECT valor FROM settings WHERE chave = 'mp_public_key' LIMIT 1"
+      "SELECT chave, valor FROM settings WHERE chave IN ('mp_public_key', 'mp_modo') LIMIT 2"
     );
-    // Env var tem prioridade (permite sobrescrever chave do DB via Railway)
-    const publicKey = process.env.MP_PUBLIC_KEY || s.rows[0]?.valor || null;
-    res.json({ publicKey });
+    const sMap = {};
+    s.rows.forEach(r => { sMap[r.chave] = r.valor; });
+    const publicKey = process.env.MP_PUBLIC_KEY || sMap.mp_public_key || null;
+    const modo = sMap.mp_modo || 'test';
+    res.json({ publicKey, modo });
   } catch (err) {
-    res.json({ publicKey: process.env.MP_PUBLIC_KEY || null });
+    res.json({ publicKey: process.env.MP_PUBLIC_KEY || null, modo: 'test' });
   }
 });
 

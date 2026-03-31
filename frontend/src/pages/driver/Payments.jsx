@@ -46,8 +46,15 @@ export default function DriverPayments() {
   const [abatUploading, setAbatUploading] = useState(false);
   const notaInput = useRef(null);
 
+  // Modo do MP (test ou production) — controla exibição dos helpers de teste
+  const [mpModo, setMpModo] = useState('test');
+
   useEffect(() => {
     loadData();
+    // Busca modo do MP pra saber se exibe helpers de teste
+    paymentsAPI.publicKey().then(res => {
+      if (res.data?.modo) setMpModo(res.data.modo);
+    }).catch(() => {});
   }, []);
 
   // Inicia polling quando QR Code Pix é gerado (pagamento real, não simulação)
@@ -860,8 +867,8 @@ export default function DriverPayments() {
                     </div>
                   )}
 
-                  {/* Helper de dados de teste MP */}
-                  {payMethod === 'cartao' && (
+                  {/* Helper de dados de teste MP — só aparece em modo sandbox */}
+                  {payMethod === 'cartao' && mpModo !== 'production' && (
                     <details className="rounded-lg border border-dashed border-yellow-400 bg-yellow-50">
                       <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-yellow-700 select-none">
                         🧪 Dados de teste (Mercado Pago)
