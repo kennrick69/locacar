@@ -202,6 +202,7 @@ export default function AdminSettings() {
         </div>
 
         <div className="space-y-4">
+          {/* Modo de operação */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Modo de operação</label>
             <select
@@ -212,12 +213,37 @@ export default function AdminSettings() {
               <option value="test">🧪 Teste (Sandbox)</option>
               <option value="production">🟢 Produção (Real)</option>
             </select>
-            <p className="text-xs text-gray-400 mt-1">Em modo teste, pagamentos não são reais</p>
           </div>
 
-          {/* Credenciais de Teste */}
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-            <h3 className="text-sm font-semibold text-amber-800 mb-3">🧪 Credenciais de Teste</h3>
+          {/* Banner do modo ativo */}
+          {(settings.mp_modo || 'test') === 'production' ? (
+            <div className="flex items-center gap-3 bg-green-100 border-2 border-green-400 rounded-lg p-3">
+              <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
+              <div>
+                <p className="text-sm font-bold text-green-800">MODO PRODUÇÃO ATIVO</p>
+                <p className="text-xs text-green-700">Pagamentos reais — dinheiro de verdade será cobrado</p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 bg-amber-100 border-2 border-amber-400 rounded-lg p-3">
+              <div className="w-3 h-3 bg-amber-500 rounded-full animate-pulse" />
+              <div>
+                <p className="text-sm font-bold text-amber-800">MODO TESTE ATIVO</p>
+                <p className="text-xs text-amber-700">Sandbox — pagamentos simulados, nenhuma cobrança real</p>
+              </div>
+            </div>
+          )}
+
+          {/* Credenciais de Teste — sempre visível */}
+          <div className={`rounded-lg p-4 transition-all ${(settings.mp_modo || 'test') === 'test'
+            ? 'bg-amber-50 border-2 border-amber-300'
+            : 'bg-gray-50 border border-gray-200 opacity-60'}`}>
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="text-sm font-semibold text-amber-800">🧪 Credenciais de Teste</h3>
+              {(settings.mp_modo || 'test') === 'test' && (
+                <span className="text-[10px] font-bold bg-amber-400 text-amber-900 px-2 py-0.5 rounded-full uppercase">em uso</span>
+              )}
+            </div>
             <div className="grid grid-cols-1 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Public Key (teste)</label>
@@ -226,7 +252,7 @@ export default function AdminSettings() {
                   value={settings.mp_public_key_test || ''}
                   onChange={e => updateSetting('mp_public_key_test', e.target.value)}
                   className="input-field text-sm font-mono"
-                  placeholder="APP_USR-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  placeholder="TEST-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                 />
               </div>
               <div>
@@ -237,7 +263,7 @@ export default function AdminSettings() {
                     value={settings.mp_access_token_test || ''}
                     onChange={e => updateSetting('mp_access_token_test', e.target.value)}
                     className="input-field text-sm font-mono pr-16"
-                    placeholder="APP_USR-0000000000000000-000000-xxxxxxxxxxxxxxxx-000000000"
+                    placeholder="TEST-0000000000000000-000000-xxxxxxxxxxxxxxxx-000000000"
                   />
                   <button type="button" onClick={() => setShowTokenTest(!showTokenTest)}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-700 bg-gray-100 px-2 py-1 rounded">
@@ -248,9 +274,16 @@ export default function AdminSettings() {
             </div>
           </div>
 
-          {/* Credenciais de Produção */}
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-            <h3 className="text-sm font-semibold text-green-800 mb-3">🟢 Credenciais de Produção</h3>
+          {/* Credenciais de Produção — sempre visível */}
+          <div className={`rounded-lg p-4 transition-all ${(settings.mp_modo || 'test') === 'production'
+            ? 'bg-green-50 border-2 border-green-300'
+            : 'bg-gray-50 border border-gray-200 opacity-60'}`}>
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="text-sm font-semibold text-green-800">🟢 Credenciais de Produção</h3>
+              {(settings.mp_modo || 'test') === 'production' && (
+                <span className="text-[10px] font-bold bg-green-400 text-green-900 px-2 py-0.5 rounded-full uppercase">em uso</span>
+              )}
+            </div>
             <div className="grid grid-cols-1 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Public Key (produção)</label>
