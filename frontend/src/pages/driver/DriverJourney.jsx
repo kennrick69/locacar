@@ -40,6 +40,16 @@ export default function DriverJourney() {
       setDocuments(docsRes.data);
       setBalance(balanceRes.data);
       setAvailableCars(carsRes.data || []);
+
+      // Auto-redirect: se tem saldo devedor ou caução pendente, vai direto pra pagamentos
+      const p = profileRes.data;
+      const bal = balanceRes.data;
+      const temDivida = bal && parseFloat(bal.saldo_devedor || 0) > 0;
+      const caucaoPendente = p?.car_id && p?.contrato_confirmado && !p?.caucao_pago;
+
+      if (temDivida || caucaoPendente) {
+        navigate('/motorista/pagamentos', { replace: true });
+      }
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
