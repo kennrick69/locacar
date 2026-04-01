@@ -112,7 +112,7 @@ export default function DriverPayments() {
     if (!modal) return;
 
     const cardNumber = document.getElementById('mp-card-number-input')?.value?.trim();
-    const cardholderName = document.getElementById('mp-card-name')?.value?.trim();
+    const cardholderName = pMode === 'outro' ? (pForm.nome || '').trim() : (document.getElementById('mp-card-name')?.value?.trim() || '');
     const expiry = document.getElementById('mp-card-expiry-input')?.value?.trim();
     const cvv = document.getElementById('mp-card-cvv-input')?.value?.trim();
 
@@ -936,10 +936,12 @@ export default function DriverPayments() {
                           }}
                         />
                       </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Nome no cartão</label>
-                        <input id="mp-card-name" type="text" className="input-field" placeholder="Nome como no cartão" style={{ textTransform: 'uppercase' }} />
-                      </div>
+                      {payerMode !== 'outro' && (
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Nome no cartão</label>
+                          <input id="mp-card-name" type="text" className="input-field" placeholder="Nome como no cartão" style={{ textTransform: 'uppercase' }} />
+                        </div>
+                      )}
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">Validade (MM/AA)</label>
