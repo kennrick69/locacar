@@ -512,11 +512,29 @@ export default function DriverJourney() {
                           </div>
                           {(() => {
                             const contratoDoc = documents.find(d => d.tipo === 'contrato_gerado');
-                            return contratoDoc ? (
-                              <a href={contratoDoc.caminho} download className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700 flex items-center gap-1">
+                            if (!contratoDoc) return null;
+                            const handleDownload = async () => {
+                              try {
+                                const url = contratoDoc.caminho.startsWith('http')
+                                  ? contratoDoc.caminho
+                                  : `${window.location.origin}${contratoDoc.caminho}`;
+                                const resp = await fetch(url);
+                                const blob = await resp.blob();
+                                const blobUrl = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = blobUrl;
+                                a.download = contratoDoc.nome_arquivo || 'contrato.pdf';
+                                a.click();
+                                URL.revokeObjectURL(blobUrl);
+                              } catch {
+                                toast.error('Erro ao baixar contrato');
+                              }
+                            };
+                            return (
+                              <button onClick={handleDownload} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700 flex items-center gap-1">
                                 <Download className="w-3 h-3" /> Baixar PDF
-                              </a>
-                            ) : null;
+                              </button>
+                            );
                           })()}
                         </div>
                       )}
