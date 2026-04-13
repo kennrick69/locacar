@@ -41,15 +41,8 @@ export default function DriverJourney() {
       setBalance(balanceRes.data);
       setAvailableCars(carsRes.data || []);
 
-      // Auto-redirect: se tem saldo devedor ou caução pendente, vai direto pra pagamentos
-      const p = profileRes.data;
-      const bal = balanceRes.data;
-      const temDivida = bal && parseFloat(bal.saldo_devedor || 0) > 0;
-      const caucaoPendente = p?.car_id && p?.contrato_confirmado && !p?.caucao_pago;
-
-      if (temDivida || caucaoPendente) {
-        navigate('/motorista/pagamentos', { replace: true });
-      }
+      // Nota: não redirecionar automaticamente para pagamentos
+      // O motorista deve poder acessar "Meu Processo" mesmo com pagamentos pendentes
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -258,6 +251,29 @@ export default function DriverJourney() {
           </div>
         </div>
       )}
+
+      {/* Aviso de pagamentos pendentes */}
+      {(() => {
+        const temDivida = balance && parseFloat(balance.saldo_devedor || 0) > 0;
+        const caucaoPendente = profile?.car_id && profile?.contrato_confirmado && !profile?.caucao_pago;
+        if (temDivida || caucaoPendente) return (
+          <div className="card border-l-4 border-yellow-500 bg-yellow-50 flex items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-bold text-yellow-800">Pagamentos Pendentes</p>
+                <p className="text-xs text-yellow-600 mt-0.5">
+                  {temDivida ? `Saldo devedor: ${fmt(balance.saldo_devedor)} €` : 'Caução pendente de pagamento'}
+                </p>
+              </div>
+            </div>
+            <button onClick={() => navigate('/motorista/pagamentos')} className="px-3 py-1.5 text-xs font-medium bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 shrink-0">
+              Ver Pagamentos
+            </button>
+          </div>
+        );
+        return null;
+      })()}
 
       {/* Progress bar */}
       {(() => {
