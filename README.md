@@ -269,15 +269,22 @@ npx cap open android
 - [x] Senhas hasheadas (bcrypt salt 10)
 - [x] Upload com filtro de tipo + limite 10MB
 - [x] Validação de webhook MP com HMAC-SHA256
-- [ ] HTTPS via Certbot (configurar no VPS)
-- [ ] Backup automático do PostgreSQL (configurar cron)
+- [x] HTTPS via Certbot (instalado pelo `setup-vps.sh`; emitir com `certbot --nginx -d seudominio.com`)
+- [x] Backup automático do PostgreSQL (cron diário 03:00 → `/opt/implocadora/backups`, retenção 14 dias)
 
 ### HTTPS (Certbot)
+O `setup-vps.sh` já instala o Certbot. Para emitir o certificado (após apontar o DNS para o VPS):
 ```bash
-# No VPS
-apt install certbot python3-certbot-nginx
 certbot --nginx -d seudominio.com
 ```
+A renovação automática é configurada pelo próprio pacote `certbot`.
+
+### Backup PostgreSQL
+Configurado automaticamente pelo `setup-vps.sh`:
+- Script: `/usr/local/bin/implocadora-pgbackup.sh`
+- Cron: diário às 03:00
+- Destino: `/opt/implocadora/backups/implocadora_YYYYMMDD_HHMMSS.sql.gz`
+- Retenção: 14 dias
 
 ---
 

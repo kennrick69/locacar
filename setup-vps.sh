@@ -9,20 +9,20 @@ set -e
 echo "=== IMP Locadora VPS Setup ==="
 
 # 1) Atualiza sistema
-echo "[1/8] Atualizando sistema..."
+echo "[1/10] Atualizando sistema..."
 apt update && apt upgrade -y
 
 # 2) Instala Node.js 20
-echo "[2/8] Instalando Node.js 20..."
+echo "[2/10] Instalando Node.js 20..."
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt install -y nodejs
 
 # 3) Instala PM2
-echo "[3/8] Instalando PM2..."
+echo "[3/10] Instalando PM2..."
 npm install -g pm2
 
 # 4) Instala PostgreSQL
-echo "[4/8] Instalando PostgreSQL..."
+echo "[4/10] Instalando PostgreSQL..."
 apt install -y postgresql postgresql-contrib
 systemctl enable postgresql
 systemctl start postgresql
@@ -34,12 +34,12 @@ sudo -u postgres psql -c "CREATE DATABASE implocadora OWNER implocadora;" 2>/dev
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE implocadora TO implocadora;" 2>/dev/null || true
 
 # 6) Cria diretorio do projeto
-echo "[6/8] Criando diretório do projeto..."
+echo "[6/10] Criando diretório do projeto..."
 mkdir -p /opt/implocadora/backend/uploads
 mkdir -p /opt/implocadora/backend/public
 
 # 7) Instala Nginx (para HTTPS e proxy)
-echo "[7/8] Instalando Nginx..."
+echo "[7/10] Instalando Nginx..."
 apt install -y nginx
 cat > /etc/nginx/sites-available/implocadora << 'NGINX'
 server {
@@ -74,11 +74,30 @@ rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 
 # 8) Firewall
-echo "[8/8] Configurando firewall..."
+echo "[8/10] Configurando firewall..."
 ufw allow 22
 ufw allow 80
 ufw allow 443
 ufw --force enable
+
+# 9) Certbot (HTTPS) — instala; emissão do certificado precisa do domínio
+echo "[9/10] Instalando Certbot (HTTPS)..."
+apt install -y certbot python3-certbot-nginx
+
+# 10) Backup automático do PostgreSQL (diário às 03:00, retém 14 dias)
+echo "[10/10] Configurando backup automático do PostgreSQL..."
+mkdir -p /opt/implocadora/backups
+cat > /usr/local/bin/implocadora-pgbackup.sh << 'BACKUP'
+#!/bin/bash
+set -e
+DEST=/opt/implocadora/backups
+STAMP=$(date +%Y%m%d_%H%M%S)
+sudo -u postgres pg_dump implocadora | gzip > "$DEST/implocadora_$STAMP.sql.gz"
+find "$DEST" -name 'implocadora_*.sql.gz' -mtime +14 -delete
+BACKUP
+chmod +x /usr/local/bin/implocadora-pgbackup.sh
+# Adiciona ao crontab do root se ainda não estiver
+( crontab -l 2>/dev/null | grep -v implocadora-pgbackup ; echo "0 3 * * * /usr/local/bin/implocadora-pgbackup.sh" ) | crontab -
 
 echo ""
 echo "=== SETUP COMPLETO! ==="
@@ -88,5 +107,7 @@ echo "  1. Edite /opt/implocadora/backend/.env com suas credenciais"
 echo "  2. Envie os arquivos com deploy.bat ou GitHub Actions"
 echo "  3. Execute: cd /opt/implocadora/backend && npm run migrate && npm run seed"
 echo "  4. Inicie: pm2 start src/server.js --name implocadora && pm2 save && pm2 startup"
-echo "  5. Para HTTPS: apt install certbot python3-certbot-nginx && certbot --nginx -d seudominio.com"
+echo "  5. Emita o HTTPS: certbot --nginx -d seudominio.com  (renovação automática já vem configurada)"
+echo ""
+echo "Backup PostgreSQL: diário às 03:00 em /opt/implocadora/backups (retenção 14 dias)"
 echo ""

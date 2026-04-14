@@ -24,6 +24,8 @@ app.use(helmet({
         'https://sdk.mercadopago.com', 'https://*.mercadolibre.com', 'https://*.mlstatic.com'],
       styleSrc: ["'self'", "'unsafe-inline'", 'https://*.mlstatic.com'],
       connectSrc: ["'self'",
+        // Cloudinary — download/preview de contratos e documentos
+        'https://res.cloudinary.com',
         // Mercado Pago — API, Secure Fields e telemetria
         'https://api.mercadopago.com',
         'https://sdk.mercadopago.com',
