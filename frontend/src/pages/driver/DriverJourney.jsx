@@ -6,7 +6,7 @@ import { toast } from 'react-toastify';
 import {
   User, FileText, Upload, CheckCircle2, Clock, Camera, Eye, X,
   CreditCard, Home, Smartphone, Lock, Download, AlertCircle,
-  ChevronDown, ChevronUp, Banknote, Car, FileCheck, Shield, XCircle
+  ChevronDown, ChevronUp, Banknote, Car, FileCheck, Shield, XCircle, Info
 } from 'lucide-react';
 
 const fmt = (v) => parseFloat(v || 0).toFixed(2).replace('.', ',');
@@ -263,7 +263,7 @@ export default function DriverJourney() {
               <div>
                 <p className="text-sm font-bold text-yellow-800">Pagamentos Pendentes</p>
                 <p className="text-xs text-yellow-600 mt-0.5">
-                  {temDivida ? `Saldo devedor: ${fmt(balance.saldo_devedor)} €` : 'Caução pendente de pagamento'}
+                  {temDivida ? `Saldo devedor: R$ ${fmt(balance.saldo_devedor)}` : 'Caução pendente de pagamento'}
                 </p>
               </div>
             </div>
@@ -374,6 +374,16 @@ export default function DriverJourney() {
 
                         return (
                           <>
+                            {/* Aviso: contrato é gerado e enviado pelo admin após aprovação */}
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex gap-3">
+                              <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                              <div className="text-xs text-blue-800 space-y-1">
+                                <p className="font-semibold text-sm">Como funciona a geração do contrato</p>
+                                <p>O contrato só será <strong>gerado e enviado pelo administrador</strong> após a aprovação do seu interesse no veículo selecionado.</p>
+                                <p>Enquanto isso, complete seus dados, envie os documentos e escolha o veículo desejado abaixo. Você receberá o contrato por e-mail assim que for aprovado.</p>
+                              </div>
+                            </div>
+
                             {/* Selfie primeiro (pode enviar antes do contrato) */}
                             <DocUpload tipo="selfie" label="Selfie com Documento" icon={Camera} desc="Foto segurando a CNH ao lado do rosto" field="selfie_url" colorClass="purple" />
 
