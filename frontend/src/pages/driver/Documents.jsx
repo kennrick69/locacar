@@ -266,7 +266,6 @@ export default function DriverDocuments() {
                     <li>Acesse <strong>assinador.iti.br</strong> ou app <strong>Gov.br</strong></li>
                     <li>Assine digitalmente o PDF</li>
                     <li>Faça upload do contrato assinado abaixo</li>
-                    <li>Envie a selfie segurando o documento</li>
                   </ol>
                 </>
               ) : (

@@ -6,6 +6,7 @@ import {
   Upload, CreditCard, Home, Smartphone, ArrowRight, ArrowLeft, Clock, AlertTriangle, Building2
 } from 'lucide-react';
 import api, { authAPI, carsAPI, propertiesAPI } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 function validarCPF(cpf) {
   const nums = cpf.replace(/\D/g, '');
@@ -35,6 +36,7 @@ export default function Register() {
   const propertyId = searchParams.get('property');
   const isPropertyMode = !!propertyId;
   const navigate = useNavigate();
+  const { tokenLogin } = useAuth();
 
   const [carInfo, setCarInfo] = useState(null);
   const [propertyInfo, setPropertyInfo] = useState(null);
@@ -51,7 +53,28 @@ export default function Register() {
   const [uploads, setUploads] = useState({}); // { tipo: 'filename' } or { tipo: ['file1','file2'] } for multi
   const [uploading, setUploading] = useState({});
   const [dragOver, setDragOver] = useState(null);
+  const [cpfChecking, setCpfChecking] = useState(false);
+  const [cpfChecked, setCpfChecked] = useState('');
   const fileInputs = useRef({});
+
+  const checarCpfExistente = async () => {
+    const cpfClean = (form.cpf || '').replace(/\D/g, '');
+    if (cpfClean.length !== 11) return;
+    if (!validarCPF(cpfClean)) return;
+    if (cpfChecked === cpfClean) return;
+    setCpfChecked(cpfClean);
+    const token6 = cpfClean.substring(0, 6);
+    setCpfChecking(true);
+    try {
+      await tokenLogin(token6);
+      toast.info('Você já tem cadastro! Redirecionando para sua área...', { autoClose: 3000 });
+      setTimeout(() => navigate('/motorista'), 800);
+    } catch {
+      // 401 = CPF não cadastrado, segue cadastro normal sem mensagem
+    } finally {
+      setCpfChecking(false);
+    }
+  };
 
   // Se não tem car nem property param, redireciona
   useEffect(() => {
@@ -313,22 +336,25 @@ export default function Register() {
           {step === 1 && (
             <form onSubmit={handleStep1} className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nome completo *</label>
-                <input type="text" value={form.nome} onChange={set('nome')} className="input-field" placeholder="Seu nome completo" />
-              </div>
-              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">CPF *</label>
                 <div className="relative">
                   <input type="text" value={form.cpf}
                     onChange={(e) => setForm({ ...form, cpf: formatCPF(e.target.value) })}
+                    onBlur={checarCpfExistente}
                     className={`input-field pr-10 ${cpfStatus === true ? 'ring-2 ring-green-400 border-green-400' : cpfStatus === false ? 'ring-2 ring-red-400 border-red-400' : ''}`}
-                    placeholder="000.000.000-00" maxLength={14} />
+                    placeholder="000.000.000-00" maxLength={14} autoFocus />
                   <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    {cpfStatus === true && <CheckCircle2 className="w-5 h-5 text-green-500" />}
-                    {cpfStatus === false && <XCircle className="w-5 h-5 text-red-500" />}
+                    {cpfChecking ? <Loader2 className="w-5 h-5 text-brand-500 animate-spin" /> :
+                      cpfStatus === true ? <CheckCircle2 className="w-5 h-5 text-green-500" /> :
+                      cpfStatus === false ? <XCircle className="w-5 h-5 text-red-500" /> : null}
                   </div>
                 </div>
                 {cpfStatus === false && <p className="text-xs text-red-500 mt-1">CPF inválido</p>}
+                <p className="text-xs text-gray-500 mt-1">Se já tiver cadastro, você será redirecionado automaticamente para sua área.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nome completo *</label>
+                <input type="text" value={form.nome} onChange={set('nome')} className="input-field" placeholder="Seu nome completo" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

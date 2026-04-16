@@ -1722,8 +1722,7 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
         `2. Acesse assinador.iti.br ou use o app Gov.br\n` +
         `3. Assine digitalmente o contrato\n` +
         `4. Acesse a IMP Locadora com seu token: *${driver.token_externo || ''}*\n` +
-        `5. Faça upload do contrato assinado\n` +
-        `6. Envie uma selfie segurando sua CNH\n\n` +
+        `5. Faça upload do contrato assinado\n\n` +
         `Qualquer dúvida, estou à disposição!`
       );
       whatsappLink = `https://wa.me/${tel}?text=${msg}`;
@@ -1757,7 +1756,6 @@ router.post('/:id/generate-contract', auth, adminOnly, async (req, res) => {
             <li>Selecione o PDF do contrato e assine digitalmente</li>
             <li>Acesse a IMP Locadora com seu token <strong>${driver.token_externo || ''}</strong></li>
             <li>Na área de Documentos, faça upload do contrato assinado</li>
-            <li>Envie também uma selfie segurando seu documento (CNH)</li>
           </ol>
           <p>Qualquer dúvida, entre em contato!</p>
           <p><strong>IMP Locadora</strong></p>
