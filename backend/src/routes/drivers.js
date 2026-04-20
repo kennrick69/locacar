@@ -1324,6 +1324,25 @@ router.patch('/:driverId/abatimentos/:id/approve', auth, adminOnly, async (req, 
       );
     }
 
+    // Registra automaticamente na manutenção do veículo
+    const driverCar = await client.query(
+      'SELECT dp.car_id, u.nome FROM driver_profiles dp JOIN users u ON u.id = dp.user_id WHERE dp.id = $1',
+      [req.params.driverId]
+    );
+    if (driverCar.rows.length > 0 && driverCar.rows[0].car_id) {
+      await client.query(`
+        INSERT INTO car_maintenance (car_id, tipo, descricao, data_realizacao, valor, observacoes, abatimento_id)
+        VALUES ($1, $2, $3, NOW(), $4, $5, $6)
+      `, [
+        driverCar.rows[0].car_id,
+        abatimento.descricao || 'Manutenção (abatimento)',
+        abatimento.descricao || null,
+        parseFloat(abatimento.valor),
+        `Custeado pelo motorista ${driverCar.rows[0].nome} — abatido da cobrança semanal`,
+        abatimento.id,
+      ]);
+    }
+
     await client.query('COMMIT');
     res.json({ message: 'Abatimento aprovado', abatimento: { ...abatimento, aprovado: true } });
   } catch (err) {

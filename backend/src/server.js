@@ -435,8 +435,10 @@ async function start() {
           id SERIAL PRIMARY KEY, car_id INTEGER REFERENCES cars(id) ON DELETE CASCADE,
           tipo VARCHAR(100) NOT NULL, descricao TEXT, data_realizacao DATE NOT NULL,
           km_realizacao INTEGER, valor DECIMAL(10,2) DEFAULT 0, fornecedor VARCHAR(200),
-          observacoes TEXT, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW()
+          observacoes TEXT, abatimento_id INTEGER REFERENCES abatimentos(id) ON DELETE SET NULL,
+          created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW()
         )`);
+        await pool.query(`ALTER TABLE car_maintenance ADD COLUMN IF NOT EXISTS abatimento_id INTEGER REFERENCES abatimentos(id) ON DELETE SET NULL`);
 
         // Tabela de cláusulas do contrato (editáveis pelo admin)
         await pool.query(`CREATE TABLE IF NOT EXISTS contract_clauses (

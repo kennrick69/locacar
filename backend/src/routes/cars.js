@@ -260,10 +260,15 @@ router.delete('/:id', auth, adminOnly, async (req, res) => {
  */
 router.get('/:id/maintenance', auth, adminOnly, async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT * FROM car_maintenance WHERE car_id = $1 ORDER BY data_realizacao DESC',
-      [req.params.id]
-    );
+    const result = await pool.query(`
+      SELECT cm.*, a.nota_url AS comprovante_url, u.nome AS motorista_nome
+      FROM car_maintenance cm
+      LEFT JOIN abatimentos a ON a.id = cm.abatimento_id
+      LEFT JOIN driver_profiles dp ON dp.id = a.driver_id
+      LEFT JOIN users u ON u.id = dp.user_id
+      WHERE cm.car_id = $1
+      ORDER BY cm.data_realizacao DESC
+    `, [req.params.id]);
     res.json(result.rows);
   } catch (err) {
     console.error('Erro ao listar manutenções:', err);

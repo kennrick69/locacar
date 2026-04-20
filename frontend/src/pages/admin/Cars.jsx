@@ -4,7 +4,7 @@ import { toast } from 'react-toastify';
 import {
   Car, Plus, Pencil, Trash2, X, Upload, Search,
   CheckCircle2, XCircle, Image, ChevronDown, Wrench, Download,
-  Calendar, DollarSign, FileText
+  Calendar, DollarSign, FileText, User, Eye, Receipt
 } from 'lucide-react';
 
 // ========== BANCO DE MARCAS/MODELOS (BR) ==========
@@ -781,7 +781,7 @@ export default function AdminCars() {
                 ) : (
                   <div className="space-y-2 max-h-[40vh] overflow-auto">
                     {filteredMaint.map(m => (
-                      <div key={m.id} className={`border rounded-lg p-3 ${maintEditing === m.id ? 'border-blue-400 bg-blue-50' : 'bg-white hover:bg-gray-50'} transition-colors`}>
+                      <div key={m.id} className={`border rounded-lg p-3 ${maintEditing === m.id ? 'border-blue-400 bg-blue-50' : m.abatimento_id ? 'bg-amber-50/50 border-amber-200' : 'bg-white hover:bg-gray-50'} transition-colors`}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -797,10 +797,22 @@ export default function AdminCars() {
                               {m.km_realizacao && (
                                 <span className="text-xs text-gray-400">{parseInt(m.km_realizacao).toLocaleString('pt-BR')} km</span>
                               )}
+                              {m.abatimento_id && (
+                                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                                  <Receipt className="w-3 h-3" /> Motorista
+                                </span>
+                              )}
                             </div>
                             {m.descricao && <p className="text-xs text-gray-500 mt-1">{m.descricao}</p>}
                             {m.fornecedor && <p className="text-xs text-gray-400 mt-0.5">Oficina: {m.fornecedor}</p>}
+                            {m.motorista_nome && <p className="text-xs text-amber-600 mt-0.5 flex items-center gap-1"><User className="w-3 h-3" /> Custeado por {m.motorista_nome}</p>}
                             {m.observacoes && <p className="text-xs text-gray-400 italic mt-0.5">{m.observacoes}</p>}
+                            {m.comprovante_url && (
+                              <a href={m.comprovante_url} target="_blank" rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 mt-1">
+                                <Eye className="w-3 h-3" /> Ver comprovante
+                              </a>
+                            )}
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
                             <button onClick={() => handleEditMaint(m)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="Editar">

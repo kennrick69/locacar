@@ -252,6 +252,7 @@ const migrate = async () => {
         valor           DECIMAL(10,2) DEFAULT 0,
         fornecedor      VARCHAR(200),
         observacoes     TEXT,
+        abatimento_id   INTEGER REFERENCES abatimentos(id) ON DELETE SET NULL,
         created_at      TIMESTAMP DEFAULT NOW(),
         updated_at      TIMESTAMP DEFAULT NOW()
       );
@@ -259,6 +260,7 @@ const migrate = async () => {
 
     // ========== MIGRAÇÕES INCREMENTAIS ==========
     await client.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS caucao_liberada BOOLEAN DEFAULT false;`);
+    await client.query(`ALTER TABLE car_maintenance ADD COLUMN IF NOT EXISTS abatimento_id INTEGER REFERENCES abatimentos(id) ON DELETE SET NULL;`);
 
     await client.query('COMMIT');
     console.log('✅ Migração concluída com sucesso!');
