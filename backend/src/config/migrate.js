@@ -93,6 +93,7 @@ const migrate = async () => {
         contrato_url    VARCHAR(500),
         contrato_confirmado BOOLEAN DEFAULT false,
         caucao_pago     BOOLEAN DEFAULT false,
+        caucao_liberada BOOLEAN DEFAULT false,
         token_externo   VARCHAR(20),
         cadastro_externo BOOLEAN DEFAULT false,
         data_inicio     DATE,
@@ -238,6 +239,26 @@ const migrate = async () => {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_mp ON payments(mp_payment_id);`);
+
+    // ========== TABELA: car_maintenance ==========
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS car_maintenance (
+        id              SERIAL PRIMARY KEY,
+        car_id          INTEGER REFERENCES cars(id) ON DELETE CASCADE,
+        tipo            VARCHAR(100) NOT NULL,
+        descricao       TEXT,
+        data_realizacao DATE NOT NULL,
+        km_realizacao   INTEGER,
+        valor           DECIMAL(10,2) DEFAULT 0,
+        fornecedor      VARCHAR(200),
+        observacoes     TEXT,
+        created_at      TIMESTAMP DEFAULT NOW(),
+        updated_at      TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    // ========== MIGRAÇÕES INCREMENTAIS ==========
+    await client.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS caucao_liberada BOOLEAN DEFAULT false;`);
 
     await client.query('COMMIT');
     console.log('✅ Migração concluída com sucesso!');

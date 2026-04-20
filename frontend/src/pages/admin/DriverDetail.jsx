@@ -167,6 +167,18 @@ export default function AdminDriverDetail() {
   const handleConfirmContract = async () => { try { await driversAPI.confirmContract(id); toast.success('Contrato confirmado!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
   const handleActivate = async () => { try { await driversAPI.activate(id); toast.success('Ativado!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
   const handleConfirmCaucao = async () => { if (!confirm('Confirmar o pagamento da caução manualmente?')) return; try { await driversAPI.confirmCaucao(id); toast.success('Caução confirmada manualmente!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
+  const handleLiberarCaucao = async () => {
+    const isLiberada = driver.caucao_liberada;
+    const msg = isLiberada
+      ? 'Revogar liberação da caução? O motorista precisará pagar para prosseguir.'
+      : 'Liberar o motorista sem pagamento da caução? Ele poderá ser ativado e seguir as demais etapas.';
+    if (!confirm(msg)) return;
+    try {
+      await driversAPI.liberarCaucao(id, !isLiberada);
+      toast.success(isLiberada ? 'Liberação revogada' : 'Caução liberada! Motorista pode prosseguir.');
+      await loadData();
+    } catch (e) { toast.error(e.response?.data?.error || 'Erro'); }
+  };
   const handleLockDoc = async (docId, fixado) => {
     try {
       await driversAPI.lockDocument(id, docId, fixado);
@@ -335,8 +347,8 @@ export default function AdminDriverDetail() {
       action: driver.status === 'em_analise' ? 'Aprovar/Reprovar' : null },
     { id: 'contrato', label: 'Contrato', icon: FileText, done: !!driver.contrato_url && driver.contrato_confirmado,
       action: !contratoGerado && driver.car_id ? 'Gerar contrato' : driver.contrato_url && !driver.contrato_confirmado ? 'Confirmar contrato' : null },
-    { id: 'caucao', label: 'Caução & Ativação', icon: Banknote, done: driver.caucao_pago && isAtivo,
-      action: isAprovado && driver.caucao_pago && !isAtivo ? 'Ativar motorista' : null },
+    { id: 'caucao', label: 'Caução & Ativação', icon: Banknote, done: (driver.caucao_pago || driver.caucao_liberada) && isAtivo,
+      action: isAprovado && (driver.caucao_pago || driver.caucao_liberada) && !isAtivo ? 'Ativar motorista' : null },
     { id: 'vistoria', label: 'Vistoria do Veículo', icon: Camera, done: vistoriaDocs.length > 0 && vistoriaDocs.some(d => d.fixado) },
     { id: 'cobrancas', label: 'Cobranças Semanais', icon: Banknote, done: (driver.charges || []).length > 0 },
   ];
@@ -629,17 +641,51 @@ export default function AdminDriverDetail() {
         <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50">
           <div>
             <p className="text-sm text-gray-500">Caução</p>
-            <p className="text-xl font-bold">{driver.caucao_pago ? <span className="text-green-600">✓ Paga</span> : <span className="text-red-600">Pendente — R$ {fmt(driver.car_valor_caucao || 0)}</span>}</p>
+            <p className="text-xl font-bold">
+              {driver.caucao_pago
+                ? <span className="text-green-600">✓ Paga</span>
+                : driver.caucao_liberada
+                  ? <span className="text-amber-600">Liberada (não paga) — R$ {fmt(driver.car_valor_caucao || 0)}</span>
+                  : <span className="text-red-600">Pendente — R$ {fmt(driver.car_valor_caucao || 0)}</span>}
+            </p>
           </div>
           {!driver.caucao_pago && isAprovado && (
-            <button onClick={handleConfirmCaucao} className="btn-primary text-sm flex items-center gap-1.5">
-              <Banknote className="w-4 h-4" /> Confirmar Manualmente
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={handleConfirmCaucao} className="btn-primary text-sm flex items-center gap-1.5">
+                <Banknote className="w-4 h-4" /> Confirmar Pagamento
+              </button>
+            </div>
           )}
         </div>
-        {isAprovado && driver.caucao_pago && !isAtivo && (
+
+        {/* Botão Liberar/Revogar caução */}
+        {!driver.caucao_pago && isAprovado && (
+          <div className={`border rounded-lg p-3 mt-3 ${driver.caucao_liberada ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
+            {driver.caucao_liberada ? (
+              <>
+                <p className="text-sm text-amber-800 mb-1 font-medium">Caução liberada — motorista pode prosseguir sem pagamento.</p>
+                <p className="text-xs text-amber-600 mb-2">O motorista ainda poderá pagar a caução depois. Você pode revogar esta liberação a qualquer momento.</p>
+                <button onClick={handleLiberarCaucao} className="text-sm bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg hover:bg-amber-200 flex items-center gap-1.5">
+                  <XCircle className="w-4 h-4" /> Revogar Liberação
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-blue-800 mb-1 font-medium">Motorista não pagou a caução?</p>
+                <p className="text-xs text-blue-600 mb-2">Você pode liberar o carro mesmo sem o pagamento. O motorista poderá seguir para as demais etapas.</p>
+                <button onClick={handleLiberarCaucao} className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 flex items-center gap-1.5">
+                  <Unlock className="w-4 h-4" /> Liberar sem Caução
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {isAprovado && (driver.caucao_pago || driver.caucao_liberada) && !isAtivo && (
           <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-3">
-            <p className="text-sm font-medium text-green-800 mb-2">✅ Caução paga! Pronto para ativar.</p>
+            <p className="text-sm font-medium text-green-800 mb-2">
+              {driver.caucao_pago ? '✅ Caução paga!' : '✅ Caução liberada!'} Pronto para ativar.
+            </p>
             <button onClick={handleActivate} className="btn-primary flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> Ativar Motorista</button>
           </div>
         )}

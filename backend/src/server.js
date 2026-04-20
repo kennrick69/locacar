@@ -430,6 +430,14 @@ async function start() {
         await pool.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS fixado BOOLEAN DEFAULT false`);
         await pool.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS descricao TEXT`);
 
+        // Manutenção de veículos
+        await pool.query(`CREATE TABLE IF NOT EXISTS car_maintenance (
+          id SERIAL PRIMARY KEY, car_id INTEGER REFERENCES cars(id) ON DELETE CASCADE,
+          tipo VARCHAR(100) NOT NULL, descricao TEXT, data_realizacao DATE NOT NULL,
+          km_realizacao INTEGER, valor DECIMAL(10,2) DEFAULT 0, fornecedor VARCHAR(200),
+          observacoes TEXT, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW()
+        )`);
+
         // Tabela de cláusulas do contrato (editáveis pelo admin)
         await pool.query(`CREATE TABLE IF NOT EXISTS contract_clauses (
           id SERIAL PRIMARY KEY,

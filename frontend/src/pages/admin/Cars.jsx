@@ -3,7 +3,8 @@ import { carsAPI } from '../../services/api';
 import { toast } from 'react-toastify';
 import {
   Car, Plus, Pencil, Trash2, X, Upload, Search,
-  CheckCircle2, XCircle, Image, ChevronDown
+  CheckCircle2, XCircle, Image, ChevronDown, Wrench, Download,
+  Calendar, DollarSign, FileText
 } from 'lucide-react';
 
 // ========== BANCO DE MARCAS/MODELOS (BR) ==========
@@ -160,6 +161,15 @@ export default function AdminCars() {
   const [extraPhotos, setExtraPhotos] = useState([]);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
+  // Manutenção
+  const [maintModal, setMaintModal] = useState(null); // car object
+  const [maintList, setMaintList] = useState([]);
+  const [maintLoading, setMaintLoading] = useState(false);
+  const [maintForm, setMaintForm] = useState({ tipo: '', descricao: '', data_realizacao: '', km_realizacao: '', valor: '', fornecedor: '', observacoes: '' });
+  const [maintEditing, setMaintEditing] = useState(null); // id da manutenção editando
+  const [maintSaving, setMaintSaving] = useState(false);
+  const [maintFilter, setMaintFilter] = useState('');
+
   useEffect(() => { loadCars(); }, []);
 
   const loadCars = async () => {
@@ -266,6 +276,96 @@ export default function AdminCars() {
     }));
   };
 
+  // ========== MANUTENÇÃO ==========
+  const MAINT_TIPOS = [
+    'Troca de óleo', 'Troca de filtro de óleo', 'Troca de filtro de ar', 'Troca de filtro de combustível',
+    'Troca de filtro de cabine', 'Troca de bateria', 'Troca de pneu(s)', 'Alinhamento e balanceamento',
+    'Troca de pastilha de freio', 'Troca de disco de freio', 'Troca de amortecedor', 'Troca de coxim',
+    'Troca de correia dentada', 'Troca de correia do alternador', 'Troca de embreagem',
+    'Troca de vela de ignição', 'Troca de bobina', 'Troca de radiador', 'Troca de mangueira',
+    'Troca de terminal de direção', 'Troca de pivô', 'Troca de bieleta', 'Troca de rolamento',
+    'Troca de junta homocinética', 'Troca de bomba d\'água', 'Troca de bomba de combustível',
+    'Troca de sensor', 'Troca de lâmpada/farol', 'Troca de para-brisa', 'Troca de retrovisor',
+    'Funilaria e pintura', 'Polimento e cristalização', 'Lavagem detalhada', 'Higienização do A/C',
+    'Revisão geral', 'Diagnóstico eletrônico', 'Reparo elétrico', 'Reparo no motor',
+    'Reparo na transmissão', 'Reparo na suspensão', 'Reparo no ar-condicionado',
+    'Guincho / Reboque', 'Vistoria / Laudo', 'Outro',
+  ];
+
+  const openMaintenance = async (car) => {
+    setMaintModal(car);
+    setMaintForm({ tipo: '', descricao: '', data_realizacao: new Date().toISOString().split('T')[0], km_realizacao: '', valor: '', fornecedor: '', observacoes: '' });
+    setMaintEditing(null);
+    setMaintFilter('');
+    setMaintLoading(true);
+    try {
+      const res = await carsAPI.getMaintenance(car.id);
+      setMaintList(res.data);
+    } catch { setMaintList([]); }
+    finally { setMaintLoading(false); }
+  };
+
+  const handleSaveMaint = async () => {
+    if (!maintForm.tipo || !maintForm.data_realizacao) return toast.warning('Tipo e data são obrigatórios');
+    setMaintSaving(true);
+    try {
+      if (maintEditing) {
+        await carsAPI.updateMaintenance(maintModal.id, maintEditing, maintForm);
+        toast.success('Manutenção atualizada!');
+      } else {
+        await carsAPI.addMaintenance(maintModal.id, maintForm);
+        toast.success('Manutenção registrada!');
+      }
+      const res = await carsAPI.getMaintenance(maintModal.id);
+      setMaintList(res.data);
+      setMaintForm({ tipo: '', descricao: '', data_realizacao: new Date().toISOString().split('T')[0], km_realizacao: '', valor: '', fornecedor: '', observacoes: '' });
+      setMaintEditing(null);
+    } catch (e) { toast.error(e.response?.data?.error || 'Erro'); }
+    finally { setMaintSaving(false); }
+  };
+
+  const handleEditMaint = (m) => {
+    setMaintEditing(m.id);
+    setMaintForm({
+      tipo: m.tipo || '', descricao: m.descricao || '',
+      data_realizacao: m.data_realizacao ? m.data_realizacao.split('T')[0] : '',
+      km_realizacao: m.km_realizacao || '', valor: m.valor || '',
+      fornecedor: m.fornecedor || '', observacoes: m.observacoes || '',
+    });
+  };
+
+  const handleDeleteMaint = async (mid) => {
+    if (!confirm('Remover este registro de manutenção?')) return;
+    try {
+      await carsAPI.deleteMaintenance(maintModal.id, mid);
+      toast.success('Removido');
+      const res = await carsAPI.getMaintenance(maintModal.id);
+      setMaintList(res.data);
+    } catch { toast.error('Erro ao remover'); }
+  };
+
+  const handleDownloadReport = async (carId) => {
+    try {
+      const res = carId
+        ? await carsAPI.maintenanceReport(carId)
+        : await carsAPI.maintenanceReportAll();
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = carId ? `manutencao_${maintModal?.placa || carId}.csv` : 'manutencao_geral.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Relatório baixado!');
+    } catch { toast.error('Erro ao gerar relatório'); }
+  };
+
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('pt-BR') : '—';
+  const totalMaint = maintList.reduce((s, m) => s + parseFloat(m.valor || 0), 0);
+  const filteredMaint = maintList.filter(m =>
+    !maintFilter || `${m.tipo} ${m.descricao} ${m.fornecedor}`.toLowerCase().includes(maintFilter.toLowerCase())
+  );
+
   const filtered = cars.filter(c =>
     `${c.marca} ${c.modelo} ${c.placa} ${c.cor}`.toLowerCase().includes(search.toLowerCase())
   );
@@ -285,9 +385,14 @@ export default function AdminCars() {
           <h1 className="text-2xl font-bold text-gray-800">Carros</h1>
           <p className="text-gray-500 text-sm mt-1">{cars.length} veículos cadastrados</p>
         </div>
-        <button onClick={openNew} className="btn-primary flex items-center gap-2">
-          <Plus className="w-4 h-4" /> Novo Carro
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => handleDownloadReport(null)} className="btn-secondary flex items-center gap-2 text-sm" title="Relatório geral de manutenção de todos os veículos">
+            <FileText className="w-4 h-4" /> Relatório Manutenção
+          </button>
+          <button onClick={openNew} className="btn-primary flex items-center gap-2">
+            <Plus className="w-4 h-4" /> Novo Carro
+          </button>
+        </div>
       </div>
 
       <div className="relative">
@@ -339,6 +444,9 @@ export default function AdminCars() {
               <div className="flex gap-2 mt-3">
                 <button onClick={() => openEdit(car)} className="btn-secondary flex-1 text-sm flex items-center justify-center gap-1">
                   <Pencil className="w-3.5 h-3.5" /> Editar
+                </button>
+                <button onClick={() => openMaintenance(car)} className="px-3 py-2 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors" title="Manutenção">
+                  <Wrench className="w-4 h-4" />
                 </button>
                 <button onClick={() => setDeleteConfirm(car)} className="px-3 py-2 rounded-lg text-red-500 hover:bg-red-50 transition-colors">
                   <Trash2 className="w-4 h-4" />
@@ -543,6 +651,171 @@ export default function AdminCars() {
             <div className="flex gap-3">
               <button onClick={() => setDeleteConfirm(null)} className="btn-secondary flex-1">Cancelar</button>
               <button onClick={() => handleDelete(deleteConfirm.id)} className="btn-danger flex-1">Remover</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== MODAL MANUTENÇÃO ========== */}
+      {maintModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end md:items-center justify-center" onClick={() => setMaintModal(null)}>
+          <div className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-2xl max-h-[93vh] overflow-auto" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10">
+              <div>
+                <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                  <Wrench className="w-5 h-5 text-blue-600" />
+                  Manutenção — {maintModal.marca} {maintModal.modelo}
+                </h3>
+                <p className="text-xs text-gray-400">{maintModal.placa}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => handleDownloadReport(maintModal.id)} className="text-sm bg-green-50 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-100 flex items-center gap-1" title="Baixar relatório CSV">
+                  <Download className="w-3.5 h-3.5" /> Relatório
+                </button>
+                <button onClick={() => setMaintModal(null)} className="p-1 hover:bg-gray-100 rounded">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* Resumo */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-blue-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-blue-500">Total registros</p>
+                  <p className="text-xl font-bold text-blue-700">{maintList.length}</p>
+                </div>
+                <div className="bg-green-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-green-500">Total gasto</p>
+                  <p className="text-xl font-bold text-green-700">R$ {fmt(totalMaint)}</p>
+                </div>
+                <div className="bg-purple-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-purple-500">Última manutenção</p>
+                  <p className="text-sm font-bold text-purple-700">{maintList.length > 0 ? fmtDate(maintList[0].data_realizacao) : '—'}</p>
+                </div>
+              </div>
+
+              {/* Formulário */}
+              <div className="border rounded-xl p-4 bg-gray-50">
+                <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <Plus className="w-4 h-4" /> {maintEditing ? 'Editar Manutenção' : 'Registrar Manutenção'}
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Tipo *</label>
+                    <div className="relative">
+                      <input type="text" list="maint-tipos" value={maintForm.tipo}
+                        onChange={e => setMaintForm({ ...maintForm, tipo: e.target.value })}
+                        className="input-field text-sm" placeholder="Ex: Troca de óleo" />
+                      <datalist id="maint-tipos">
+                        {MAINT_TIPOS.map(t => <option key={t} value={t} />)}
+                      </datalist>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Data *</label>
+                    <input type="date" value={maintForm.data_realizacao}
+                      onChange={e => setMaintForm({ ...maintForm, data_realizacao: e.target.value })}
+                      className="input-field text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">KM do veículo</label>
+                    <input type="number" value={maintForm.km_realizacao}
+                      onChange={e => setMaintForm({ ...maintForm, km_realizacao: e.target.value })}
+                      className="input-field text-sm" placeholder="Ex: 45000" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Valor (R$)</label>
+                    <input type="number" step="0.01" value={maintForm.valor}
+                      onChange={e => setMaintForm({ ...maintForm, valor: e.target.value })}
+                      className="input-field text-sm" placeholder="0,00" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Fornecedor / Oficina</label>
+                    <input type="text" value={maintForm.fornecedor}
+                      onChange={e => setMaintForm({ ...maintForm, fornecedor: e.target.value })}
+                      className="input-field text-sm" placeholder="Nome da oficina" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Descrição</label>
+                    <input type="text" value={maintForm.descricao}
+                      onChange={e => setMaintForm({ ...maintForm, descricao: e.target.value })}
+                      className="input-field text-sm" placeholder="Detalhes do serviço realizado" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Observações</label>
+                    <input type="text" value={maintForm.observacoes}
+                      onChange={e => setMaintForm({ ...maintForm, observacoes: e.target.value })}
+                      className="input-field text-sm" placeholder="Notas adicionais (opcional)" />
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-3">
+                  <button onClick={handleSaveMaint} disabled={maintSaving}
+                    className="btn-primary text-sm flex items-center gap-1.5">
+                    {maintSaving ? 'Salvando...' : maintEditing ? <><CheckCircle2 className="w-3.5 h-3.5" /> Atualizar</> : <><Plus className="w-3.5 h-3.5" /> Registrar</>}
+                  </button>
+                  {maintEditing && (
+                    <button onClick={() => { setMaintEditing(null); setMaintForm({ tipo: '', descricao: '', data_realizacao: new Date().toISOString().split('T')[0], km_realizacao: '', valor: '', fornecedor: '', observacoes: '' }); }}
+                      className="btn-secondary text-sm">Cancelar</button>
+                  )}
+                </div>
+              </div>
+
+              {/* Lista / Histórico */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-gray-700">Histórico ({maintList.length})</p>
+                  {maintList.length > 3 && (
+                    <input type="text" value={maintFilter} onChange={e => setMaintFilter(e.target.value)}
+                      className="input-field text-xs w-48" placeholder="Filtrar..." />
+                  )}
+                </div>
+
+                {maintLoading ? (
+                  <div className="flex justify-center py-8">
+                    <div className="w-6 h-6 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+                  </div>
+                ) : filteredMaint.length === 0 ? (
+                  <p className="text-center text-gray-400 text-sm py-6">Nenhuma manutenção registrada</p>
+                ) : (
+                  <div className="space-y-2 max-h-[40vh] overflow-auto">
+                    {filteredMaint.map(m => (
+                      <div key={m.id} className={`border rounded-lg p-3 ${maintEditing === m.id ? 'border-blue-400 bg-blue-50' : 'bg-white hover:bg-gray-50'} transition-colors`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-semibold text-gray-800">{m.tipo}</span>
+                              <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <Calendar className="w-3 h-3" /> {fmtDate(m.data_realizacao)}
+                              </span>
+                              {parseFloat(m.valor) > 0 && (
+                                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                                  R$ {fmt(m.valor)}
+                                </span>
+                              )}
+                              {m.km_realizacao && (
+                                <span className="text-xs text-gray-400">{parseInt(m.km_realizacao).toLocaleString('pt-BR')} km</span>
+                              )}
+                            </div>
+                            {m.descricao && <p className="text-xs text-gray-500 mt-1">{m.descricao}</p>}
+                            {m.fornecedor && <p className="text-xs text-gray-400 mt-0.5">Oficina: {m.fornecedor}</p>}
+                            {m.observacoes && <p className="text-xs text-gray-400 italic mt-0.5">{m.observacoes}</p>}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button onClick={() => handleEditMaint(m)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="Editar">
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => handleDeleteMaint(m.id)} className="p-1.5 text-red-400 hover:bg-red-50 rounded" title="Remover">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

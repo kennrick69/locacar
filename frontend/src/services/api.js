@@ -55,6 +55,13 @@ export const carsAPI = {
   }),
   removePhoto: (id, url) => api.delete(`/cars/${id}/photos`, { data: { url } }),
   delete: (id) => api.delete(`/cars/${id}`),
+  // Manutenção
+  getMaintenance: (id) => api.get(`/cars/${id}/maintenance`),
+  addMaintenance: (id, data) => api.post(`/cars/${id}/maintenance`, data),
+  updateMaintenance: (id, mid, data) => api.put(`/cars/${id}/maintenance/${mid}`, data),
+  deleteMaintenance: (id, mid) => api.delete(`/cars/${id}/maintenance/${mid}`),
+  maintenanceReport: (id) => api.get(`/cars/${id}/maintenance/report`, { responseType: 'blob' }),
+  maintenanceReportAll: () => api.get('/cars/maintenance/report-all', { responseType: 'blob' }),
 };
 
 // ========== PROPERTIES ==========
@@ -124,6 +131,7 @@ export const driversAPI = {
   activate: (id) => api.patch(`/drivers/${id}/activate`),
   confirmContract: (id) => api.patch(`/drivers/${id}/confirm-contract`),
   confirmCaucao: (id) => api.patch(`/drivers/${id}/confirm-caucao`),
+  liberarCaucao: (id, liberar = true) => api.patch(`/drivers/${id}/liberar-caucao`, { liberar }),
   createCharge: (driverId, data) => api.post(`/drivers/${driverId}/charges`, data),
   approveAbatimento: (driverId, abatId) => api.patch(`/drivers/${driverId}/abatimentos/${abatId}/approve`),
   addAcrescimo: (driverId, data) => api.post(`/drivers/${driverId}/acrescimos`, data),

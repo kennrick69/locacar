@@ -1034,12 +1034,12 @@ router.patch('/:id/activate', auth, adminOnly, async (req, res) => {
     const result = await pool.query(`
       UPDATE driver_profiles
       SET status = 'ativo', data_inicio = NOW(), updated_at = NOW()
-      WHERE id = $1 AND status = 'aprovado' AND caucao_pago = true
+      WHERE id = $1 AND status = 'aprovado' AND (caucao_pago = true OR caucao_liberada = true)
       RETURNING *
     `, [req.params.id]);
 
     if (result.rows.length === 0) {
-      return res.status(400).json({ error: 'Motorista precisa estar aprovado e com caução paga para ativar' });
+      return res.status(400).json({ error: 'Motorista precisa estar aprovado e com caução paga (ou liberada) para ativar' });
     }
 
     res.json(result.rows[0]);
@@ -1099,6 +1099,42 @@ router.patch('/:id/confirm-caucao', auth, adminOnly, async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Erro ao confirmar caução manualmente:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
+ * PATCH /api/drivers/:id/liberar-caucao - Admin: liberar motorista sem caução paga
+ */
+router.patch('/:id/liberar-caucao', auth, adminOnly, async (req, res) => {
+  try {
+    const driverId = req.params.id;
+    const { liberar } = req.body; // true para liberar, false para revogar
+
+    const result = await pool.query(`
+      UPDATE driver_profiles
+      SET caucao_liberada = $2, updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `, [driverId, liberar !== false]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Motorista não encontrado' });
+    }
+
+    const full = await pool.query(`
+      SELECT dp.*, u.nome, u.email, u.cpf, u.telefone,
+             c.marca AS car_marca, c.modelo AS car_modelo, c.placa AS car_placa,
+             c.valor_semanal AS car_valor_semanal, c.valor_caucao AS car_valor_caucao
+      FROM driver_profiles dp
+      JOIN users u ON u.id = dp.user_id
+      LEFT JOIN cars c ON c.id = dp.car_id
+      WHERE dp.id = $1
+    `, [driverId]);
+
+    res.json(full.rows[0]);
+  } catch (err) {
+    console.error('Erro ao liberar caução:', err);
     res.status(500).json({ error: 'Erro interno' });
   }
 });

@@ -53,6 +53,42 @@ router.get('/all', auth, adminOnly, async (req, res) => {
 });
 
 /**
+ * GET /api/cars/maintenance/report-all - Relatório geral de manutenção (CSV)
+ * (deve ficar ANTES de /:id para não conflitar)
+ */
+router.get('/maintenance/report-all', auth, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT cm.*, c.marca, c.modelo, c.placa
+      FROM car_maintenance cm
+      JOIN cars c ON c.id = cm.car_id
+      ORDER BY cm.data_realizacao DESC
+    `);
+
+    const BOM = '\uFEFF';
+    let csv = BOM + `Relatório Geral de Manutenção - Todos os Veículos\n`;
+    csv += `Gerado em: ${new Date().toLocaleDateString('pt-BR')}\n\n`;
+    csv += 'Veículo;Placa;Data;Tipo;Descrição;KM;Valor (R$);Fornecedor;Observações\n';
+
+    let totalGasto = 0;
+    for (const m of result.rows) {
+      const data = m.data_realizacao ? new Date(m.data_realizacao).toLocaleDateString('pt-BR') : '';
+      const valor = parseFloat(m.valor || 0);
+      totalGasto += valor;
+      csv += `${m.marca} ${m.modelo};${m.placa};${data};${m.tipo || ''};${(m.descricao || '').replace(/;/g, ',')};${m.km_realizacao || ''};${valor.toFixed(2).replace('.', ',')};${(m.fornecedor || '').replace(/;/g, ',')};${(m.observacoes || '').replace(/;/g, ',')}\n`;
+    }
+    csv += `\n;;;;;;;;\nTotal: ${result.rows.length} manutenções;;;;Total gasto:;;${totalGasto.toFixed(2).replace('.', ',')};;\n`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename=manutencao_geral_${Date.now()}.csv`);
+    res.send(csv);
+  } catch (err) {
+    console.error('Erro ao gerar relatório geral:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
  * GET /api/cars/:id - Detalhe público (sem placa)
  */
 router.get('/:id', async (req, res) => {
@@ -213,6 +249,121 @@ router.delete('/:id', auth, adminOnly, async (req, res) => {
     res.json({ message: 'Carro removido' });
   } catch (err) {
     console.error('Erro ao remover carro:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+// ========== MANUTENÇÃO DE VEÍCULOS ==========
+
+/**
+ * GET /api/cars/:id/maintenance - Listar manutenções de um carro
+ */
+router.get('/:id/maintenance', auth, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM car_maintenance WHERE car_id = $1 ORDER BY data_realizacao DESC',
+      [req.params.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Erro ao listar manutenções:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
+ * POST /api/cars/:id/maintenance - Adicionar manutenção
+ */
+router.post('/:id/maintenance', auth, adminOnly, async (req, res) => {
+  try {
+    const { tipo, descricao, data_realizacao, km_realizacao, valor, fornecedor, observacoes } = req.body;
+    if (!tipo || !data_realizacao) {
+      return res.status(400).json({ error: 'Tipo e data são obrigatórios' });
+    }
+    const result = await pool.query(`
+      INSERT INTO car_maintenance (car_id, tipo, descricao, data_realizacao, km_realizacao, valor, fornecedor, observacoes)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *
+    `, [req.params.id, tipo, descricao || null, data_realizacao, km_realizacao || null,
+        valor || 0, fornecedor || null, observacoes || null]);
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Erro ao adicionar manutenção:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
+ * PUT /api/cars/:id/maintenance/:mid - Atualizar manutenção
+ */
+router.put('/:id/maintenance/:mid', auth, adminOnly, async (req, res) => {
+  try {
+    const { tipo, descricao, data_realizacao, km_realizacao, valor, fornecedor, observacoes } = req.body;
+    const result = await pool.query(`
+      UPDATE car_maintenance
+      SET tipo = $1, descricao = $2, data_realizacao = $3, km_realizacao = $4,
+          valor = $5, fornecedor = $6, observacoes = $7, updated_at = NOW()
+      WHERE id = $8 AND car_id = $9 RETURNING *
+    `, [tipo, descricao || null, data_realizacao, km_realizacao || null,
+        valor || 0, fornecedor || null, observacoes || null,
+        req.params.mid, req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Manutenção não encontrada' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Erro ao atualizar manutenção:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
+ * DELETE /api/cars/:id/maintenance/:mid - Remover manutenção
+ */
+router.delete('/:id/maintenance/:mid', auth, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM car_maintenance WHERE id = $1 AND car_id = $2 RETURNING id',
+      [req.params.mid, req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Manutenção não encontrada' });
+    res.json({ message: 'Removida' });
+  } catch (err) {
+    console.error('Erro ao remover manutenção:', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+/**
+ * GET /api/cars/:id/maintenance/report - Relatório de manutenção (CSV)
+ */
+router.get('/:id/maintenance/report', auth, adminOnly, async (req, res) => {
+  try {
+    const car = await pool.query('SELECT marca, modelo, placa FROM cars WHERE id = $1', [req.params.id]);
+    if (car.rows.length === 0) return res.status(404).json({ error: 'Carro não encontrado' });
+
+    const result = await pool.query(
+      'SELECT * FROM car_maintenance WHERE car_id = $1 ORDER BY data_realizacao DESC',
+      [req.params.id]
+    );
+
+    const c = car.rows[0];
+    const BOM = '\uFEFF';
+    let csv = BOM + `Relatório de Manutenção - ${c.marca} ${c.modelo} (${c.placa})\n`;
+    csv += `Gerado em: ${new Date().toLocaleDateString('pt-BR')}\n\n`;
+    csv += 'Data;Tipo;Descrição;KM;Valor (R$);Fornecedor;Observações\n';
+
+    let totalGasto = 0;
+    for (const m of result.rows) {
+      const data = m.data_realizacao ? new Date(m.data_realizacao).toLocaleDateString('pt-BR') : '';
+      const valor = parseFloat(m.valor || 0);
+      totalGasto += valor;
+      csv += `${data};${m.tipo || ''};${(m.descricao || '').replace(/;/g, ',')};${m.km_realizacao || ''};${valor.toFixed(2).replace('.', ',')};${(m.fornecedor || '').replace(/;/g, ',')};${(m.observacoes || '').replace(/;/g, ',')}\n`;
+    }
+    csv += `\n;;;;;;\nTotal: ${result.rows.length} manutenções;;Total gasto:;;${totalGasto.toFixed(2).replace('.', ',')};;\n`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename=manutencao_${c.placa}_${Date.now()}.csv`);
+    res.send(csv);
+  } catch (err) {
+    console.error('Erro ao gerar relatório:', err);
     res.status(500).json({ error: 'Erro interno' });
   }
 });

@@ -129,6 +129,7 @@ export default function DriverJourney() {
   const hasContrato = !!profile?.contrato_url;
   const hasSelfie = !!profile?.selfie_url;
   const caucaoPaga = profile?.caucao_pago === true;
+  const caucaoLiberada = profile?.caucao_liberada === true;
   const vistoriaDocs = documents.filter(d => d.tipo === 'vistoria_retirada');
   const isAprovado = ['aprovado', 'ativo', 'inadimplente'].includes(status);
   const isAtivo = ['ativo', 'inadimplente'].includes(status);
@@ -161,7 +162,7 @@ export default function DriverJourney() {
       id: 'pagamento',
       label: 'Pagamento da Caução',
       icon: Banknote,
-      done: caucaoPaga,
+      done: caucaoPaga || caucaoLiberada,
       available: true,
       waitMsg: null,
     },
@@ -255,7 +256,7 @@ export default function DriverJourney() {
       {/* Aviso de pagamentos pendentes */}
       {(() => {
         const temDivida = balance && parseFloat(balance.saldo_devedor || 0) > 0;
-        const caucaoPendente = profile?.car_id && profile?.contrato_confirmado && !profile?.caucao_pago;
+        const caucaoPendente = profile?.car_id && profile?.contrato_confirmado && !profile?.caucao_pago && !profile?.caucao_liberada;
         if (temDivida || caucaoPendente) return (
           <div className="card border-l-4 border-yellow-500 bg-yellow-50 flex items-center justify-between gap-3">
             <div className="flex items-start gap-3">
@@ -599,6 +600,10 @@ export default function DriverJourney() {
                           <span className="text-sm bg-green-100 text-green-700 px-3 py-1.5 rounded-lg font-medium flex items-center gap-1">
                             <CheckCircle2 className="w-4 h-4" /> Paga
                           </span>
+                        ) : caucaoLiberada ? (
+                          <span className="text-sm bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg font-medium flex items-center gap-1">
+                            <CheckCircle2 className="w-4 h-4" /> Liberada
+                          </span>
                         ) : (
                           <button onClick={() => navigate('/motorista/pagamentos')}
                             className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 flex items-center gap-2">
@@ -606,7 +611,10 @@ export default function DriverJourney() {
                           </button>
                         )}
                       </div>
-                      {!caucaoPaga && (
+                      {caucaoLiberada && !caucaoPaga && (
+                        <p className="text-xs text-amber-600 text-center">Caução liberada pela administração. Você pode prosseguir para as próximas etapas.</p>
+                      )}
+                      {!caucaoPaga && !caucaoLiberada && (
                         <p className="text-xs text-gray-400 text-center">Você será redirecionado para a página de pagamentos</p>
                       )}
                     </div>
