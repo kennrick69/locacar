@@ -442,6 +442,7 @@ async function start() {
           created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW()
         )`);
         await pool.query(`ALTER TABLE car_maintenance ADD COLUMN IF NOT EXISTS abatimento_id INTEGER REFERENCES abatimentos(id) ON DELETE SET NULL`);
+        await pool.query(`ALTER TABLE car_maintenance ADD COLUMN IF NOT EXISTS nota_url TEXT`);
 
         // Tabela de cláusulas do contrato (editáveis pelo admin)
         await pool.query(`CREATE TABLE IF NOT EXISTS contract_clauses (

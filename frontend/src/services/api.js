@@ -57,8 +57,12 @@ export const carsAPI = {
   delete: (id) => api.delete(`/cars/${id}`),
   // Manutenção
   getMaintenance: (id) => api.get(`/cars/${id}/maintenance`),
-  addMaintenance: (id, data) => api.post(`/cars/${id}/maintenance`, data),
-  updateMaintenance: (id, mid, data) => api.put(`/cars/${id}/maintenance/${mid}`, data),
+  addMaintenance: (id, formData) => api.post(`/cars/${id}/maintenance`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  updateMaintenance: (id, mid, formData) => api.put(`/cars/${id}/maintenance/${mid}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
   deleteMaintenance: (id, mid) => api.delete(`/cars/${id}/maintenance/${mid}`),
   maintenanceReport: (id) => api.get(`/cars/${id}/maintenance/report`, { responseType: 'blob' }),
   maintenanceReportAll: () => api.get('/cars/maintenance/report-all', { responseType: 'blob' }),

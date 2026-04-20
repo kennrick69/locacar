@@ -162,6 +162,7 @@ export default function AdminCars() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   // Manutenção
+  const maintNotaRef = useRef(null);
   const [maintModal, setMaintModal] = useState(null); // car object
   const [maintList, setMaintList] = useState([]);
   const [maintLoading, setMaintLoading] = useState(false);
@@ -309,17 +310,23 @@ export default function AdminCars() {
     if (!maintForm.tipo || !maintForm.data_realizacao) return toast.warning('Tipo e data são obrigatórios');
     setMaintSaving(true);
     try {
+      const fd = new FormData();
+      Object.entries(maintForm).forEach(([k, v]) => { if (v !== '' && v !== undefined) fd.append(k, v); });
+      const file = maintNotaRef.current?.files?.[0];
+      if (file) fd.append('nota', file);
+
       if (maintEditing) {
-        await carsAPI.updateMaintenance(maintModal.id, maintEditing, maintForm);
+        await carsAPI.updateMaintenance(maintModal.id, maintEditing, fd);
         toast.success('Manutenção atualizada!');
       } else {
-        await carsAPI.addMaintenance(maintModal.id, maintForm);
+        await carsAPI.addMaintenance(maintModal.id, fd);
         toast.success('Manutenção registrada!');
       }
       const res = await carsAPI.getMaintenance(maintModal.id);
       setMaintList(res.data);
       setMaintForm({ tipo: '', descricao: '', data_realizacao: new Date().toISOString().split('T')[0], km_realizacao: '', valor: '', fornecedor: '', observacoes: '' });
       setMaintEditing(null);
+      if (maintNotaRef.current) maintNotaRef.current.value = '';
     } catch (e) { toast.error(e.response?.data?.error || 'Erro'); }
     finally { setMaintSaving(false); }
   };
@@ -349,14 +356,14 @@ export default function AdminCars() {
       const res = carId
         ? await carsAPI.maintenanceReport(carId)
         : await carsAPI.maintenanceReportAll();
-      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = carId ? `manutencao_${maintModal?.placa || carId}.csv` : 'manutencao_geral.csv';
+      a.download = carId ? `manutencao_${maintModal?.placa || carId}.pdf` : 'manutencao_geral.pdf';
       a.click();
       URL.revokeObjectURL(url);
-      toast.success('Relatório baixado!');
+      toast.success('Relatório PDF baixado!');
     } catch { toast.error('Erro ao gerar relatório'); }
   };
 
@@ -749,6 +756,10 @@ export default function AdminCars() {
                       onChange={e => setMaintForm({ ...maintForm, observacoes: e.target.value })}
                       className="input-field text-sm" placeholder="Notas adicionais (opcional)" />
                   </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Nota Fiscal / Comprovante (foto ou PDF)</label>
+                    <input type="file" ref={maintNotaRef} accept="image/*,.pdf" className="input-field text-sm" />
+                  </div>
                 </div>
                 <div className="flex gap-2 mt-3">
                   <button onClick={handleSaveMaint} disabled={maintSaving}
@@ -756,7 +767,7 @@ export default function AdminCars() {
                     {maintSaving ? 'Salvando...' : maintEditing ? <><CheckCircle2 className="w-3.5 h-3.5" /> Atualizar</> : <><Plus className="w-3.5 h-3.5" /> Registrar</>}
                   </button>
                   {maintEditing && (
-                    <button onClick={() => { setMaintEditing(null); setMaintForm({ tipo: '', descricao: '', data_realizacao: new Date().toISOString().split('T')[0], km_realizacao: '', valor: '', fornecedor: '', observacoes: '' }); }}
+                    <button onClick={() => { setMaintEditing(null); setMaintForm({ tipo: '', descricao: '', data_realizacao: new Date().toISOString().split('T')[0], km_realizacao: '', valor: '', fornecedor: '', observacoes: '' }); if (maintNotaRef.current) maintNotaRef.current.value = ''; }}
                       className="btn-secondary text-sm">Cancelar</button>
                   )}
                 </div>
@@ -807,12 +818,20 @@ export default function AdminCars() {
                             {m.fornecedor && <p className="text-xs text-gray-400 mt-0.5">Oficina: {m.fornecedor}</p>}
                             {m.motorista_nome && <p className="text-xs text-amber-600 mt-0.5 flex items-center gap-1"><User className="w-3 h-3" /> Custeado por {m.motorista_nome}</p>}
                             {m.observacoes && <p className="text-xs text-gray-400 italic mt-0.5">{m.observacoes}</p>}
-                            {m.comprovante_url && (
-                              <a href={m.comprovante_url} target="_blank" rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 mt-1">
-                                <Eye className="w-3 h-3" /> Ver comprovante
-                              </a>
-                            )}
+                            <div className="flex flex-wrap gap-3 mt-1">
+                              {m.nota_url && (
+                                <a href={m.nota_url} target="_blank" rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-green-600 hover:text-green-700">
+                                  <FileText className="w-3 h-3" /> Nota fiscal
+                                </a>
+                              )}
+                              {m.comprovante_url && (
+                                <a href={m.comprovante_url} target="_blank" rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
+                                  <Eye className="w-3 h-3" /> Comprovante motorista
+                                </a>
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
                             <button onClick={() => handleEditMaint(m)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="Editar">

@@ -1,5 +1,6 @@
 const express = require('express');
 const pool = require('../config/database');
+const PDFDocument = require('pdfkit');
 const { auth, adminOnly } = require('../middleware/auth');
 const { upload, setUploadDir, processUpload, processUploads } = require('../middleware/upload');
 
@@ -53,35 +54,71 @@ router.get('/all', auth, adminOnly, async (req, res) => {
 });
 
 /**
- * GET /api/cars/maintenance/report-all - Relatório geral de manutenção (CSV)
+ * GET /api/cars/maintenance/report-all - Relatório geral de manutenção (PDF)
  * (deve ficar ANTES de /:id para não conflitar)
  */
 router.get('/maintenance/report-all', auth, adminOnly, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT cm.*, c.marca, c.modelo, c.placa
+      SELECT cm.*, c.marca, c.modelo, c.placa,
+             u.nome AS motorista_nome
       FROM car_maintenance cm
       JOIN cars c ON c.id = cm.car_id
+      LEFT JOIN abatimentos a ON a.id = cm.abatimento_id
+      LEFT JOIN driver_profiles dp ON dp.id = a.driver_id
+      LEFT JOIN users u ON u.id = dp.user_id
       ORDER BY cm.data_realizacao DESC
     `);
 
-    const BOM = '\uFEFF';
-    let csv = BOM + `Relatório Geral de Manutenção - Todos os Veículos\n`;
-    csv += `Gerado em: ${new Date().toLocaleDateString('pt-BR')}\n\n`;
-    csv += 'Veículo;Placa;Data;Tipo;Descrição;KM;Valor (R$);Fornecedor;Observações\n';
+    const doc = new PDFDocument({ size: 'A4', margins: { top: 50, bottom: 50, left: 40, right: 40 }, bufferPages: true });
+    const chunks = [];
+    doc.on('data', chunk => chunks.push(chunk));
+    doc.on('end', () => {
+      const buffer = Buffer.concat(chunks);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'attachment; filename=manutencao_geral.pdf');
+      res.send(buffer);
+    });
 
-    let totalGasto = 0;
+    // Agrupa por veículo
+    const porVeiculo = {};
     for (const m of result.rows) {
-      const data = m.data_realizacao ? new Date(m.data_realizacao).toLocaleDateString('pt-BR') : '';
-      const valor = parseFloat(m.valor || 0);
-      totalGasto += valor;
-      csv += `${m.marca} ${m.modelo};${m.placa};${data};${m.tipo || ''};${(m.descricao || '').replace(/;/g, ',')};${m.km_realizacao || ''};${valor.toFixed(2).replace('.', ',')};${(m.fornecedor || '').replace(/;/g, ',')};${(m.observacoes || '').replace(/;/g, ',')}\n`;
+      const key = `${m.marca} ${m.modelo} (${m.placa})`;
+      if (!porVeiculo[key]) porVeiculo[key] = [];
+      porVeiculo[key].push(m);
     }
-    csv += `\n;;;;;;;;\nTotal: ${result.rows.length} manutenções;;;;Total gasto:;;${totalGasto.toFixed(2).replace('.', ',')};;\n`;
 
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename=manutencao_geral_${Date.now()}.csv`);
-    res.send(csv);
+    const fmt = (v) => parseFloat(v || 0).toFixed(2).replace('.', ',');
+    const pageW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+    // Capa
+    doc.font('Helvetica-Bold').fontSize(18).text('IMP Locadora', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.font('Helvetica-Bold').fontSize(14).text('Relatório Geral de Manutenção', { align: 'center' });
+    doc.font('Helvetica').fontSize(10).fillColor('#666').text(`Todos os Veículos`, { align: 'center' });
+    doc.moveDown(0.3);
+    doc.fontSize(9).text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, { align: 'right' });
+    doc.fillColor('#000');
+    doc.moveDown(0.5);
+
+    // Resumo
+    let totalGeralGasto = 0;
+    let totalGeralItens = 0;
+    for (const items of Object.values(porVeiculo)) {
+      totalGeralItens += items.length;
+      totalGeralGasto += items.reduce((s, m) => s + parseFloat(m.valor || 0), 0);
+    }
+    doc.font('Helvetica-Bold').fontSize(11).text(`${Object.keys(porVeiculo).length} veículos | ${totalGeralItens} manutenções | Total: R$ ${fmt(totalGeralGasto)}`);
+    doc.moveDown(0.5);
+    doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ccc').stroke();
+
+    // Cada veículo
+    for (const [veiculo, items] of Object.entries(porVeiculo)) {
+      doc.addPage();
+      gerarPdfManutencao(doc, `Manutenção`, veiculo, items);
+    }
+
+    doc.end();
   } catch (err) {
     console.error('Erro ao gerar relatório geral:', err);
     res.status(500).json({ error: 'Erro interno' });
@@ -277,19 +314,20 @@ router.get('/:id/maintenance', auth, adminOnly, async (req, res) => {
 });
 
 /**
- * POST /api/cars/:id/maintenance - Adicionar manutenção
+ * POST /api/cars/:id/maintenance - Adicionar manutenção (com nota fiscal opcional)
  */
-router.post('/:id/maintenance', auth, adminOnly, async (req, res) => {
+router.post('/:id/maintenance', auth, adminOnly, setUploadDir('manutencao'), upload.single('nota'), async (req, res) => {
   try {
     const { tipo, descricao, data_realizacao, km_realizacao, valor, fornecedor, observacoes } = req.body;
     if (!tipo || !data_realizacao) {
       return res.status(400).json({ error: 'Tipo e data são obrigatórios' });
     }
+    const notaUrl = await processUpload(req.file, 'manutencao');
     const result = await pool.query(`
-      INSERT INTO car_maintenance (car_id, tipo, descricao, data_realizacao, km_realizacao, valor, fornecedor, observacoes)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *
+      INSERT INTO car_maintenance (car_id, tipo, descricao, data_realizacao, km_realizacao, valor, fornecedor, observacoes, nota_url)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *
     `, [req.params.id, tipo, descricao || null, data_realizacao, km_realizacao || null,
-        valor || 0, fornecedor || null, observacoes || null]);
+        valor || 0, fornecedor || null, observacoes || null, notaUrl]);
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Erro ao adicionar manutenção:', err);
@@ -298,19 +336,32 @@ router.post('/:id/maintenance', auth, adminOnly, async (req, res) => {
 });
 
 /**
- * PUT /api/cars/:id/maintenance/:mid - Atualizar manutenção
+ * PUT /api/cars/:id/maintenance/:mid - Atualizar manutenção (com nota fiscal opcional)
  */
-router.put('/:id/maintenance/:mid', auth, adminOnly, async (req, res) => {
+router.put('/:id/maintenance/:mid', auth, adminOnly, setUploadDir('manutencao'), upload.single('nota'), async (req, res) => {
   try {
     const { tipo, descricao, data_realizacao, km_realizacao, valor, fornecedor, observacoes } = req.body;
-    const result = await pool.query(`
-      UPDATE car_maintenance
-      SET tipo = $1, descricao = $2, data_realizacao = $3, km_realizacao = $4,
-          valor = $5, fornecedor = $6, observacoes = $7, updated_at = NOW()
-      WHERE id = $8 AND car_id = $9 RETURNING *
-    `, [tipo, descricao || null, data_realizacao, km_realizacao || null,
+    const notaUrl = await processUpload(req.file, 'manutencao');
+
+    let query, params;
+    if (notaUrl) {
+      query = `UPDATE car_maintenance
+        SET tipo = $1, descricao = $2, data_realizacao = $3, km_realizacao = $4,
+            valor = $5, fornecedor = $6, observacoes = $7, nota_url = $8, updated_at = NOW()
+        WHERE id = $9 AND car_id = $10 RETURNING *`;
+      params = [tipo, descricao || null, data_realizacao, km_realizacao || null,
+        valor || 0, fornecedor || null, observacoes || null, notaUrl,
+        req.params.mid, req.params.id];
+    } else {
+      query = `UPDATE car_maintenance
+        SET tipo = $1, descricao = $2, data_realizacao = $3, km_realizacao = $4,
+            valor = $5, fornecedor = $6, observacoes = $7, updated_at = NOW()
+        WHERE id = $8 AND car_id = $9 RETURNING *`;
+      params = [tipo, descricao || null, data_realizacao, km_realizacao || null,
         valor || 0, fornecedor || null, observacoes || null,
-        req.params.mid, req.params.id]);
+        req.params.mid, req.params.id];
+    }
+    const result = await pool.query(query, params);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Manutenção não encontrada' });
     res.json(result.rows[0]);
   } catch (err) {
@@ -336,37 +387,149 @@ router.delete('/:id/maintenance/:mid', auth, adminOnly, async (req, res) => {
   }
 });
 
+// ========== GERADOR DE PDF DE MANUTENÇÃO ==========
+function gerarPdfManutencao(doc, titulo, subtitulo, rows) {
+  const fmt = (v) => parseFloat(v || 0).toFixed(2).replace('.', ',');
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('pt-BR') : '—';
+  const pageW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+  // Cabeçalho
+  doc.font('Helvetica-Bold').fontSize(16).text('IMP Locadora', { align: 'center' });
+  doc.moveDown(0.3);
+  doc.font('Helvetica-Bold').fontSize(13).text(titulo, { align: 'center' });
+  if (subtitulo) {
+    doc.font('Helvetica').fontSize(10).fillColor('#666').text(subtitulo, { align: 'center' });
+  }
+  doc.fillColor('#000');
+  doc.moveDown(0.3);
+  doc.font('Helvetica').fontSize(9).text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, { align: 'right' });
+  doc.moveDown(0.5);
+
+  // Linha separadora
+  doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ccc').stroke();
+  doc.moveDown(0.5);
+
+  if (rows.length === 0) {
+    doc.font('Helvetica').fontSize(11).text('Nenhuma manutenção registrada.', { align: 'center' });
+    return 0;
+  }
+
+  // Colunas: Data | Tipo | Descrição | KM | Valor | Fornecedor
+  const cols = [
+    { label: 'Data', w: 58 },
+    { label: 'Tipo', w: 110 },
+    { label: 'Descrição', w: 110 },
+    { label: 'KM', w: 45 },
+    { label: 'Valor (R$)', w: 60 },
+    { label: 'Fornecedor', w: pageW - 58 - 110 - 110 - 45 - 60 },
+  ];
+
+  // Header da tabela
+  const drawHeader = () => {
+    const y = doc.y;
+    doc.rect(doc.page.margins.left, y, pageW, 18).fill('#2563eb');
+    let x = doc.page.margins.left + 4;
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#fff');
+    for (const col of cols) {
+      doc.text(col.label, x, y + 4, { width: col.w - 8, height: 14, ellipsis: true });
+      x += col.w;
+    }
+    doc.fillColor('#000');
+    doc.y = y + 20;
+  };
+
+  drawHeader();
+
+  let totalGasto = 0;
+  let even = false;
+
+  for (const m of rows) {
+    // Verificar se precisa nova página
+    if (doc.y + 28 > doc.page.height - 60) {
+      doc.addPage();
+      drawHeader();
+    }
+
+    const valor = parseFloat(m.valor || 0);
+    totalGasto += valor;
+
+    const y = doc.y;
+    if (even) {
+      doc.rect(doc.page.margins.left, y, pageW, 22).fill('#f3f4f6');
+    }
+
+    let x = doc.page.margins.left + 4;
+    doc.font('Helvetica').fontSize(7.5).fillColor('#333');
+
+    const cellData = [
+      fmtDate(m.data_realizacao),
+      m.tipo || '',
+      m.descricao || '',
+      m.km_realizacao ? parseInt(m.km_realizacao).toLocaleString('pt-BR') : '',
+      `R$ ${fmt(m.valor)}`,
+      m.fornecedor || '',
+    ];
+
+    for (let i = 0; i < cols.length; i++) {
+      doc.text(cellData[i], x, y + 3, { width: cols[i].w - 8, height: 18, ellipsis: true });
+      x += cols[i].w;
+    }
+
+    // Observações na linha de baixo se houver
+    if (m.observacoes || m.motorista_nome) {
+      doc.font('Helvetica-Oblique').fontSize(6.5).fillColor('#888');
+      const obs = [m.observacoes, m.motorista_nome ? `Motorista: ${m.motorista_nome}` : ''].filter(Boolean).join(' | ');
+      doc.text(obs, doc.page.margins.left + 4, y + 13, { width: pageW - 8, height: 10, ellipsis: true });
+    }
+
+    doc.fillColor('#000');
+    doc.y = y + 24;
+    even = !even;
+  }
+
+  // Totais
+  doc.moveDown(0.5);
+  doc.moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + pageW, doc.y).strokeColor('#ccc').stroke();
+  doc.moveDown(0.4);
+  doc.font('Helvetica-Bold').fontSize(10);
+  doc.text(`Total de manutenções: ${rows.length}`, doc.page.margins.left, doc.y, { continued: true });
+  doc.text(`Total gasto: R$ ${fmt(totalGasto)}`, { align: 'right' });
+
+  return totalGasto;
+}
+
 /**
- * GET /api/cars/:id/maintenance/report - Relatório de manutenção (CSV)
+ * GET /api/cars/:id/maintenance/report - Relatório de manutenção (PDF)
  */
 router.get('/:id/maintenance/report', auth, adminOnly, async (req, res) => {
   try {
-    const car = await pool.query('SELECT marca, modelo, placa FROM cars WHERE id = $1', [req.params.id]);
+    const car = await pool.query('SELECT marca, modelo, placa, ano FROM cars WHERE id = $1', [req.params.id]);
     if (car.rows.length === 0) return res.status(404).json({ error: 'Carro não encontrado' });
 
-    const result = await pool.query(
-      'SELECT * FROM car_maintenance WHERE car_id = $1 ORDER BY data_realizacao DESC',
-      [req.params.id]
-    );
+    const result = await pool.query(`
+      SELECT cm.*, u.nome AS motorista_nome
+      FROM car_maintenance cm
+      LEFT JOIN abatimentos a ON a.id = cm.abatimento_id
+      LEFT JOIN driver_profiles dp ON dp.id = a.driver_id
+      LEFT JOIN users u ON u.id = dp.user_id
+      WHERE cm.car_id = $1 ORDER BY cm.data_realizacao DESC
+    `, [req.params.id]);
 
     const c = car.rows[0];
-    const BOM = '\uFEFF';
-    let csv = BOM + `Relatório de Manutenção - ${c.marca} ${c.modelo} (${c.placa})\n`;
-    csv += `Gerado em: ${new Date().toLocaleDateString('pt-BR')}\n\n`;
-    csv += 'Data;Tipo;Descrição;KM;Valor (R$);Fornecedor;Observações\n';
+    const doc = new PDFDocument({ size: 'A4', margins: { top: 50, bottom: 50, left: 40, right: 40 }, bufferPages: true });
+    const chunks = [];
+    doc.on('data', chunk => chunks.push(chunk));
+    doc.on('end', () => {
+      const buffer = Buffer.concat(chunks);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=manutencao_${c.placa}.pdf`);
+      res.send(buffer);
+    });
 
-    let totalGasto = 0;
-    for (const m of result.rows) {
-      const data = m.data_realizacao ? new Date(m.data_realizacao).toLocaleDateString('pt-BR') : '';
-      const valor = parseFloat(m.valor || 0);
-      totalGasto += valor;
-      csv += `${data};${m.tipo || ''};${(m.descricao || '').replace(/;/g, ',')};${m.km_realizacao || ''};${valor.toFixed(2).replace('.', ',')};${(m.fornecedor || '').replace(/;/g, ',')};${(m.observacoes || '').replace(/;/g, ',')}\n`;
-    }
-    csv += `\n;;;;;;\nTotal: ${result.rows.length} manutenções;;Total gasto:;;${totalGasto.toFixed(2).replace('.', ',')};;\n`;
-
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename=manutencao_${c.placa}_${Date.now()}.csv`);
-    res.send(csv);
+    const titulo = `Relatório de Manutenção`;
+    const subtitulo = `${c.marca} ${c.modelo} ${c.ano || ''} — Placa: ${c.placa}`;
+    gerarPdfManutencao(doc, titulo, subtitulo, result.rows);
+    doc.end();
   } catch (err) {
     console.error('Erro ao gerar relatório:', err);
     res.status(500).json({ error: 'Erro interno' });
