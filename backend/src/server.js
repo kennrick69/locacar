@@ -430,6 +430,9 @@ async function start() {
         await pool.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS fixado BOOLEAN DEFAULT false`);
         await pool.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS descricao TEXT`);
 
+        // Liberação de caução
+        await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS caucao_liberada BOOLEAN DEFAULT false`);
+
         // Manutenção de veículos
         await pool.query(`CREATE TABLE IF NOT EXISTS car_maintenance (
           id SERIAL PRIMARY KEY, car_id INTEGER REFERENCES cars(id) ON DELETE CASCADE,
