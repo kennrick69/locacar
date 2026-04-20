@@ -323,12 +323,16 @@ export default function DriverPayments() {
 
       {/* CAUÇÃO — visível para motoristas com carro atribuído + contrato confirmado */}
       {!profile?.caucao_pago && profile?.car_id && profile?.contrato_confirmado && (
-        <div className="card border-2 border-brand-200">
+        <div className={`card border-2 ${profile?.caucao_liberada ? 'border-amber-300' : 'border-brand-200'}`}>
           <div className="flex items-center gap-3 mb-4">
-            <Shield className="w-6 h-6 text-brand-600" />
+            <Shield className={`w-6 h-6 ${profile?.caucao_liberada ? 'text-amber-500' : 'text-brand-600'}`} />
             <div>
               <h2 className="font-semibold text-gray-800">Pagamento do Caução</h2>
-              <p className="text-sm text-gray-500">Obrigatório para ativar sua conta</p>
+              <p className="text-sm text-gray-500">
+                {profile?.caucao_liberada
+                  ? 'Veiculo liberado, mas o valor da caucao ainda e devido'
+                  : 'Obrigatório para ativar sua conta'}
+              </p>
             </div>
           </div>
 

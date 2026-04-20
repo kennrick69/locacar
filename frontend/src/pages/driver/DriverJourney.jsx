@@ -162,7 +162,7 @@ export default function DriverJourney() {
       id: 'pagamento',
       label: 'Pagamento da Caução',
       icon: Banknote,
-      done: caucaoPaga || caucaoLiberada,
+      done: caucaoPaga,
       available: true,
       waitMsg: null,
     },
@@ -256,7 +256,7 @@ export default function DriverJourney() {
       {/* Aviso de pagamentos pendentes */}
       {(() => {
         const temDivida = balance && parseFloat(balance.saldo_devedor || 0) > 0;
-        const caucaoPendente = profile?.car_id && profile?.contrato_confirmado && !profile?.caucao_pago && !profile?.caucao_liberada;
+        const caucaoPendente = profile?.car_id && profile?.contrato_confirmado && !profile?.caucao_pago;
         if (temDivida || caucaoPendente) return (
           <div className="card border-l-4 border-yellow-500 bg-yellow-50 flex items-center justify-between gap-3">
             <div className="flex items-start gap-3">
@@ -600,10 +600,6 @@ export default function DriverJourney() {
                           <span className="text-sm bg-green-100 text-green-700 px-3 py-1.5 rounded-lg font-medium flex items-center gap-1">
                             <CheckCircle2 className="w-4 h-4" /> Paga
                           </span>
-                        ) : caucaoLiberada ? (
-                          <span className="text-sm bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg font-medium flex items-center gap-1">
-                            <CheckCircle2 className="w-4 h-4" /> Liberada
-                          </span>
                         ) : (
                           <button onClick={() => navigate('/motorista/pagamentos')}
                             className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 flex items-center gap-2">
@@ -612,7 +608,10 @@ export default function DriverJourney() {
                         )}
                       </div>
                       {caucaoLiberada && !caucaoPaga && (
-                        <p className="text-xs text-amber-600 text-center">Caução liberada pela administração. Você pode prosseguir para as próximas etapas.</p>
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                          <p className="text-sm text-amber-800 font-medium">Caução liberada — mas o valor ainda e devido.</p>
+                          <p className="text-xs text-amber-600 mt-1">A administracao liberou o veiculo, porem voce ainda deve o valor da caucao de <strong>R$ {fmt(profile?.car_valor_caucao || balance?.valor_caucao)}</strong>. Regularize o pagamento o quanto antes.</p>
+                        </div>
                       )}
                       {!caucaoPaga && !caucaoLiberada && (
                         <p className="text-xs text-gray-400 text-center">Você será redirecionado para a página de pagamentos</p>
