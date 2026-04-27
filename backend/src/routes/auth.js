@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../config/database');
 const { auth } = require('../middleware/auth');
+const { notifyAdmin } = require('../utils/email');
 
 const router = express.Router();
 
@@ -60,6 +61,44 @@ router.post('/register', async (req, res) => {
       INSERT INTO driver_profiles (user_id, token_externo, endereco_completo, car_interesse_id, property_interesse_id)
       VALUES ($1, $2, $3, $4, $5)
     `, [user.id, tokenExterno, endereco || null, car_interesse_id || null, property_interesse_id || null]);
+
+    // Notifica admin do novo cadastro (fire-and-forget)
+    if (process.env.RESEND_API_KEY) {
+      let interesseHtml = '<p>Sem carro/imóvel de interesse selecionado.</p>';
+      try {
+        if (car_interesse_id) {
+          const carRes = await pool.query(
+            'SELECT marca, modelo, ano, placa FROM cars WHERE id = $1',
+            [car_interesse_id]
+          );
+          const c = carRes.rows[0];
+          if (c) interesseHtml = `<p>Interesse: <strong>${c.marca} ${c.modelo} ${c.ano || ''} (${c.placa})</strong></p>`;
+        } else if (property_interesse_id) {
+          const propRes = await pool.query(
+            'SELECT titulo FROM properties WHERE id = $1',
+            [property_interesse_id]
+          );
+          const p = propRes.rows[0];
+          if (p) interesseHtml = `<p>Interesse: imóvel <strong>${p.titulo}</strong></p>`;
+        }
+      } catch (e) { /* ignora */ }
+
+      notifyAdmin({
+        subject: `[IMP Locadora] Novo cadastro: ${nome}`,
+        html: `
+          <h2>Novo motorista cadastrado</h2>
+          <p><strong>${nome}</strong> acabou de se cadastrar e quer alugar um veículo.</p>
+          ${interesseHtml}
+          <ul>
+            <li>Email: ${email}</li>
+            <li>Telefone: ${telefone}</li>
+            <li>CPF: ${cpfClean}</li>
+            ${endereco ? `<li>Endereço: ${endereco}</li>` : ''}
+          </ul>
+          <p>Acesse o painel admin para revisar e aprovar.</p>
+        `,
+      });
+    }
 
     // Gera JWT
     const token = jwt.sign(

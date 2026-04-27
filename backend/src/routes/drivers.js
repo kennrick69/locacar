@@ -2,9 +2,30 @@ const express = require('express');
 const pool = require('../config/database');
 const { auth, driverOnly, adminOnly } = require('../middleware/auth');
 const { upload, setUploadDir, processUpload } = require('../middleware/upload');
-const { sendEmail } = require('../utils/email');
+const { sendEmail, notifyAdmin } = require('../utils/email');
 
 const router = express.Router();
+
+/**
+ * Notifica o admin sobre ação do motorista que aguarda aprovação.
+ * Busca o nome do motorista no banco e dispara fire-and-forget.
+ */
+function notifyAdminAcaoMotorista(userId, acaoCurta, descricaoHtml) {
+  if (!process.env.RESEND_API_KEY) return;
+  pool.query('SELECT nome FROM users WHERE id = $1', [userId])
+    .then(r => {
+      const nome = r.rows[0]?.nome || `Motorista #${userId}`;
+      notifyAdmin({
+        subject: `[IMP Locadora] ${nome} ${acaoCurta}`,
+        html: `
+          <h2>Ação aguardando sua aprovação</h2>
+          <p><strong>${nome}</strong> ${descricaoHtml}</p>
+          <p>Acesse o painel admin para revisar.</p>
+        `,
+      });
+    })
+    .catch(err => console.warn('[NOTIFY ADMIN] busca nome falhou:', err.message));
+}
 
 // ========================================================
 //  ROTAS DO MOTORISTA
@@ -166,11 +187,23 @@ router.post('/me/documents',
         const p = profile.rows[0];
         // Selfie é enviada na fase do contrato, não no cadastro
         if (p.cnh_url && p.comprovante_url && p.perfil_app_url) {
-          await pool.query(`
+          const upd = await pool.query(`
             UPDATE driver_profiles SET status = 'em_analise', updated_at = NOW()
             WHERE user_id = $1 AND status = 'pendente'
+            RETURNING id
           `, [req.user.id]);
+
+          if (upd.rowCount > 0) {
+            notifyAdminAcaoMotorista(req.user.id, 'enviou documentos para aprovação',
+              'enviou os documentos do cadastro (CNH, comprovante de endereço e print do Uber/99) e o status mudou para <strong>em análise</strong>.');
+          }
         }
+      }
+
+      // Notifica admin se foi upload de selfie (segurando documento)
+      if (tipo === 'selfie') {
+        notifyAdminAcaoMotorista(req.user.id, 'enviou selfie para aprovação',
+          'enviou a <strong>selfie segurando o documento</strong> e está aguardando sua confirmação.');
       }
 
       res.status(201).json(result.rows[0]);
@@ -235,6 +268,9 @@ router.post('/me/contrato',
         UPDATE driver_profiles SET contrato_url = $1, updated_at = NOW()
         WHERE user_id = $2
       `, [caminho, req.user.id]);
+
+      notifyAdminAcaoMotorista(req.user.id, 'enviou contrato assinado para confirmação',
+        'fez upload do <strong>contrato assinado</strong> e está aguardando sua confirmação para prosseguir.');
 
       res.json({
         message: 'Contrato enviado com sucesso',
@@ -610,6 +646,11 @@ router.post('/me/charges/:chargeId/abatimentos',
         VALUES ($1, $2, $3, $4, $5)
         RETURNING *
       `, [chargeId, driverId, descricao || null, parseFloat(valor), notaUrl]);
+
+      const valorFmt = parseFloat(valor).toFixed(2).replace('.', ',');
+      const desc = descricao ? ` (${descricao.replace(/[<>]/g, '')})` : '';
+      notifyAdminAcaoMotorista(req.user.id, 'solicitou manutenção (abatimento) para aprovação',
+        `solicitou um abatimento de <strong>R$ ${valorFmt}</strong>${desc} aguardando sua aprovação.`);
 
       res.status(201).json(result.rows[0]);
     } catch (err) {

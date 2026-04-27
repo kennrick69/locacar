@@ -348,7 +348,9 @@ export default function AdminDriverDetail() {
     { id: 'contrato', label: 'Contrato', icon: FileText, done: !!driver.contrato_url && driver.contrato_confirmado,
       action: !contratoGerado && driver.car_id ? 'Gerar contrato' : driver.contrato_url && !driver.contrato_confirmado ? 'Confirmar contrato' : null },
     { id: 'caucao', label: 'Caução & Ativação', icon: Banknote, done: (driver.caucao_pago || driver.caucao_liberada) && isAtivo,
-      action: isAprovado && (driver.caucao_pago || driver.caucao_liberada) && !isAtivo ? 'Ativar motorista' : null },
+      action: isAtivo && !driver.caucao_pago && !driver.caucao_liberada
+        ? 'Caução pendente — cobrar retroativamente'
+        : isAprovado && (driver.caucao_pago || driver.caucao_liberada) && !isAtivo ? 'Ativar motorista' : null },
     { id: 'vistoria', label: 'Vistoria do Veículo', icon: Camera, done: vistoriaDocs.length > 0 && vistoriaDocs.some(d => d.fixado) },
     { id: 'cobrancas', label: 'Cobranças Semanais', icon: Banknote, done: (driver.charges || []).length > 0 },
   ];
@@ -638,7 +640,30 @@ export default function AdminDriverDetail() {
 
       {/* --- ETAPA 4: CAUÇÃO & ATIVAÇÃO --- */}
       <StepSection step={adminSteps[3]} idx={3}>
-        <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50">
+        {isAtivo && !driver.caucao_pago && !driver.caucao_liberada && (
+          <div className="bg-red-50 border-2 border-red-300 rounded-lg p-3 mb-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-bold text-red-800">⚠ Motorista ativado sem caução paga!</p>
+                <p className="text-xs text-red-700 mt-1">
+                  O motorista está com status <strong>{driver.status}</strong> mas a caução de
+                  <strong> R$ {fmt(driver.car_valor_caucao || 0)}</strong> nunca foi confirmada nem liberada.
+                  Cobre retroativamente: registre o pagamento (se já recebeu fora do app) ou libere formalmente.
+                </p>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <button onClick={handleConfirmCaucao} className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 flex items-center gap-1.5">
+                    <Banknote className="w-3.5 h-3.5" /> Registrar Caução Recebida
+                  </button>
+                  <button onClick={handleLiberarCaucao} className="text-xs bg-white border border-red-300 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-100 flex items-center gap-1.5">
+                    <Unlock className="w-3.5 h-3.5" /> Liberar Sem Caução
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        <div className={`flex items-center justify-between p-3 rounded-lg ${isAtivo && !driver.caucao_pago && !driver.caucao_liberada ? 'bg-red-50' : 'bg-gray-50'}`}>
           <div>
             <p className="text-sm text-gray-500">Caução</p>
             <p className="text-xl font-bold">

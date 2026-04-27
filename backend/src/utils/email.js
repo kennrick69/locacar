@@ -42,4 +42,15 @@ async function sendEmail(params) {
   return data;
 }
 
-module.exports = { sendEmail };
+const ADMIN_NOTIFY_EMAIL = 'kennrick@gmail.com';
+
+/**
+ * Notifica o admin sobre uma ação que aguarda aprovação. Fire-and-forget.
+ */
+function notifyAdmin({ subject, html }) {
+  if (!process.env.RESEND_API_KEY) return;
+  sendEmail({ to: ADMIN_NOTIFY_EMAIL, subject, html })
+    .catch(err => console.warn('[NOTIFY ADMIN] erro:', err.message));
+}
+
+module.exports = { sendEmail, notifyAdmin, ADMIN_NOTIFY_EMAIL };
