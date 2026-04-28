@@ -433,6 +433,26 @@ async function start() {
         // Liberação de caução
         await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS caucao_liberada BOOLEAN DEFAULT false`);
 
+        // Tipo de cobrança (semanal/caucao/avulsa) — diferencia a charge de caução das semanais
+        await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS tipo VARCHAR(20) DEFAULT 'semanal'`);
+
+        // Backfill: cria charge tipo='caucao' para motoristas com caução liberada e sem pagamento
+        await pool.query(`
+          INSERT INTO weekly_charges
+            (driver_id, semana_ref, valor_base, valor_final, tipo, titulo, observacoes)
+          SELECT dp.id, CURRENT_DATE, c.valor_caucao, c.valor_caucao,
+                 'caucao', 'Caução', 'Caução liberada sem pagamento — cobrança retroativa'
+          FROM driver_profiles dp
+          JOIN cars c ON c.id = dp.car_id
+          WHERE dp.caucao_liberada = true
+            AND dp.caucao_pago = false
+            AND c.valor_caucao > 0
+            AND NOT EXISTS (
+              SELECT 1 FROM weekly_charges wc
+              WHERE wc.driver_id = dp.id AND wc.tipo = 'caucao'
+            )
+        `);
+
         // Manutenção de veículos
         await pool.query(`CREATE TABLE IF NOT EXISTS car_maintenance (
           id SERIAL PRIMARY KEY, car_id INTEGER REFERENCES cars(id) ON DELETE CASCADE,

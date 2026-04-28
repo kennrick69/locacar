@@ -261,6 +261,7 @@ const migrate = async () => {
 
     // ========== MIGRAÇÕES INCREMENTAIS ==========
     await client.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS caucao_liberada BOOLEAN DEFAULT false;`);
+    await client.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS tipo VARCHAR(20) DEFAULT 'semanal';`);
     await client.query(`ALTER TABLE car_maintenance ADD COLUMN IF NOT EXISTS abatimento_id INTEGER REFERENCES abatimentos(id) ON DELETE SET NULL;`);
     await client.query(`ALTER TABLE car_maintenance ADD COLUMN IF NOT EXISTS nota_url TEXT;`);
 

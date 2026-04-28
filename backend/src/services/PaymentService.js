@@ -294,13 +294,42 @@ class PaymentService {
   }
 
   /**
-   * Marca caução como pago e dispara cadastro externo se configurado
+   * Marca caução como pago e dispara cadastro externo se configurado.
+   * Se houver charge tipo='caucao' aberta, registra payment_entry pelo
+   * saldo restante e marca a charge como paga.
    */
   static async confirmarCaucao(driverId) {
     await pool.query(
       'UPDATE driver_profiles SET caucao_pago = true, updated_at = NOW() WHERE id = $1',
       [driverId]
     );
+
+    // Quita a charge tipo='caucao' (se existir e ainda não estiver paga)
+    const ch = await pool.query(
+      `SELECT id, valor_final, COALESCE(valor_pago_total, 0) as pago_total
+       FROM weekly_charges
+       WHERE driver_id = $1 AND tipo = 'caucao' AND pago = false
+       LIMIT 1`,
+      [driverId]
+    );
+    if (ch.rows.length > 0) {
+      const charge = ch.rows[0];
+      const saldo = Math.max(parseFloat(charge.valor_final) - parseFloat(charge.pago_total), 0);
+      if (saldo > 0.01) {
+        await pool.query(
+          `INSERT INTO payment_entries (charge_id, driver_id, valor_pago, data_pagamento, observacoes)
+           VALUES ($1, $2, $3, NOW(), 'Caução confirmada manualmente')`,
+          [charge.id, driverId, saldo]
+        );
+      }
+      await pool.query(
+        `UPDATE weekly_charges
+         SET valor_pago_total = valor_final, saldo_devedor = 0, pago = true,
+             data_pagamento = COALESCE(data_pagamento, NOW()), updated_at = NOW()
+         WHERE id = $1`,
+        [charge.id]
+      );
+    }
 
     // Dispara cadastro externo
     await ExternalPlatformService.verificarEDisparar('caucao_pago', driverId);

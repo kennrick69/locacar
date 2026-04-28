@@ -1150,17 +1150,41 @@ router.patch('/:id/confirm-caucao', auth, adminOnly, async (req, res) => {
 router.patch('/:id/liberar-caucao', auth, adminOnly, async (req, res) => {
   try {
     const driverId = req.params.id;
-    const { liberar } = req.body; // true para liberar, false para revogar
+    const liberar = req.body.liberar !== false; // true para liberar, false para revogar
 
     const result = await pool.query(`
       UPDATE driver_profiles
       SET caucao_liberada = $2, updated_at = NOW()
       WHERE id = $1
       RETURNING *
-    `, [driverId, liberar !== false]);
+    `, [driverId, liberar]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Motorista não encontrado' });
+    }
+
+    // Ao liberar: cria charge tipo 'caucao' pendente, se ainda não existir
+    if (liberar) {
+      const carRes = await pool.query(`
+        SELECT c.valor_caucao FROM driver_profiles dp
+        LEFT JOIN cars c ON c.id = dp.car_id
+        WHERE dp.id = $1
+      `, [driverId]);
+      const valorCaucao = parseFloat(carRes.rows[0]?.valor_caucao || 0);
+
+      if (valorCaucao > 0) {
+        const existing = await pool.query(
+          "SELECT id FROM weekly_charges WHERE driver_id = $1 AND tipo = 'caucao'",
+          [driverId]
+        );
+        if (existing.rows.length === 0) {
+          await pool.query(`
+            INSERT INTO weekly_charges
+              (driver_id, semana_ref, valor_base, valor_final, tipo, titulo, observacoes)
+            VALUES ($1, CURRENT_DATE, $2, $2, 'caucao', 'Caução', 'Caução liberada sem pagamento — cobrança retroativa')
+          `, [driverId, valorCaucao]);
+        }
+      }
     }
 
     const full = await pool.query(`

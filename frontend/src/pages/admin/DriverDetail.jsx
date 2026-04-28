@@ -791,12 +791,17 @@ export default function AdminDriverDetail() {
               const isExpanded = expandedCharge === charge.id;
 
               return (
-                <div key={charge.id} className={`bg-gray-50 rounded-lg p-3 border transition-all ${charge.pago ? 'border-green-200' : saldoDev > 0 ? 'border-red-200' : 'border-gray-200'}`}>
+                <div key={charge.id} className={`bg-gray-50 rounded-lg p-3 border transition-all ${charge.tipo === 'caucao' ? 'border-amber-300 bg-amber-50/50' : charge.pago ? 'border-green-200' : saldoDev > 0 ? 'border-red-200' : 'border-gray-200'}`}>
                   <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedCharge(isExpanded ? null : charge.id)}>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-medium">{charge.titulo || `📅 Semana ${fmtDate(charge.semana_ref)}`}</p>
-                        {charge.titulo && <span className="text-xs text-gray-400">{fmtDate(charge.semana_ref)}</span>}
+                        <p className="text-sm font-medium">
+                          {charge.tipo === 'caucao'
+                            ? `🛡️ Caução`
+                            : (charge.titulo || `📅 Semana ${fmtDate(charge.semana_ref)}`)}
+                        </p>
+                        {charge.tipo === 'caucao' && <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-bold uppercase">Caução</span>}
+                        {charge.titulo && charge.tipo !== 'caucao' && <span className="text-xs text-gray-400">{fmtDate(charge.semana_ref)}</span>}
                         {charge.observacoes && <span className="text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{charge.observacoes}</span>}
                       </div>
                       <p className="text-xs text-gray-400 mt-0.5">
