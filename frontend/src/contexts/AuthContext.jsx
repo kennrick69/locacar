@@ -38,6 +38,24 @@ export function AuthProvider({ children }) {
     return res.data.user;
   };
 
+  // ----- Magic Link (admin) -----
+  // request: pede o link por email. Backend SEMPRE responde 200 com
+  // mensagem genérica (anti-enumeração). Devolve message só pra UI mostrar.
+  const magicLinkRequest = async (email) => {
+    const res = await authAPI.magicLinkRequest(email);
+    return res.data; // { message: '...' }
+  };
+
+  // consume: usa o token do link. Backend retorna { user, token, via }.
+  // Persiste igual login normal + retorna user.
+  const magicLinkConsume = async (token) => {
+    const res = await authAPI.magicLinkConsume(token);
+    localStorage.setItem('implocadora_token', res.data.token);
+    localStorage.setItem('implocadora_user', JSON.stringify(res.data.user));
+    setUser(res.data.user);
+    return res.data.user;
+  };
+
   const register = async (data) => {
     const res = await authAPI.register(data);
     localStorage.setItem('implocadora_token', res.data.token);
@@ -64,6 +82,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       user, loading, login, tokenLogin, register, logout, refreshUser,
+      magicLinkRequest, magicLinkConsume,
       isAdmin: user?.role === 'admin',
       isDriver: user?.role === 'motorista',
       isAuthenticated: !!user,

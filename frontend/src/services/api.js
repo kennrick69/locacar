@@ -16,14 +16,21 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Interceptor - trata 401 (token expirado)
+// Interceptor - trata 401 (token expirado).
+// Exceções: rotas de auth (magic link consume retorna 401 quando token
+// inválido/expirado/usado — quem trata é a página /admin/magic).
+const SKIP_401_REDIRECT_URLS = ['/auth/magic-link/', '/auth/login', '/auth/token-login'];
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('implocadora_token');
-      localStorage.removeItem('implocadora_user');
-      window.location.href = '/login';
+      const reqUrl = error.config?.url || '';
+      const skipRedirect = SKIP_401_REDIRECT_URLS.some(p => reqUrl.includes(p));
+      if (!skipRedirect) {
+        localStorage.removeItem('implocadora_token');
+        localStorage.removeItem('implocadora_user');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
@@ -37,6 +44,9 @@ export const authAPI = {
   tokenLogin: (token) => api.post('/auth/token-login', { token }),
   register: (data) => api.post('/auth/register', data),
   me: () => api.get('/auth/me'),
+  // Magic link admin (login admin sem senha — auditoria 2026-05-25)
+  magicLinkRequest: (email) => api.post('/auth/magic-link/request', { email }),
+  magicLinkConsume: (token) => api.get('/auth/magic-link/consume', { params: { token } }),
 };
 
 // ========== CARS ==========
