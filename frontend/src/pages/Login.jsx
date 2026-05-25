@@ -133,10 +133,8 @@ export default function Login() {
           )}
         </div>
 
-        <div className="text-center mt-4 space-x-4 text-xs text-gray-400">
-          <Link to="/" className="hover:text-gray-600">← Voltar para vitrine</Link>
-          <span>·</span>
-          <Link to="/admin/login-senha" className="hover:text-gray-600">Login por senha (emergência)</Link>
+        <div className="text-center mt-4">
+          <Link to="/" className="text-xs text-gray-400 hover:text-gray-600">← Voltar para vitrine</Link>
         </div>
       </div>
     </div>

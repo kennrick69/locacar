@@ -7,7 +7,6 @@ import Loading from './components/Loading';
 
 // Páginas públicas
 import Login from './pages/Login';
-import LoginSenha from './pages/LoginSenha';
 import MagicLinkConsume from './pages/MagicLinkConsume';
 import Register from './pages/Register';
 import Vitrine from './pages/Vitrine';
@@ -53,15 +52,10 @@ export default function App() {
           ? <Navigate to={user?.role === 'admin' ? '/admin' : '/motorista'} />
           : <Login />
       } />
-      {/* Fallback login admin por senha (emergência). Será removido depois
-          que magic link estiver confirmado 100% em produção. */}
-      <Route path="/admin/login-senha" element={
-        isAuthenticated
-          ? <Navigate to={user?.role === 'admin' ? '/admin' : '/motorista'} />
-          : <LoginSenha />
-      } />
       {/* Consume do magic link: usuário chega aqui clicando no email. */}
       <Route path="/admin/magic" element={<MagicLinkConsume />} />
+      {/* /admin/login-senha REMOVIDO em 2026-05-25 — magic link é o único
+          caminho admin. Backend bloqueia /api/auth/login pra emails admin. */}
       <Route path="/register" element={<Register />} />
 
       {/* Motorista (Etapa 2) */}

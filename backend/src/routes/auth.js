@@ -158,6 +158,24 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Email e senha são obrigatórios' });
     }
 
+    // Admin não loga mais com senha (defesa contra roubo de credencial MP).
+    // Email ∈ ADMIN_EMAILS env só entra via magic link (POST /magic-link/request
+    // → email → GET /magic-link/consume). Motorista continua usando senha
+    // normalmente (raro mas existe; o login motorista típico é /token-login).
+    if (_isAdminEmail(email)) {
+      try {
+        await pool.query(
+          `INSERT INTO audit_log (user_email, acao, recurso, ip, via)
+           VALUES ($1, 'admin_password_login_blocked', 'auth', $2, 'password')`,
+          [String(email).toLowerCase(), req.ip || null]
+        );
+      } catch (_) { /* audit pode não existir */ }
+      return res.status(403).json({
+        error: 'Login admin agora é via link mágico. Vá em /login e digite seu email pra receber o link.',
+        magic_link_url: '/login',
+      });
+    }
+
     const result = await pool.query(
       'SELECT id, nome, email, senha_hash, role, ativo FROM users WHERE email = $1',
       [email]
