@@ -165,11 +165,17 @@ router.post('/tokenize-card', auth, driverOnly, async (req, res) => {
       return res.status(500).json({ error: 'Mercado Pago não configurado. Configure as credenciais nas Configurações.' });
     }
 
-    console.log('[tokenize-card] modo:', mp.modo, '| publicKey:', mp.publicKey ? mp.publicKey.slice(0,15)+'...' : 'NÃO SET');
+    // Log de tokens/credenciais removido (Frente 2 — Sensitive Data Exposure).
+    // Em debug pesado, ative DEBUG_PAYMENTS=true em desenvolvimento.
+    if (process.env.DEBUG_PAYMENTS === 'true' && process.env.NODE_ENV !== 'production') {
+      console.log('[tokenize-card] modo:', mp.modo, '| publicKey configurada?', !!mp.publicKey);
+    }
 
     const token = await mp.tokenizarCartao({ cardNumber, expMonth, expYear, securityCode, cardholderName, cpf });
 
-    console.log('[tokenize-card] OK, token:', token ? token.slice(0,10)+'...' : 'null');
+    if (process.env.DEBUG_PAYMENTS === 'true' && process.env.NODE_ENV !== 'production') {
+      console.log('[tokenize-card] OK, token gerado?', !!token);
+    }
     res.json({ token });
   } catch (err) {
     console.error('Erro ao tokenizar cartão:', err.message);
@@ -254,15 +260,21 @@ router.post('/weekly/:chargeId', auth, driverOnly, async (req, res) => {
   try {
     const { metodo, parcelas, valor_pago, justificativa } = req.body;
 
+    // Valida chargeId numérico (defensivo — evita queries inúteis com strings).
+    const chargeId = parseInt(req.params.chargeId, 10);
+    if (!Number.isInteger(chargeId) || chargeId <= 0) {
+      return res.status(400).json({ error: 'Cobrança inválida' });
+    }
+
     const profile = await pool.query('SELECT id FROM driver_profiles WHERE user_id = $1', [req.user.id]);
     if (profile.rows.length === 0) return res.status(404).json({ error: 'Perfil não encontrado' });
     const driverId = profile.rows[0].id;
 
-    await PaymentService.calcularMulta(req.params.chargeId);
+    await PaymentService.calcularMulta(chargeId);
 
     const charge = await pool.query(
       'SELECT * FROM weekly_charges WHERE id = $1 AND driver_id = $2',
-      [req.params.chargeId, driverId]
+      [chargeId, driverId]
     );
     if (charge.rows.length === 0) return res.status(404).json({ error: 'Cobrança não encontrada' });
     const c = charge.rows[0];
@@ -273,12 +285,15 @@ router.post('/weekly/:chargeId', auth, driverOnly, async (req, res) => {
       "SELECT COALESCE(SUM(valor), 0) as total FROM payments WHERE charge_id = $1 AND status = 'pago'",
       [c.id]
     );
-    const totalJaPago = parseFloat(jaPage.rows[0].total);
-    const restante = parseFloat(c.valor_final) - totalJaPago;
+    const totalJaPago = parseFloat(jaPage.rows[0].total) || 0;
+    const restante = (parseFloat(c.valor_final) || 0) - totalJaPago;
 
-    // Valor a pagar: customizado ou total restante
-    let valor = valor_pago ? parseFloat(valor_pago) : restante;
-    if (valor <= 0) return res.status(400).json({ error: 'Valor deve ser maior que zero' });
+    // Valor a pagar: customizado ou total restante. isNaN guard evita
+    // pagamento com valor=NaN (string inválida bypassava check `<= 0`).
+    let valor = valor_pago !== undefined && valor_pago !== null && valor_pago !== '' ? parseFloat(valor_pago) : restante;
+    if (isNaN(valor) || valor <= 0) {
+      return res.status(400).json({ error: 'Valor deve ser um número maior que zero' });
+    }
     if (valor > restante + 0.01) return res.status(400).json({ error: `Valor máximo: R$ ${restante.toFixed(2)}` });
 
     const resultado = await PaymentService.criarPagamento({

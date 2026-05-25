@@ -61,13 +61,24 @@ router.post('/mp', async (req, res) => {
     }
 
     if (paymentId) {
+      const startedAt = Date.now();
       const result = await PaymentService.processarWebhook(paymentId);
-      console.log(`[WEBHOOK MP] Resultado: ${JSON.stringify(result)}`);
+      const dt = Date.now() - startedAt;
+      if (!result || result.processed === false) {
+        console.warn(`[WEBHOOK MP] não processado (${dt}ms): ${JSON.stringify(result)}`);
+      } else {
+        console.log(`[WEBHOOK MP] OK (${dt}ms): ${JSON.stringify(result)}`);
+      }
     }
 
   } catch (err) {
-    console.error('[WEBHOOK MP] Erro:', err.message);
-    // Não retorna erro — o res.status(200) já foi enviado
+    // Loga stack apenas em dev; em prod só mensagem + payload mínimo.
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[WEBHOOK MP] Erro:', err.message);
+    } else {
+      console.error('[WEBHOOK MP] Erro:', err);
+    }
+    // Não retorna erro — o res.status(200) já foi enviado pro MP
   }
 });
 

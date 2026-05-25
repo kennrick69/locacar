@@ -396,16 +396,26 @@ class PaymentService {
           const chargeRes = await pool.query('SELECT valor_final FROM weekly_charges WHERE id = $1', [payment.charge_id]);
 
           if (chargeRes.rows.length > 0) {
-            const totalPago = parseFloat(mpTotal.rows[0].total) + parseFloat(peTotal.rows[0].total);
+            // Guards de NaN: charge sem valor_final OU sum vazio retornam null/string —
+            // sem `|| 0`, parseFloat vira NaN e saldo=0 marcava cobrança como paga
+            // sem ter recebido nada de verdade.
+            const totalPagoMp = parseFloat(mpTotal.rows[0].total) || 0;
+            const totalPagoPe = parseFloat(peTotal.rows[0].total) || 0;
+            const totalPago = totalPagoMp + totalPagoPe;
             const valorFinal = parseFloat(chargeRes.rows[0].valor_final);
-            const saldo = Math.max(valorFinal - totalPago, 0);
-            const isPago = saldo <= 0.01;
 
-            await pool.query(`
-              UPDATE weekly_charges SET valor_pago_total = $1, saldo_devedor = $2, pago = $3,
-                data_pagamento = CASE WHEN $3 THEN NOW() ELSE data_pagamento END, updated_at = NOW()
-              WHERE id = $4
-            `, [totalPago, saldo, isPago, payment.charge_id]);
+            if (isNaN(valorFinal) || valorFinal < 0) {
+              console.warn('[WEBHOOK] weekly_charges.valor_final inválido (charge_id=' + payment.charge_id + '). NÃO atualizando saldo/pago — revisar manualmente.');
+            } else {
+              const saldo = Math.max(valorFinal - totalPago, 0);
+              const isPago = saldo <= 0.01;
+
+              await pool.query(`
+                UPDATE weekly_charges SET valor_pago_total = $1, saldo_devedor = $2, pago = $3,
+                  data_pagamento = CASE WHEN $3 THEN NOW() ELSE data_pagamento END, updated_at = NOW()
+                WHERE id = $4
+              `, [totalPago, saldo, isPago, payment.charge_id]);
+            }
           }
         }
 

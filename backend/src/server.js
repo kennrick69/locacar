@@ -98,7 +98,8 @@ app.get('/api/health', async (req, res) => {
   try {
     const pool = require('./config/database');
     await pool.query('SELECT 1');
-    res.json({ status: 'ok', db: 'ok', timestamp: new Date().toISOString(), env: process.env.NODE_ENV || 'development' });
+    // Não expõe NODE_ENV (info disclosure)
+    res.json({ status: 'ok', db: 'ok', timestamp: new Date().toISOString() });
   } catch {
     res.status(503).json({ status: 'degraded', db: 'error', timestamp: new Date().toISOString() });
   }
@@ -583,8 +584,15 @@ async function start() {
     console.log('🚗 IMP Locadora API porta ' + PORT + ' | ' + (process.env.NODE_ENV || 'development'));
   });
 
-  // 5) CRON: Gerar cobranças automáticas diariamente
+  // 5) CRON: Gerar cobranças automáticas diariamente.
+  // Singleton guard: nodemon/hot-reload pode chamar start() 2x; o handler
+  // de SIGTERM limpa o interval em shutdown gracioso pro Railway.
+  let _chargeIntervalId = null;
   const startChargeCron = () => {
+    if (_chargeIntervalId) {
+      console.log('⏰ CRON já estava ativo — pulando inicialização dupla');
+      return;
+    }
     const diasMap = { 0: 'domingo', 1: 'segunda', 2: 'terca', 3: 'quarta', 4: 'quinta', 5: 'sexta', 6: 'sabado' };
 
     const gerarCobrancasDoDia = async () => {
@@ -663,10 +671,17 @@ async function start() {
     setTimeout(gerarCobrancasDoDia, 5000);
 
     // Depois roda a cada 1 hora (verifica se precisa gerar)
-    setInterval(gerarCobrancasDoDia, 60 * 60 * 1000);
+    _chargeIntervalId = setInterval(gerarCobrancasDoDia, 60 * 60 * 1000);
 
     console.log('⏰ CRON de cobranças automáticas ativo (verifica a cada 1h)');
   };
+
+  // Shutdown gracioso — limpa CRON antes do processo morrer
+  process.on('SIGTERM', () => {
+    if (_chargeIntervalId) clearInterval(_chargeIntervalId);
+    console.log('SIGTERM recebido, encerrando…');
+    process.exit(0);
+  });
 
   startChargeCron();
 }

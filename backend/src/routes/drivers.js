@@ -6,25 +6,46 @@ const { sendEmail, notifyAdmin } = require('../utils/email');
 
 const router = express.Router();
 
+// Escape HTML defensivo — usado em emails/PDFs que recebem input livre
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  })[c]);
+}
+
+// Suaviza spam de log quando DB cai (notifyAdmin é fire-and-forget)
+let _notifyFailCount = 0;
+
 /**
  * Notifica o admin sobre ação do motorista que aguarda aprovação.
- * Busca o nome do motorista no banco e dispara fire-and-forget.
+ * IMPORTANTE: descricaoHtml deve ser texto plano OU HTML controlado pelo
+ * servidor (não pode conter input direto do motorista sem escape — use
+ * escapeHtml() no input antes de concatenar).
  */
 function notifyAdminAcaoMotorista(userId, acaoCurta, descricaoHtml) {
   if (!process.env.RESEND_API_KEY) return;
   pool.query('SELECT nome FROM users WHERE id = $1', [userId])
     .then(r => {
-      const nome = r.rows[0]?.nome || `Motorista #${userId}`;
+      const nome = escapeHtml(r.rows[0]?.nome || `Motorista #${userId}`);
+      const acaoSafe = escapeHtml(acaoCurta);
       notifyAdmin({
-        subject: `[IMP Locadora] ${nome} ${acaoCurta}`,
+        subject: `[IMP Locadora] ${nome} ${acaoSafe}`,
         html: `
           <h2>Ação aguardando sua aprovação</h2>
           <p><strong>${nome}</strong> ${descricaoHtml}</p>
           <p>Acesse o painel admin para revisar.</p>
         `,
       });
+      _notifyFailCount = 0;
     })
-    .catch(err => console.warn('[NOTIFY ADMIN] busca nome falhou:', err.message));
+    .catch(err => {
+      _notifyFailCount++;
+      // log só 1ª falha e a cada 100ª (evita poluir log quando DB cai)
+      if (_notifyFailCount === 1 || _notifyFailCount % 100 === 0) {
+        console.warn(`[NOTIFY ADMIN] busca nome falhou (${_notifyFailCount}x):`, err.message);
+      }
+    });
 }
 
 // ========================================================
@@ -615,7 +636,8 @@ router.post('/me/charges/:chargeId/abatimentos',
       const { descricao, valor } = req.body;
       const { chargeId } = req.params;
 
-      if (!valor || parseFloat(valor) <= 0) {
+      const valorAbate = parseFloat(valor);
+      if (!valor || isNaN(valorAbate) || valorAbate <= 0) {
         return res.status(400).json({ error: 'Valor do abatimento é obrigatório e deve ser positivo' });
       }
 
@@ -627,7 +649,7 @@ router.post('/me/charges/:chargeId/abatimentos',
       const driverId = profile.rows[0].id;
 
       const charge = await pool.query(
-        'SELECT id, pago FROM weekly_charges WHERE id = $1 AND driver_id = $2',
+        'SELECT id, pago, valor_final FROM weekly_charges WHERE id = $1 AND driver_id = $2',
         [chargeId, driverId]
       );
 
@@ -639,6 +661,14 @@ router.post('/me/charges/:chargeId/abatimentos',
         return res.status(400).json({ error: 'Esta cobrança já foi paga' });
       }
 
+      // Teto: abatimento não pode ser maior que a própria cobrança
+      const valorFinal = parseFloat(charge.rows[0].valor_final);
+      if (!isNaN(valorFinal) && valorFinal > 0 && valorAbate > valorFinal) {
+        return res.status(400).json({
+          error: `Abatimento não pode ser maior que o valor da cobrança (R$ ${valorFinal.toFixed(2)})`
+        });
+      }
+
       const notaUrl = req.file ? (await processUpload(req.file, 'notas') || `/uploads/notas/${req.file.filename}`) : null;
 
       const result = await pool.query(`
@@ -648,7 +678,7 @@ router.post('/me/charges/:chargeId/abatimentos',
       `, [chargeId, driverId, descricao || null, parseFloat(valor), notaUrl]);
 
       const valorFmt = parseFloat(valor).toFixed(2).replace('.', ',');
-      const desc = descricao ? ` (${descricao.replace(/[<>]/g, '')})` : '';
+      const desc = descricao ? ` (${escapeHtml(descricao)})` : '';
       notifyAdminAcaoMotorista(req.user.id, 'solicitou manutenção (abatimento) para aprovação',
         `solicitou um abatimento de <strong>R$ ${valorFmt}</strong>${desc} aguardando sua aprovação.`);
 
@@ -1645,7 +1675,7 @@ ${saldoFinal >= 0 ? 'R$ ' + fmt(saldoFinal) + ' (devolver ao motorista)' : 'R$ '
 </td>
 </tr></table>
 </div>
-${observacoes ? '<h2>Observações</h2><p>' + observacoes + '</p>' : ''}
+${observacoes ? '<h2>Observações</h2><p>' + escapeHtml(observacoes).replace(/\n/g, '<br>') + '</p>' : ''}
 <div class="footer">
 <p>Documento gerado em ${dataHoje} pelo sistema IMP Locadora. ID: #${settlement.rows[0].id}</p>
 </div>
@@ -2307,20 +2337,28 @@ router.get('/:id/charges/:chargeId/payment-entries', auth, adminOnly, async (req
  * DELETE /api/drivers/:id/charges/:chargeId - Admin: excluir cobrança
  */
 router.delete('/:id/charges/:chargeId', auth, adminOnly, async (req, res) => {
+  const client = await pool.connect();
   try {
     const { chargeId } = req.params;
+    await client.query('BEGIN');
 
-    // Remove dependências primeiro
-    await pool.query('DELETE FROM payment_entries WHERE charge_id = $1', [chargeId]);
-    await pool.query('DELETE FROM abatimentos WHERE charge_id = $1', [chargeId]);
-    await pool.query('DELETE FROM acrescimos WHERE charge_id = $1', [chargeId]);
-    await pool.query('DELETE FROM payments WHERE charge_id = $1', [chargeId]);
-    await pool.query('DELETE FROM weekly_charges WHERE id = $1', [chargeId]);
+    // Remove dependências e cobrança numa transação atômica.
+    // Se qualquer passo falhar, ROLLBACK garante que nada some pela metade
+    // (antes ficavam pagamentos órfãos se conexão caísse entre as queries).
+    await client.query('DELETE FROM payment_entries WHERE charge_id = $1', [chargeId]);
+    await client.query('DELETE FROM abatimentos WHERE charge_id = $1', [chargeId]);
+    await client.query('DELETE FROM acrescimos WHERE charge_id = $1', [chargeId]);
+    await client.query('DELETE FROM payments WHERE charge_id = $1', [chargeId]);
+    await client.query('DELETE FROM weekly_charges WHERE id = $1', [chargeId]);
 
+    await client.query('COMMIT');
     res.json({ message: 'Cobrança excluída' });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Erro ao excluir cobrança:', err);
     res.status(500).json({ error: 'Erro interno' });
+  } finally {
+    client.release();
   }
 });
 

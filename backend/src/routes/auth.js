@@ -217,12 +217,10 @@ router.post('/token-login', async (req, res) => {
     `, [cleanToken]);
 
     if (result.rows.length === 0) {
-      console.log(`⚠️ Token-login falhou: token="${cleanToken}" (raw: "${tokenInput}") não encontrado no banco`);
-      // Debug: lista tokens existentes (só em dev)
-      if (process.env.NODE_ENV !== 'production') {
-        const all = await pool.query('SELECT dp.token_externo, u.nome FROM driver_profiles dp JOIN users u ON u.id = dp.user_id WHERE dp.token_externo IS NOT NULL LIMIT 10');
-        console.log('Tokens existentes:', all.rows.map(r => `${r.token_externo} (${r.nome})`));
-      }
+      // Não loga o token tentado nem lista tokens existentes (Frente 2 —
+      // Sensitive Data Exposure: tokens vazados em screenshot/log permitem
+      // brute-force trivial num espaço de 1M).
+      console.log('⚠️ Token-login: token não encontrado');
       return res.status(401).json({ error: 'Token não encontrado. Verifique se são os 6 primeiros números do seu CPF.' });
     }
 
@@ -250,11 +248,23 @@ router.post('/token-login', async (req, res) => {
 
 /**
  * GET /api/auth/cep/:cep
- * Proxy para ViaCEP (evita bloqueio de CSP no frontend)
+ * Proxy para ViaCEP/BrasilAPI (evita bloqueio de CSP no frontend).
+ * Cache em memória (Map+TTL 1h) — evita estourar rate-limit de APIs
+ * externas quando frontend dispara busca várias vezes pra mesmo CEP.
  */
+const _cepCache = new Map();
+const _CEP_TTL_MS = 60 * 60 * 1000; // 1 hora
+const _CEP_CACHE_MAX = 5000; // teto pra não vazar memória
+
 router.get('/cep/:cep', async (req, res) => {
   const cep = req.params.cep.replace(/\D/g, '');
   if (cep.length !== 8) return res.status(400).json({ error: 'CEP inválido' });
+
+  // Cache hit
+  const cached = _cepCache.get(cep);
+  if (cached && (Date.now() - cached.ts) < _CEP_TTL_MS) {
+    return res.json(cached.data);
+  }
 
   const https = require('https');
 
@@ -268,11 +278,21 @@ router.get('/cep/:cep', async (req, res) => {
     }).on('error', reject);
   });
 
+  const storeAndSend = (data) => {
+    // Eviction simples: se passou do teto, dropa o mais antigo
+    if (_cepCache.size >= _CEP_CACHE_MAX) {
+      const firstKey = _cepCache.keys().next().value;
+      if (firstKey) _cepCache.delete(firstKey);
+    }
+    _cepCache.set(cep, { data, ts: Date.now() });
+    return res.json(data);
+  };
+
   // 1) BrasilAPI (primário)
   try {
     const br = await fetchUrl(`https://brasilapi.com.br/api/cep/v1/${cep}`);
     if (br && br.street) {
-      return res.json({
+      return storeAndSend({
         cep: br.cep, logradouro: br.street, complemento: '',
         bairro: br.neighborhood, localidade: br.city, uf: br.state
       });
@@ -283,7 +303,7 @@ router.get('/cep/:cep', async (req, res) => {
   try {
     const via = await fetchUrl(`https://viacep.com.br/ws/${cep}/json/`);
     if (via && !via.erro) {
-      return res.json(via);
+      return storeAndSend(via);
     }
   } catch (e) { console.log('ViaCEP também falhou:', e.message); }
 
