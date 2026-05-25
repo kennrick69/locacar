@@ -1,11 +1,44 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const pool = require('../config/database');
 const { auth } = require('../middleware/auth');
-const { notifyAdmin } = require('../utils/email');
+const { notifyAdmin, sendEmail } = require('../utils/email');
 
 const router = express.Router();
+
+// ============================================================
+// MAGIC LINK — login admin sem senha (defesa contra roubo de
+// credenciais MP). Lista de emails autorizados em ADMIN_EMAILS
+// env var, separada por vírgula. Tokens crypto.randomBytes(32)
+// + sha256 (nunca armazenamos o token cru). TTL 15min, uso único.
+// ============================================================
+const MAGIC_LINK_TTL_MIN = 15;
+const MAGIC_LINK_TOKEN_BYTES = 32;
+const ADMIN_JWT_TTL = '4h'; // bem mais curto que os 7d normais
+
+function _hashToken(raw) {
+  return crypto.createHash('sha256').update(raw).digest('hex');
+}
+
+function _adminEmailsSet() {
+  const raw = (process.env.ADMIN_EMAILS || '').trim();
+  if (!raw) return new Set();
+  return new Set(raw.split(',').map(e => e.trim().toLowerCase()).filter(Boolean));
+}
+
+function _isAdminEmail(email) {
+  if (!email) return false;
+  return _adminEmailsSet().has(String(email).trim().toLowerCase());
+}
+
+function _genericMagicLinkResponse(res) {
+  // Anti-enumeração: sempre 200 com mesma mensagem (acerto ou erro).
+  return res.json({
+    message: 'Se este email é autorizado como admin, você receberá um link de acesso em alguns segundos. Verifique sua caixa de entrada.'
+  });
+}
 
 /**
  * POST /api/auth/register
@@ -308,6 +341,174 @@ router.get('/cep/:cep', async (req, res) => {
   } catch (e) { console.log('ViaCEP também falhou:', e.message); }
 
   res.status(404).json({ error: 'CEP não encontrado' });
+});
+
+/**
+ * POST /api/auth/magic-link/request
+ * Body: { email }
+ * Sempre retorna resposta genérica (anti-enumeração).
+ * Se email ∈ ADMIN_EMAILS env, gera token, salva sha256 no banco,
+ * envia link único pro email com TTL 15min. Rate-limit (5/15min/IP).
+ */
+router.post('/magic-link/request', async (req, res) => {
+  try {
+    const emailRaw = (req.body && req.body.email) || '';
+    const email = String(emailRaw).trim().toLowerCase();
+
+    // Validação básica do formato (não revela se passou)
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return _genericMagicLinkResponse(res);
+    }
+
+    // Se não está na lista admin, retorna genérico sem fazer nada
+    if (!_isAdminEmail(email)) {
+      console.log('[magic-link] tentativa com email não-admin (silenciado)');
+      return _genericMagicLinkResponse(res);
+    }
+
+    // Gera token: 32 bytes hex (256 bits) crypto.randomBytes
+    const rawToken = crypto.randomBytes(MAGIC_LINK_TOKEN_BYTES).toString('hex');
+    const tokenHash = _hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL_MIN * 60 * 1000);
+
+    await pool.query(
+      `INSERT INTO magic_link_tokens (email, token_hash, expires_at, ip_origem, ua_origem)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [email, tokenHash, expiresAt, req.ip || null, (req.headers['user-agent'] || '').slice(0, 500)]
+    );
+
+    // Frontend deve ter rota /admin/magic?token=XXX que faz GET no consume.
+    // FRONTEND_URL configurado no env (mesma var usada por outros emails).
+    const baseFront = process.env.FRONTEND_URL || 'https://implocadora.com.br';
+    const link = `${baseFront.replace(/\/$/, '')}/admin/magic?token=${rawToken}`;
+
+    try {
+      await sendEmail({
+        to: email,
+        subject: 'IMP Locadora — Link de acesso admin',
+        html: `
+          <div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111">
+            <h2 style="margin:0 0 16px">Link de acesso admin</h2>
+            <p>Alguém pediu um link de acesso admin pra <strong>${email}</strong> (provavelmente você).</p>
+            <p>Clique no botão abaixo pra entrar. O link expira em <strong>${MAGIC_LINK_TTL_MIN} minutos</strong> e funciona <strong>uma única vez</strong>.</p>
+            <p style="margin:28px 0">
+              <a href="${link}" style="background:#1e40af;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:700">
+                Entrar no painel admin
+              </a>
+            </p>
+            <p style="font-size:12px;color:#6b7280">
+              Se você NÃO pediu, ignore este email — o link expira sozinho e ninguém entra.<br>
+              IP de origem: ${req.ip || 'desconhecido'}.
+            </p>
+          </div>
+        `,
+      });
+      console.log(`[magic-link] enviado pra ${email} (expira em ${MAGIC_LINK_TTL_MIN}min)`);
+    } catch (mailErr) {
+      console.error('[magic-link] falha ao enviar email:', mailErr.message);
+      // Resposta genérica mesmo assim — não vaza erro de email
+    }
+
+    return _genericMagicLinkResponse(res);
+  } catch (err) {
+    console.error('[magic-link/request] erro:', err.message);
+    return _genericMagicLinkResponse(res);
+  }
+});
+
+/**
+ * GET /api/auth/magic-link/consume?token=XXX
+ * Valida token: existe, não expirou, não foi usado. Marca used_at=NOW().
+ * Confirma que email ainda está em ADMIN_EMAILS (env pode ter mudado).
+ * Garante user admin no DB (cria se faltar). Gera JWT 4h com
+ * claim via='magic_link' (usado pra permitir mudar credenciais MP).
+ * Retorna { user, token, via: 'magic_link' }.
+ */
+router.get('/magic-link/consume', async (req, res) => {
+  try {
+    const raw = String(req.query.token || '').trim();
+    if (!raw || raw.length < 16) {
+      return res.status(400).json({ error: 'Token inválido' });
+    }
+    const tokenHash = _hashToken(raw);
+
+    const r = await pool.query(
+      `SELECT id, email, expires_at, used_at FROM magic_link_tokens WHERE token_hash = $1`,
+      [tokenHash]
+    );
+    if (r.rows.length === 0) {
+      return res.status(401).json({ error: 'Token inválido ou expirado' });
+    }
+    const row = r.rows[0];
+    if (row.used_at) {
+      return res.status(401).json({ error: 'Link já foi usado. Solicite um novo.' });
+    }
+    if (new Date(row.expires_at).getTime() < Date.now()) {
+      return res.status(401).json({ error: 'Link expirado. Solicite um novo.' });
+    }
+    // Re-verifica que email AINDA é autorizado (env pode ter mudado)
+    if (!_isAdminEmail(row.email)) {
+      return res.status(401).json({ error: 'Email não está mais autorizado como admin.' });
+    }
+
+    // Marca usado (atomicamente — protege replay simultâneo)
+    const used = await pool.query(
+      `UPDATE magic_link_tokens SET used_at = NOW() WHERE id = $1 AND used_at IS NULL RETURNING id`,
+      [row.id]
+    );
+    if (used.rowCount === 0) {
+      return res.status(401).json({ error: 'Link já foi usado. Solicite um novo.' });
+    }
+
+    // Garante user admin (cria se não existir) — multi-email admin (JOs tem ~10)
+    let userRes = await pool.query(
+      `SELECT id, nome, email, role, ativo FROM users WHERE LOWER(email) = LOWER($1)`,
+      [row.email]
+    );
+    let user;
+    if (userRes.rows.length === 0) {
+      // Cria com senha randômica longa (admin não usa senha — só magic link)
+      const randomPass = crypto.randomBytes(32).toString('hex');
+      const hash = await bcrypt.hash(randomPass, 10);
+      const ins = await pool.query(
+        `INSERT INTO users (nome, email, senha_hash, role, ativo)
+         VALUES ($1, $2, $3, 'admin', true)
+         RETURNING id, nome, email, role, ativo`,
+        [row.email.split('@')[0], row.email, hash]
+      );
+      user = ins.rows[0];
+      console.log(`[magic-link] criou user admin novo: ${row.email}`);
+    } else {
+      user = userRes.rows[0];
+      // Garante role=admin e ativo=true (corrige drift se admin mexeu)
+      if (user.role !== 'admin' || !user.ativo) {
+        await pool.query(`UPDATE users SET role='admin', ativo=true WHERE id=$1`, [user.id]);
+        user.role = 'admin';
+        user.ativo = true;
+      }
+    }
+
+    // JWT curto + claim via='magic_link' (usado em ações sensíveis tipo PUT mp_*)
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: 'admin', via: 'magic_link' },
+      process.env.JWT_SECRET,
+      { expiresIn: ADMIN_JWT_TTL }
+    );
+
+    // Audit log
+    try {
+      await pool.query(
+        `INSERT INTO audit_log (user_id, user_email, acao, recurso, ip, via)
+         VALUES ($1, $2, 'magic_link_consume', 'auth', $3, 'magic_link')`,
+        [user.id, user.email, req.ip || null]
+      );
+    } catch (_) { /* tabela pode não existir ainda */ }
+
+    res.json({ user: { id: user.id, nome: user.nome, email: user.email, role: 'admin', ativo: true }, token, via: 'magic_link' });
+  } catch (err) {
+    console.error('[magic-link/consume] erro:', err.message);
+    res.status(500).json({ error: 'Erro interno' });
+  }
 });
 
 module.exports = router;

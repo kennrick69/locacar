@@ -265,6 +265,77 @@ const migrate = async () => {
     await client.query(`ALTER TABLE car_maintenance ADD COLUMN IF NOT EXISTS abatimento_id INTEGER REFERENCES abatimentos(id) ON DELETE SET NULL;`);
     await client.query(`ALTER TABLE car_maintenance ADD COLUMN IF NOT EXISTS nota_url TEXT;`);
 
+    // ========== MIGRAÇÕES da Auditoria (2026-05-25) ==========
+    // Soft-delete: adiciona deleted_at em tabelas críticas pra preservar histórico.
+    // Queries de leitura devem incluir "AND deleted_at IS NULL" (ver routes/drivers.js).
+    await client.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;`);
+    await client.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;`);
+    await client.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;`);
+    await client.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;`);
+    await client.query(`ALTER TABLE abatimentos ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;`);
+    await client.query(`ALTER TABLE acrescimos ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;`);
+    await client.query(`ALTER TABLE final_settlements ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;`);
+
+    // Tokens de Magic Link (login admin por link email).
+    // token_hash = sha256 do token entregue ao admin; nunca armazenamos o token cru.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS magic_link_tokens (
+        id          SERIAL PRIMARY KEY,
+        email       VARCHAR(255) NOT NULL,
+        token_hash  VARCHAR(128) NOT NULL UNIQUE,
+        expires_at  TIMESTAMP NOT NULL,
+        used_at     TIMESTAMP,
+        ip_origem   VARCHAR(64),
+        ua_origem   TEXT,
+        created_at  TIMESTAMP DEFAULT NOW()
+      );
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_magic_link_tokens_email ON magic_link_tokens(email);`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_magic_link_tokens_expires ON magic_link_tokens(expires_at);`);
+
+    // Audit log — toda mudança em settings (e ações sensíveis) fica registrada.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS audit_log (
+        id            SERIAL PRIMARY KEY,
+        user_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        user_email    VARCHAR(255),
+        acao          VARCHAR(100) NOT NULL,
+        recurso       VARCHAR(100),
+        recurso_id    VARCHAR(64),
+        dados_antigos TEXT,
+        dados_novos   TEXT,
+        ip            VARCHAR(64),
+        via           VARCHAR(32),
+        created_at    TIMESTAMP DEFAULT NOW()
+      );
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id);`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_audit_log_recurso ON audit_log(recurso);`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at);`);
+
+    // UNIQUE em mp_payment_id (anti-duplicação de pagamento).
+    // Limpa duplicatas existentes ANTES de aplicar (idempotente: NÃO falha se já existir).
+    // ON CONFLICT impossível em ALTER, usamos DO bloco com EXCEPTION pra não quebrar boot.
+    await client.query(`
+      DO $$
+      BEGIN
+        -- Apaga duplicatas mantendo o MIN(id) por mp_payment_id (mais antigo = primeiro processado)
+        DELETE FROM payments WHERE id IN (
+          SELECT id FROM payments p1
+          WHERE mp_payment_id IS NOT NULL
+            AND id > (SELECT MIN(id) FROM payments p2 WHERE p2.mp_payment_id = p1.mp_payment_id)
+        );
+        -- Tenta criar constraint; se já existir, ignora
+        BEGIN
+          ALTER TABLE payments ADD CONSTRAINT uq_payments_mp_payment_id UNIQUE (mp_payment_id);
+        EXCEPTION WHEN duplicate_object THEN
+          NULL;
+        END;
+      END
+      $$;
+    `);
+
     await client.query('COMMIT');
     console.log('✅ Migração concluída com sucesso!');
   } catch (err) {

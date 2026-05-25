@@ -370,11 +370,47 @@ class PaymentService {
 
       // Status do MP: approved, pending, rejected, cancelled, refunded
       if (mpData.status === 'approved') {
-        // Marca como pago
-        await pool.query(`
+        // 1) VALIDAÇÃO DE MOEDA — só BRL aceito.
+        // Webhook forjado em outra moeda (USD, MXN) marcaria como pago com
+        // valor errado. Defesa em profundidade vs CRÍTICO #2 da auditoria.
+        const currency = (mpData.currency_id || mpData.currency || 'BRL').toUpperCase();
+        if (currency !== 'BRL') {
+          console.error(`[WEBHOOK] Moeda inválida: ${currency} (esperado BRL). payment_id=${payment.id}`);
+          return { processed: false, reason: 'Moeda inválida — só BRL aceito' };
+        }
+
+        // 2) VALIDAÇÃO DE VALOR — server compara com o que ELE MESMO registrou
+        // no payment.valor_total (calculado a partir do banco quando o pagamento
+        // foi criado). Atacante que forjar webhook com valor=1 pra dívida=500
+        // bate aqui e é rejeitado. Tolerância 0.01 cobre arredondamento MP.
+        const valorEsperado = parseFloat(payment.valor_total);
+        const valorRecebido = parseFloat(mpData.transaction_amount);
+        if (!isNaN(valorEsperado) && !isNaN(valorRecebido)) {
+          if (Math.abs(valorEsperado - valorRecebido) > 0.01) {
+            console.error(`[WEBHOOK] VALOR MISMATCH! payment_id=${payment.id} esperado=R$${valorEsperado.toFixed(2)} recebido=R$${valorRecebido.toFixed(2)} — rejeitando + audit_log`);
+            try {
+              await pool.query(
+                `INSERT INTO audit_log (user_id, user_email, acao, recurso, recurso_id, dados_antigos, dados_novos, via)
+                 VALUES (NULL, 'webhook-mp', 'webhook_valor_mismatch', 'payments', $1, $2, $3, 'webhook')`,
+                [String(payment.id), valorEsperado.toFixed(2), valorRecebido.toFixed(2)]
+              );
+            } catch (_) { /* audit_log pode não existir */ }
+            return { processed: false, reason: 'Valor pago não corresponde ao valor da cobrança — possível fraude, revisar manualmente' };
+          }
+        }
+
+        // 3) UPDATE ATÔMICO — só processa se ainda está pendente.
+        // Cobre race condition de webhook duplicado: dois webhooks paralelos
+        // não conseguem ambos marcar como pago e disparar confirmarCaucao 2x.
+        const updRes = await pool.query(`
           UPDATE payments SET status = 'pago', data_pagamento = NOW(), updated_at = NOW()
-          WHERE id = $1
+          WHERE id = $1 AND status = 'pendente'
+          RETURNING id
         `, [payment.id]);
+        if (updRes.rowCount === 0) {
+          // Outra requisição já processou entre nosso SELECT e UPDATE
+          return { processed: true, reason: 'Já processado (race detectada e bloqueada)' };
+        }
 
         // Se é caução, atualiza perfil
         if (payment.tipo === 'caucao') {

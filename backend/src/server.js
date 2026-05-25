@@ -70,6 +70,11 @@ app.use('/api/auth/register', authLimiter);
 const tokenLoginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, message: { error: 'Muitas tentativas de login.' } });
 app.use('/api/auth/token-login', tokenLoginLimiter);
 
+// Magic Link: limite estrito por IP (evita flood de emails).
+// Resposta SEMPRE genérica (anti-enumeração de email) — não revela acerto.
+const magicLinkLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 5, message: { error: 'Muitas solicitações de link mágico. Aguarde 15 minutos.' } });
+app.use('/api/auth/magic-link/request', magicLinkLimiter);
+
 // ========== BODY ==========
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -92,6 +97,7 @@ app.use('/api/drivers', require('./routes/drivers'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/webhooks', require('./routes/webhooks'));
 app.use('/api/contract-clauses', require('./routes/contractClauses'));
+app.use('/api/admin', require('./routes/admin'));
 
 // ========== HEALTH ==========
 app.get('/api/health', async (req, res) => {
@@ -494,6 +500,71 @@ async function start() {
             AND comprovante_url IS NOT NULL
             AND perfil_app_url IS NOT NULL
         `);
+
+        // ========== MIGRAÇÕES DA AUDITORIA (2026-05-25) ==========
+        // Idempotentes — roda toda boot, sem efeito se já aplicadas.
+        // Soft-delete em tabelas críticas (preserva histórico)
+        await pool.query(`ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`);
+        await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`);
+        await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`);
+        await pool.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`);
+        await pool.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`);
+        await pool.query(`ALTER TABLE abatimentos ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`);
+        await pool.query(`ALTER TABLE acrescimos ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`);
+        await pool.query(`ALTER TABLE final_settlements ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`);
+
+        // Magic Link tokens (login admin sem senha — gerados por crypto.randomBytes)
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS magic_link_tokens (
+            id          SERIAL PRIMARY KEY,
+            email       VARCHAR(255) NOT NULL,
+            token_hash  VARCHAR(128) NOT NULL UNIQUE,
+            expires_at  TIMESTAMP NOT NULL,
+            used_at     TIMESTAMP,
+            ip_origem   VARCHAR(64),
+            ua_origem   TEXT,
+            created_at  TIMESTAMP DEFAULT NOW()
+          )
+        `);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_magic_link_tokens_email ON magic_link_tokens(email)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_magic_link_tokens_expires ON magic_link_tokens(expires_at)`);
+
+        // Audit log (toda mudança em settings + ações sensíveis)
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS audit_log (
+            id            SERIAL PRIMARY KEY,
+            user_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            user_email    VARCHAR(255),
+            acao          VARCHAR(100) NOT NULL,
+            recurso       VARCHAR(100),
+            recurso_id    VARCHAR(64),
+            dados_antigos TEXT,
+            dados_novos   TEXT,
+            ip            VARCHAR(64),
+            via           VARCHAR(32),
+            created_at    TIMESTAMP DEFAULT NOW()
+          )
+        `);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id)`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_log_recurso ON audit_log(recurso)`);
+
+        // UNIQUE em mp_payment_id (anti-duplicação de pagamento webhook).
+        // Limpa duplicatas e adiciona constraint — tudo idempotente em DO block.
+        await pool.query(`
+          DO $$
+          BEGIN
+            DELETE FROM payments WHERE id IN (
+              SELECT id FROM payments p1
+              WHERE mp_payment_id IS NOT NULL
+                AND id > (SELECT MIN(id) FROM payments p2 WHERE p2.mp_payment_id = p1.mp_payment_id)
+            );
+            BEGIN
+              ALTER TABLE payments ADD CONSTRAINT uq_payments_mp_payment_id UNIQUE (mp_payment_id);
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END;
+          END
+          $$
+        `);
       } catch (e) { /* já existe */ }
     }
   } catch (err) {
@@ -505,6 +576,13 @@ async function start() {
     const adminCheck = await pool.query("SELECT id FROM users WHERE email = 'admin@implocadora.com.br'");
     if (adminCheck.rows.length === 0) {
       const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+      // Hardening: avisa em PROD se ADMIN_PASSWORD não foi setado.
+      // Recomendação ao JOs: usar magic link como caminho de login admin
+      // (rotas /api/auth/magic-link/*); admin@implocadora.com.br precisa
+      // estar em ADMIN_EMAILS env var.
+      if (process.env.NODE_ENV === 'production' && (!process.env.ADMIN_PASSWORD || adminPassword === 'admin123' || adminPassword.length < 12)) {
+        console.error('⚠️  CRÍTICO: ADMIN_PASSWORD fraca/default em PRODUÇÃO. Configure ADMIN_PASSWORD com 12+ chars no Railway, ou use Magic Link (ADMIN_EMAILS env).');
+      }
       const hash = await bcrypt.hash(adminPassword, 10);
       await pool.query("INSERT INTO users (nome, email, senha_hash, role) VALUES ('Administrador', 'admin@implocadora.com.br', $1, 'admin')", [hash]);
       console.log('✅ Admin criado: admin@implocadora.com.br');

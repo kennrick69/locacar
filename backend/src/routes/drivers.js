@@ -812,7 +812,20 @@ router.post('/admin-create', auth, adminOnly, async (req, res) => {
  */
 router.get('/', auth, adminOnly, async (req, res) => {
   try {
-    const { status } = req.query;
+    const { status, incluir, somente } = req.query;
+    // Filtro de soft-delete:
+    //  default: só ATIVOS (deleted_at IS NULL)
+    //  ?incluir=antigos: ativos + arquivados (admin pode ver tudo junto)
+    //  ?somente=antigos: SÓ arquivados (aba "Motoristas Antigos")
+    let where = '';
+    if (somente === 'antigos') {
+      where = 'WHERE dp.deleted_at IS NOT NULL';
+    } else if (incluir === 'antigos') {
+      where = ''; // sem filtro deleted_at
+    } else {
+      where = 'WHERE dp.deleted_at IS NULL';
+    }
+
     let query = `
       SELECT dp.*, u.nome, u.email, u.cpf, u.telefone,
         c.marca as car_marca, c.modelo as car_modelo, c.placa as car_placa,
@@ -821,11 +834,12 @@ router.get('/', auth, adminOnly, async (req, res) => {
       JOIN users u ON u.id = dp.user_id
       LEFT JOIN cars c ON c.id = dp.car_id
       LEFT JOIN cars ci ON ci.id = dp.car_interesse_id
+      ${where}
     `;
     const params = [];
 
     if (status) {
-      query += ' WHERE dp.status = $1';
+      query += where ? ' AND dp.status = $1' : ' WHERE dp.status = $1';
       params.push(status);
     }
 
@@ -1713,7 +1727,12 @@ ${observacoes ? '<h2>Observações</h2><p>' + escapeHtml(observacoes).replace(/\
 });
 
 /**
- * DELETE /api/drivers/:id - Admin: excluir motorista
+ * DELETE /api/drivers/:id - Admin: ARQUIVA motorista (soft-delete).
+ * NÃO apaga dados. Marca deleted_at=NOW() em driver_profiles e em todos
+ * os registros relacionados. Motorista some das listas default mas
+ * aparece em "Motoristas Antigos" (?somente=antigos).
+ * Libera o carro pra próximo motorista usar.
+ * Restaurável via PATCH /:id/restore.
  */
 router.delete('/:id', auth, adminOnly, async (req, res) => {
   const client = await pool.connect();
@@ -1721,31 +1740,94 @@ router.delete('/:id', auth, adminOnly, async (req, res) => {
     await client.query('BEGIN');
     const driverId = req.params.id;
 
-    // Busca driver
+    // Busca driver (mesmo se já arquivado, pra dar resposta clara)
     const driverRes = await client.query('SELECT * FROM driver_profiles WHERE id = $1', [driverId]);
     if (driverRes.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Motorista não encontrado' }); }
     const driver = driverRes.rows[0];
 
-    // Libera carro se tinha
+    if (driver.deleted_at) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Motorista já está arquivado em "Motoristas Antigos".' });
+    }
+
+    // Libera o carro (motorista arquivado não usa mais)
     if (driver.car_id) {
       await client.query('UPDATE cars SET disponivel = true, updated_at = NOW() WHERE id = $1', [driver.car_id]);
     }
 
-    // Deleta em cascata (driver_profiles → charges, abatimentos, acrescimos, payments, documents)
-    await client.query('DELETE FROM acrescimos WHERE driver_id = $1', [driverId]);
-    await client.query('DELETE FROM abatimentos WHERE driver_id = $1', [driverId]);
-    await client.query('DELETE FROM payments WHERE driver_id = $1', [driverId]);
-    await client.query('DELETE FROM weekly_charges WHERE driver_id = $1', [driverId]);
-    await client.query('DELETE FROM final_settlements WHERE driver_id = $1', [driverId]);
-    await client.query('DELETE FROM documents WHERE user_id = $1', [driver.user_id]);
-    await client.query('DELETE FROM driver_profiles WHERE id = $1', [driverId]);
-    await client.query('DELETE FROM users WHERE id = $1', [driver.user_id]);
+    // SOFT-DELETE: preserva TUDO (fotos, dados de cadastro, histórico de pagamentos).
+    // Marca deleted_at em driver_profiles + tabelas relacionadas. user fica preservado
+    // pra histórico de auth aparecer no audit_log.
+    await client.query('UPDATE driver_profiles SET deleted_at = NOW(), updated_at = NOW(), car_id = NULL WHERE id = $1', [driverId]);
+    await client.query('UPDATE users SET deleted_at = NOW(), ativo = false WHERE id = $1', [driver.user_id]);
+    await client.query('UPDATE weekly_charges SET deleted_at = NOW() WHERE driver_id = $1 AND deleted_at IS NULL', [driverId]);
+    await client.query('UPDATE payments SET deleted_at = NOW() WHERE driver_id = $1 AND deleted_at IS NULL', [driverId]);
+    await client.query('UPDATE abatimentos SET deleted_at = NOW() WHERE driver_id = $1 AND deleted_at IS NULL', [driverId]);
+    await client.query('UPDATE acrescimos SET deleted_at = NOW() WHERE driver_id = $1 AND deleted_at IS NULL', [driverId]);
+    await client.query('UPDATE final_settlements SET deleted_at = NOW() WHERE driver_id = $1 AND deleted_at IS NULL', [driverId]);
+    await client.query('UPDATE documents SET deleted_at = NOW() WHERE user_id = $1 AND deleted_at IS NULL', [driver.user_id]);
+
+    // Audit log
+    try {
+      await client.query(
+        `INSERT INTO audit_log (user_id, user_email, acao, recurso, recurso_id, via, ip)
+         VALUES ($1, $2, 'soft_delete_driver', 'driver_profiles', $3, $4, $5)`,
+        [req.user.id, req.user.email, String(driverId), req.user.via || 'password', req.ip || null]
+      );
+    } catch (_) { /* audit pode não existir */ }
 
     await client.query('COMMIT');
-    res.json({ message: 'Motorista excluído com sucesso' });
+    res.json({ message: 'Motorista arquivado em "Motoristas Antigos". Dados preservados — restaure se foi engano.' });
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('Erro ao excluir motorista:', err);
+    console.error('Erro ao arquivar motorista:', err);
+    res.status(500).json({ error: err.message || 'Erro interno' });
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * PATCH /api/drivers/:id/restore - Admin: desarquiva motorista (undo do DELETE).
+ * Limpa deleted_at de driver_profiles + tabelas relacionadas. user volta ativo.
+ * NOTA: não reatribui carro automaticamente (admin escolhe depois).
+ */
+router.patch('/:id/restore', auth, adminOnly, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const driverId = req.params.id;
+
+    const driverRes = await client.query('SELECT * FROM driver_profiles WHERE id = $1', [driverId]);
+    if (driverRes.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Motorista não encontrado' }); }
+    const driver = driverRes.rows[0];
+    if (!driver.deleted_at) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Motorista não está arquivado.' });
+    }
+
+    await client.query('UPDATE driver_profiles SET deleted_at = NULL, updated_at = NOW() WHERE id = $1', [driverId]);
+    await client.query('UPDATE users SET deleted_at = NULL, ativo = true WHERE id = $1', [driver.user_id]);
+    await client.query('UPDATE weekly_charges SET deleted_at = NULL WHERE driver_id = $1', [driverId]);
+    await client.query('UPDATE payments SET deleted_at = NULL WHERE driver_id = $1', [driverId]);
+    await client.query('UPDATE abatimentos SET deleted_at = NULL WHERE driver_id = $1', [driverId]);
+    await client.query('UPDATE acrescimos SET deleted_at = NULL WHERE driver_id = $1', [driverId]);
+    await client.query('UPDATE final_settlements SET deleted_at = NULL WHERE driver_id = $1', [driverId]);
+    await client.query('UPDATE documents SET deleted_at = NULL WHERE user_id = $1', [driver.user_id]);
+
+    try {
+      await client.query(
+        `INSERT INTO audit_log (user_id, user_email, acao, recurso, recurso_id, via, ip)
+         VALUES ($1, $2, 'restore_driver', 'driver_profiles', $3, $4, $5)`,
+        [req.user.id, req.user.email, String(driverId), req.user.via || 'password', req.ip || null]
+      );
+    } catch (_) { /* audit pode não existir */ }
+
+    await client.query('COMMIT');
+    res.json({ message: 'Motorista restaurado. Reatribua um carro se necessário.' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao restaurar motorista:', err);
     res.status(500).json({ error: err.message || 'Erro interno' });
   } finally {
     client.release();

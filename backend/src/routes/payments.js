@@ -236,13 +236,20 @@ router.post('/caucao', auth, driverOnly, async (req, res) => {
     if (!p.car_id || !p.valor_caucao) return res.status(400).json({ error: 'Nenhum carro atribuído' });
     if (!p.contrato_confirmado) return res.status(400).json({ error: 'Assine o contrato antes de pagar o caução' });
 
+    // SERVER-SIDE: valor SEMPRE do banco (cars.valor_caucao). Body do
+    // motorista NÃO pode influenciar o valor da caução.
+    const valorBanco = parseFloat(p.valor_caucao);
+    if (isNaN(valorBanco) || valorBanco <= 0) {
+      return res.status(400).json({ error: 'Carro sem valor de caução configurado. Avise o admin.' });
+    }
+
     const resultado = await PaymentService.criarPagamento({
       userId: req.user.id,
       driverId: p.id,
       chargeId: null,
       tipo: 'caucao',
       metodo: metodo || 'pix',
-      valor: parseFloat(p.valor_caucao),
+      valor: valorBanco,
       parcelas: parcelas || 1,
     });
 
