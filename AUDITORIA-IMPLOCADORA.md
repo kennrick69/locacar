@@ -348,3 +348,172 @@ A pergunta-chave do JOs ("estou perdendo dados?") tem resposta tranquila: **não
 
 Boa noite.
 — Claudio
+
+---
+
+# 9. WAVE 2 — JOs APROVOU + IMPLEMENTADO (2026-05-25 madrugada, commit `9d3873e`)
+
+## 9.0 Investigação extra: cadeia de roubo de credencial MP
+
+**Veredito**: cadeia BLOQUEADA no passo 2 (escalation motorista→admin é
+impossível via API — nenhuma rota aceita campo `role` do body, todas as
+rotas admin têm `adminOnly` middleware). Mas 3 buracos adjacentes
+**confirmados**:
+
+1. **`ADMIN_PASSWORD || 'admin123'` fallback** em `server.js:507`. Em prod sem
+   `ADMIN_PASSWORD` configurada, senha é trivial.
+2. **Credenciais MP em plaintext no banco** (tabela `settings`), acessíveis
+   por qualquer admin com senha via `GET /api/settings`.
+3. **Modo simulação se MP_ACCESS_TOKEN ausente** — pagamentos viram "fake
+   pago" silenciosamente.
+
+## 9.1 Magic Link admin (caminho alternativo de login)
+
+Decisão: implementado como **caminho ADICIONAL** (não substitui senha
+admin ainda), com sessão curta (4h) e **claim `via='magic_link'` exigido
+em ações sensíveis** (mexer em credenciais MP). Defesa em profundidade:
+mesmo se senha admin vazar, atacante não troca credencial MP sem acesso
+ao email do JOs.
+
+- Tabela `magic_link_tokens` (token_hash sha256, expira 15min, uso único, audit).
+- `POST /api/auth/magic-link/request`: rate-limit 5/15min/IP. Resposta sempre
+  genérica (anti-enumeração de email). Se email ∈ `ADMIN_EMAILS` env, envia
+  link via Resend; senão silencioso.
+- `GET /api/auth/magic-link/consume?token=XXX`: valida (existe/não expirou/
+  não usado), marca `used_at=NOW()` atomicamente (anti-replay simultâneo),
+  garante user admin no DB (cria se faltar — JOs tem ~10 emails possíveis),
+  gera JWT 4h com `via='magic_link'`. Audit log.
+- Login antigo (`/login`, `/token-login`) **INTACTO**. Magic link é
+  alternativa; JOs testa antes de migrar.
+
+**Ação manual do JOs**: configurar `ADMIN_EMAILS` no Railway (lista
+separada por vírgula, ex.: `kennrick@gmail.com,joão@...`).
+
+## 9.2 Settings — defesa em profundidade
+
+- `GET /api/settings` **mascara** chaves sensíveis (mp_access_token,
+  mp_webhook_secret, mp_public_key etc): retorna `***UL7K` (últimos 4 chars)
+  pra admin com senha. **Só admin via magic link** vê o valor inteiro.
+- `PUT /api/settings` **bloqueia 403** mudança de qualquer chave sensível
+  se JWT não tem `via='magic_link'`. Resposta inclui lista de chaves
+  bloqueadas + dica de como autenticar.
+- **Toda** mudança em settings vai pro `audit_log` (valores sensíveis
+  mascarados no log também).
+
+## 9.3 Validação de valor (servidor calcula, anti-fraude)
+
+- **`POST /api/payments/caucao`**: valor **SEMPRE** do `cars.valor_caucao`
+  no banco. Body do motorista é ignorado. Guard NaN/zero antes de criar.
+- **`POST /api/payments/weekly/:chargeId`** (já melhorado na wave 1):
+  servidor recalcula `restante = valor_final - sum(payments pagos)`.
+  Cliente pode pedir parcial ≤ restante, mas nunca > restante nem ≤ 0.
+- **`PaymentService.processarWebhook()`** valida:
+  - `currency_id === 'BRL'` — rejeita USD/MXN forjado.
+  - `|valor_esperado − mpData.transaction_amount| ≤ 0.01` — rejeita
+    webhook que tenta marcar dívida de R$ 500 como paga com R$ 1.
+    Mismatch vai pro `audit_log` como `webhook_valor_mismatch` pra
+    revisão.
+
+## 9.4 Webhook idempotência + UNIQUE mp_payment_id
+
+- Migration idempotente: limpa duplicatas de mp_payment_id (mantém `MIN(id)`)
+  + `ALTER ADD CONSTRAINT UNIQUE` em DO block com EXCEPTION (não quebra
+  boot se constraint já existir).
+- `processarWebhook()`: `UPDATE atômico WHERE id=$1 AND status='pendente'`.
+  Webhook duplicado em paralelo: 2º bate `rowCount=0` e retorna
+  `'Já processado (race detectada e bloqueada)'`. Downstream
+  (`confirmarCaucao`, recálculo saldo) **não dispara 2x**.
+
+## 9.5 Soft-delete + aba "Motoristas Antigos"
+
+- Migration idempotente: `ALTER ADD COLUMN deleted_at TIMESTAMP` em 8
+  tabelas (driver_profiles, users, weekly_charges, payments, documents,
+  abatimentos, acrescimos, final_settlements).
+- `DELETE /api/drivers/:id` agora **ARQUIVA** (UPDATE deleted_at=NOW()
+  em tudo relacionado). Não apaga. Libera o carro (próximo motorista
+  pode usar). Marca `users.ativo=false` (login bloqueado). Audit log.
+- `PATCH /api/drivers/:id/restore`: desarquiva (undo).
+- `GET /api/drivers` agora aceita:
+  - default: só ativos (`deleted_at IS NULL`).
+  - `?incluir=antigos`: todos.
+  - `?somente=antigos`: só arquivados (aba "Motoristas Antigos").
+- `GET /api/drivers/:id` **sem filtro deleted_at**: admin abre detalhe
+  do arquivado normalmente, vê todo histórico preservado (fotos, docs,
+  pagamentos, cobranças).
+
+## 9.6 Backup manual exportável
+
+- **`GET /api/admin/backup/export`** (adminOnly): JSON dump completo de
+  17 tabelas operacionais. Credenciais MP **EXCLUÍDAS** do dump (essas
+  vivem no painel Railway). `Content-Disposition` força download. Audit
+  log de cada baixada.
+- **`GET /api/admin/backup/stats`**: contadores por tabela sem baixar
+  (ideal pra ver "vai vir 1.2k pagamentos, 42 users" antes do download).
+- `BACKUP-MANUAL.md` no repo: instruções completas (como baixar via cURL
+  ou UI futura, onde guardar, frequência sugerida, como restaurar,
+  detalhes sobre credenciais MP).
+
+## 9.7 Audit log
+
+Nova tabela `audit_log` (idempotente). Registra:
+
+| Ação | Disparada em |
+|------|--------------|
+| `update_setting` | PUT /api/settings (valor mascarado se sensível) |
+| `magic_link_consume` | usuário cliclou link e logou |
+| `soft_delete_driver` | DELETE /api/drivers/:id |
+| `restore_driver` | PATCH /api/drivers/:id/restore |
+| `backup_export` | download backup admin |
+| `webhook_valor_mismatch` | tentativa de webhook MP com valor errado |
+
+Permite forense se algo suspeito acontecer (quem fez, quando, via qual
+método de auth, qual o estado anterior/novo).
+
+## 9.8 Hardening adicional
+
+- `server.js` boot: alerta WARN se `ADMIN_PASSWORD` ausente/'admin123'/<12
+  chars em produção. Não bloqueia (não quebra prod), só loga pro JOs ver.
+- Rate-limiter dedicado `/api/auth/magic-link/request`: 5/15min/IP.
+
+## 9.9 Recheck pós-deploy
+
+- `/api/health`: HTTP 200 com `db:ok` ✅
+- `/api/auth/magic-link/request` (POST vazio): HTTP 200 resposta genérica ✅
+- `/api/auth/magic-link/consume?token=invalid`: HTTP 400 ✅
+- `/api/admin/backup/stats` (sem token): HTTP 401 ✅
+- `/api/webhooks/mp` (GET): HTTP 200 ✅
+- Login antigo continua funcionando (não testado em prod por óbvio, mas
+  código intacto).
+
+## 9.10 Ainda pendente (mais arriscado — JOs decide quando)
+
+1. **MP_WEBHOOK_SECRET obrigatório**: hoje validação é opcional. Se aplicar
+   sem confirmar que o env está setado, webhook real para de funcionar.
+2. **CASCADE → RESTRICT nas FKs**: agora que tem soft-delete, faz sentido,
+   mas é schema migration. Aguarda 1 sprint pra ter certeza de que
+   soft-delete está estável.
+3. **JWT refresh token rotation** (motorista 7d → 15min + refresh).
+   Derruba login de todos os motoristas atuais; precisa de comunicação.
+4. **CSP sem `unsafe-inline`**: precisa testar checkout MP cuidadoso.
+5. **Timezone CRON via `NOW() AT TIME ZONE`** (baixa urgência — dedup
+   protege contra duplicação).
+6. **Tornar magic link OBRIGATÓRIO** pra todo login admin (rejeitar senha
+   admin via `/login`): só depois do JOs confirmar que magic link funciona
+   100% pra ele.
+
+---
+
+**Resumo final**: das **38 vulnerabilidades** mapeadas na auditoria
+inicial, **agora resolvidas/mitigadas: 20** (14 wave 1 + 6 wave 2 — as 4
+correções aprovadas + magic link + audit log). **Pendentes documentadas
+pra próximas waves**: 18, todas com plano claro.
+
+**Posição de segurança vs. ontem**: o sistema agora tem **defesa em
+profundidade contra roubo de credencial MP** (admin com senha vê
+mascarado, só admin via email autorizado consegue mudar), **trilha de
+auditoria** pra qualquer mudança sensível, **proteção contra fraude de
+valor** no webhook MP, **idempotência real** no processamento de
+pagamento, e **histórico preservado** mesmo em "exclusão" de motorista.
+Plus um **backup manual** que o JOs pode exportar quando quiser.
+
+Wave 2: commit `9d3873e`. Push validado, deploy ativo.
