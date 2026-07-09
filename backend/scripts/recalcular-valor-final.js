@@ -80,14 +80,93 @@ async function main() {
 
       if (APPLY) {
         const vPago = parseFloat(c.valor_pago_total || 0);
+        const jaEstavaPaga = c.pago;
+        const cobreAgora = vPago >= novoFinal - 0.01;
         const novoSaldo = Math.max(novoFinal - vPago, 0);
+        // Se a cobrança agora ficou totalmente coberta pelo pagamento, marca paga.
+        const marcaPaga = !jaEstavaPaga && cobreAgora;
         await client.query(
           `UPDATE weekly_charges
-              SET valor_final = $1, saldo_devedor = $2, updated_at = NOW()
-            WHERE id = $3`,
-          [novoFinal, novoSaldo, c.id]
+              SET valor_final = $1,
+                  saldo_devedor = $2,
+                  pago = CASE WHEN $3 THEN true ELSE pago END,
+                  data_pagamento = CASE WHEN $3 THEN NOW() ELSE data_pagamento END,
+                  updated_at = NOW()
+            WHERE id = $4`,
+          [novoFinal, novoSaldo, marcaPaga, c.id]
         );
       }
+    }
+
+    // ===================================================================
+    // Passo 2 — propagar crédito (sobrepagamento) por motorista afetado
+    // ===================================================================
+    if (APPLY) {
+      console.log(`\n=== PROPAGANDO CRÉDITO ===`);
+      const driverIds = [...new Set(charges.rows.map((c) => c.driver_id))];
+      let creditoAplicado = 0;
+      let cobrancasAtualizadas = 0;
+
+      for (const drvId of driverIds) {
+        // Crédito disponível = sobrepagamento em pagas MENOS já propagado
+        const totalQ = await client.query(
+          `SELECT COALESCE(SUM(valor_pago_total - valor_final), 0) AS total
+             FROM weekly_charges
+            WHERE driver_id = $1 AND pago = true
+              AND valor_pago_total > valor_final + 0.01`,
+          [drvId]
+        );
+        const jaQ = await client.query(
+          `SELECT COALESCE(SUM(-credito_anterior), 0) AS ja
+             FROM weekly_charges
+            WHERE driver_id = $1 AND credito_anterior < 0`,
+          [drvId]
+        );
+        const disponivel = parseFloat(totalQ.rows[0].total) - parseFloat(jaQ.rows[0].ja);
+        if (disponivel <= 0.01) continue;
+
+        // Próxima cobrança em aberto
+        const abertaQ = await client.query(
+          `SELECT id, semana_ref, valor_base, credito_anterior, abatimentos, multa, valor_pago_total
+             FROM weekly_charges
+            WHERE driver_id = $1 AND pago = false
+            ORDER BY semana_ref ASC LIMIT 1`,
+          [drvId]
+        );
+        if (abertaQ.rows.length === 0) {
+          console.log(`  driver ${drvId}: R$ ${fmt(disponivel)} disponível mas sem cobrança em aberto`);
+          continue;
+        }
+        const a = abertaQ.rows[0];
+        const novoCredAnt = parseFloat(a.credito_anterior) - disponivel;
+        const multaEfetivaProx = multaDiferida ? 0 : parseFloat(a.multa);
+        const novoFinalProx = Math.max(
+          parseFloat(a.valor_base) - parseFloat(a.abatimentos) +
+            novoCredAnt + multaEfetivaProx,
+          0
+        );
+        const vPagoProx = parseFloat(a.valor_pago_total || 0);
+        const cobreAgora = vPagoProx >= novoFinalProx - 0.01;
+        const novoSaldoProx = Math.max(novoFinalProx - vPagoProx, 0);
+        await client.query(
+          `UPDATE weekly_charges
+              SET credito_anterior = $1,
+                  valor_final = $2,
+                  saldo_devedor = $3,
+                  pago = CASE WHEN $4 THEN true ELSE pago END,
+                  data_pagamento = CASE WHEN $4 THEN NOW() ELSE data_pagamento END,
+                  updated_at = NOW()
+            WHERE id = $5`,
+          [novoCredAnt, novoFinalProx, novoSaldoProx, cobreAgora, a.id]
+        );
+        console.log(
+          `  driver ${drvId} · aplicou R$ ${fmt(disponivel)} na semana ${a.semana_ref} ` +
+          `(cobrança ${cobreAgora ? 'passou a paga' : 'ainda em aberto'})`
+        );
+        creditoAplicado += disponivel;
+        cobrancasAtualizadas++;
+      }
+      console.log(`Total crédito propagado: R$ ${fmt(creditoAplicado)} em ${cobrancasAtualizadas} cobrança(s)`);
     }
 
     console.log(`\n=== RESUMO ===`);
