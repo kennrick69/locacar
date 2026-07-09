@@ -148,6 +148,7 @@ export const driversAPI = {
   liberarCaucao: (id, liberar = true) => api.patch(`/drivers/${id}/liberar-caucao`, { liberar }),
   createCharge: (driverId, data) => api.post(`/drivers/${driverId}/charges`, data),
   approveAbatimento: (driverId, abatId) => api.patch(`/drivers/${driverId}/abatimentos/${abatId}/approve`),
+  deleteAbatimento: (driverId, abatId) => api.delete(`/drivers/${driverId}/abatimentos/${abatId}`),
   addManutencao: (driverId, chargeId, formData) =>
     api.post(`/drivers/${driverId}/charges/${chargeId}/manutencao`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },

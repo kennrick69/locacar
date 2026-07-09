@@ -192,6 +192,28 @@ export default function AdminDriverDetail() {
     } catch (e) { toast.error('Erro ao fixar documento'); }
   };
   const handleCreateCharge = async () => { if (!chargeForm.semana_ref || !chargeForm.valor_base) return toast.warning('Preencha semana e valor'); setProcessing(true); try { await driversAPI.createCharge(id, chargeForm); toast.success('Cobrança criada!'); setChargeModal(false); setChargeForm({ semana_ref: '', valor_base: '', observacoes: '', titulo: '' }); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } finally { setProcessing(false); } };
+  const handleDeleteAbatimento = async (abat) => {
+    const desc = abat.descricao || 'sem descrição';
+    const valorFmt = `R$ ${Number(abat.valor).toFixed(2)}`;
+    if (!window.confirm(
+      `Apagar ${abat.aprovado ? 'manutenção/abatimento' : 'solicitação'} "${desc}" (${valorFmt})?\n\n` +
+      (abat.aprovado
+        ? 'Isso vai reverter o abatimento: o valor volta para a cobrança, a cobrança pode ser reaberta se estava paga, e o crédito propagado é desfeito.'
+        : 'A solicitação será removida.')
+    )) return;
+    try {
+      const res = await driversAPI.deleteAbatimento(id, abat.id);
+      const d = res?.data || {};
+      const partes = ['Removido'];
+      if (d.era_aprovado) partes.push('cobrança recalculada');
+      if (d.credito_revertido > 0.01) partes.push(`R$ ${Number(d.credito_revertido).toFixed(2)} de crédito desfeito`);
+      toast.success(partes.join(' — '));
+      await loadData();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erro ao apagar');
+    }
+  };
+
   const handleAddManutencao = async () => {
     if (!manutModal || !manutForm.descricao || !manutForm.valor) {
       return toast.warning('Preencha descrição e valor');
@@ -942,6 +964,13 @@ export default function AdminDriverDetail() {
                                   {a.descricao ? ` · ${a.descricao}` : ''}
                                   {' · '}<span className="text-green-600">✓</span>
                                 </span>
+                                <button
+                                  onClick={() => handleDeleteAbatimento(a)}
+                                  className="text-xs text-red-500 hover:text-red-700 hover:bg-red-100 rounded px-1"
+                                  title="Apagar (reverte o abatimento)"
+                                >
+                                  ✕
+                                </button>
                               </div>
                             ))}
                           </div>
@@ -961,14 +990,23 @@ export default function AdminDriverDetail() {
                         </div>
                       )}
 
-                      {/* Abatimentos */}
+                      {/* Abatimentos pendentes de aprovação */}
                       {pendingAbats.length > 0 && (
                         <div>
                           <p className="text-xs font-medium text-yellow-700">Abatimentos pendentes:</p>
                           {pendingAbats.map(abat => (
                             <div key={abat.id} className="flex items-center justify-between bg-yellow-50 rounded px-2 py-1">
                               <span className="text-xs">{abat.descricao || 'S/ desc'} — R$ {fmt(abat.valor)}</span>
-                              <button onClick={() => handleApproveAbatimento(abat.id)} className="text-xs bg-green-600 text-white px-2 py-0.5 rounded">Aprovar</button>
+                              <div className="flex items-center gap-1">
+                                <button onClick={() => handleApproveAbatimento(abat.id)} className="text-xs bg-green-600 text-white px-2 py-0.5 rounded">Aprovar</button>
+                                <button
+                                  onClick={() => handleDeleteAbatimento(abat)}
+                                  className="text-xs text-red-500 hover:text-red-700 hover:bg-red-100 rounded px-1"
+                                  title="Recusar / apagar"
+                                >
+                                  ✕
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>

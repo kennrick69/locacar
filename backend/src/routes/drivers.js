@@ -1701,6 +1701,138 @@ router.patch('/:driverId/abatimentos/:id/approve', auth, adminOnly, async (req, 
 });
 
 /**
+ * DELETE /api/drivers/:driverId/abatimentos/:id
+ * Admin: apagar abatimento (pendente OU aprovado). Se estava aprovado, reverte:
+ *  - subtrai valor de weekly_charges.abatimentos
+ *  - recalcula valor_final
+ *  - se cobrança foi automaticamente marcada paga por esse abatimento e agora
+ *    valor_pago_total < valor_final, desmarca pago
+ *  - se havia crédito propagado em cobrança futura, desconta de volta
+ *  - remove car_maintenance vinculado (abatimento_id = X)
+ */
+router.delete('/:driverId/abatimentos/:id', auth, adminOnly, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const abatQ = await client.query(
+      'SELECT * FROM abatimentos WHERE id = $1 AND driver_id = $2',
+      [req.params.id, req.params.driverId]
+    );
+    if (abatQ.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Abatimento não encontrado' });
+    }
+    const abat = abatQ.rows[0];
+    const eraAprovado = abat.aprovado;
+
+    // Remove car_maintenance vinculado (se registrado por essa aprovação)
+    await client.query(
+      'DELETE FROM car_maintenance WHERE abatimento_id = $1',
+      [abat.id]
+    );
+
+    // Remove o abatimento
+    await client.query('DELETE FROM abatimentos WHERE id = $1', [abat.id]);
+
+    let creditoRevertido = 0;
+    let semanaRestaurada = null;
+
+    if (eraAprovado && abat.charge_id) {
+      // Recalcula total de abatimentos aprovados na cobrança
+      const totalQ = await client.query(
+        'SELECT COALESCE(SUM(valor), 0) as total FROM abatimentos WHERE charge_id = $1 AND aprovado = true',
+        [abat.charge_id]
+      );
+      const total = parseFloat(totalQ.rows[0].total);
+
+      const chargeQ = await client.query(
+        `SELECT valor_base, credito_anterior, multa, valor_pago_total, pago
+           FROM weekly_charges WHERE id = $1`,
+        [abat.charge_id]
+      );
+      if (chargeQ.rows.length > 0) {
+        const c = chargeQ.rows[0];
+        const novoFinal = Math.max(
+          parseFloat(c.valor_base) - total +
+            parseFloat(c.credito_anterior) + parseFloat(c.multa),
+          0
+        );
+        const vPago = parseFloat(c.valor_pago_total || 0);
+        // Se estava paga mas agora falta dinheiro (pagamento < novo valor_final), reabre
+        const deveReabrir = c.pago && vPago < novoFinal - 0.01;
+        await client.query(
+          `UPDATE weekly_charges
+              SET abatimentos = $1, valor_final = $2,
+                  pago = CASE WHEN $3 THEN false ELSE pago END,
+                  saldo_devedor = GREATEST($2 - COALESCE(valor_pago_total, 0), 0),
+                  data_pagamento = CASE WHEN $3 THEN NULL ELSE data_pagamento END,
+                  updated_at = NOW()
+            WHERE id = $4`,
+          [total, novoFinal, deveReabrir, abat.charge_id]
+        );
+
+        // Desfaz crédito propagado: se este abatimento gerou sobrepagamento antes,
+        // agora vamos calcular o excedente REMANESCENTE e ajustar próxima cobrança
+        const excedenteRemanescente = Math.max(vPago - novoFinal, 0);
+        // Calcula quanto crédito ainda deveria estar aplicado na próxima cobrança
+        const totalCreditoDisponivelQ = await client.query(
+          `SELECT COALESCE(SUM(valor_pago_total - valor_final), 0) AS total
+             FROM weekly_charges
+            WHERE driver_id = $1 AND pago = true
+              AND valor_pago_total > valor_final + 0.01`,
+          [abat.driver_id]
+        );
+        const totalCreditoDisponivel = parseFloat(totalCreditoDisponivelQ.rows[0].total);
+        const jaAplicadoQ = await client.query(
+          `SELECT id, valor_base, credito_anterior, abatimentos, multa
+             FROM weekly_charges
+            WHERE driver_id = $1 AND credito_anterior < 0
+            ORDER BY semana_ref ASC`,
+          [abat.driver_id]
+        );
+        let creditoAlvo = totalCreditoDisponivel;
+        for (const row of jaAplicadoQ.rows) {
+          const aplicadoAtual = -parseFloat(row.credito_anterior);
+          const novoAplicado = Math.min(aplicadoAtual, creditoAlvo);
+          if (novoAplicado !== aplicadoAtual) {
+            const novoCredAnt = -novoAplicado;
+            const novoFinalRow = Math.max(
+              parseFloat(row.valor_base) - parseFloat(row.abatimentos) +
+                novoCredAnt + parseFloat(row.multa),
+              0
+            );
+            await client.query(
+              `UPDATE weekly_charges
+                  SET credito_anterior = $1, valor_final = $2, updated_at = NOW()
+                WHERE id = $3`,
+              [novoCredAnt, novoFinalRow, row.id]
+            );
+            creditoRevertido += aplicadoAtual - novoAplicado;
+            semanaRestaurada = row.id;
+          }
+          creditoAlvo -= novoAplicado;
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({
+      message: 'Abatimento removido',
+      era_aprovado: eraAprovado,
+      credito_revertido: creditoRevertido,
+      semana_restaurada: semanaRestaurada,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Erro ao apagar abatimento:', err);
+    res.status(500).json({ error: err.message || 'Erro interno' });
+  } finally {
+    client.release();
+  }
+});
+
+/**
  * POST /api/drivers/:id/acrescimos - Admin: adicionar acréscimo a uma cobrança
  */
 router.post('/:id/acrescimos', auth, adminOnly, async (req, res) => {
