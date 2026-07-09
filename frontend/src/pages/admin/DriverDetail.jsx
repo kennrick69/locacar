@@ -187,7 +187,24 @@ export default function AdminDriverDetail() {
     } catch (e) { toast.error('Erro ao fixar documento'); }
   };
   const handleCreateCharge = async () => { if (!chargeForm.semana_ref || !chargeForm.valor_base) return toast.warning('Preencha semana e valor'); setProcessing(true); try { await driversAPI.createCharge(id, chargeForm); toast.success('Cobrança criada!'); setChargeModal(false); setChargeForm({ semana_ref: '', valor_base: '', observacoes: '', titulo: '' }); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } finally { setProcessing(false); } };
-  const handleApproveAbatimento = async (abatId) => { try { await driversAPI.approveAbatimento(id, abatId); toast.success('Abatimento aprovado!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
+  const handleApproveAbatimento = async (abatId) => {
+    try {
+      const res = await driversAPI.approveAbatimento(id, abatId);
+      const d = res?.data || {};
+      const partes = ['Abatimento aprovado'];
+      if (d.cobranca_marcada_paga) partes.push('cobrança quitada automaticamente');
+      if (d.credito_gerado > 0.01) {
+        const cred = `R$ ${Number(d.credito_gerado).toFixed(2)}`;
+        if (d.credito_aplicado_em?.semana_ref) {
+          partes.push(`${cred} de crédito aplicado na semana de ${d.credito_aplicado_em.semana_ref}`);
+        } else {
+          partes.push(`${cred} de crédito gerado (será aplicado na próxima cobrança)`);
+        }
+      }
+      toast.success(partes.join(' — '));
+      await loadData();
+    } catch (e) { toast.error(e.response?.data?.error || 'Erro'); }
+  };
   const handleAddAcrescimo = async () => { if (!acrescimoForm.descricao || !acrescimoForm.valor) return toast.warning('Preencha'); try { await driversAPI.addAcrescimo(id, { charge_id: acrescimoChargeId, descricao: acrescimoForm.descricao, valor: parseFloat(acrescimoForm.valor) }); toast.success('Acréscimo adicionado!'); setAcrescimoChargeId(null); setAcrescimoForm({ descricao: '', valor: '' }); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
   const handleRemoveAcrescimo = async (acrescimoId) => { try { await driversAPI.removeAcrescimo(id, acrescimoId); toast.success('Removido!'); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } };
 
@@ -334,6 +351,10 @@ export default function AdminDriverDetail() {
   const totalDevido = (driver.charges || []).reduce((s, c) => s + parseFloat(c.valor_final || 0), 0);
   const totalPagoGlobal = (driver.charges || []).reduce((s, c) => s + parseFloat(c.valor_pago_total || c.total_pago || 0), 0);
   const saldoGlobal = totalDevido - totalPagoGlobal;
+  // FIX 2026-07-09: crédito escondido (sobrepagamento em cobranças já pagas)
+  const creditoEscondido = (driver.charges || [])
+    .filter((c) => c.pago && parseFloat(c.valor_pago_total || c.total_pago || 0) > parseFloat(c.valor_final || 0) + 0.01)
+    .reduce((s, c) => s + (parseFloat(c.valor_pago_total || c.total_pago || 0) - parseFloat(c.valor_final || 0)), 0);
 
   // Step definitions
   const vistoriaDocs = adminDocs.filter(d => d.tipo === 'vistoria_retirada');
@@ -492,7 +513,14 @@ export default function AdminDriverDetail() {
         <div className="flex items-center gap-3 mt-2 flex-wrap">
           <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_BADGE[driver.status]}`}>{driver.status?.replace('_', ' ')}</span>
           {driver.car_marca && <span className="text-xs text-gray-500">🚗 {driver.car_marca} {driver.car_modelo} ({driver.car_placa})</span>}
-          <span className="text-xs text-gray-400">Cobrado: R$ {fmt(totalDevido)} | Pago: R$ {fmt(totalPagoGlobal)} | Saldo: R$ {fmt(saldoGlobal)}</span>
+          <span className="text-xs text-gray-400">
+            Cobrado: R$ {fmt(totalDevido)} | Pago: R$ {fmt(totalPagoGlobal)} | Saldo: R$ {fmt(saldoGlobal)}
+            {creditoEscondido > 0.01 && (
+              <span className="ml-2 text-green-700 font-medium">
+                · Crédito R$ {fmt(creditoEscondido)}
+              </span>
+            )}
+          </span>
         </div>
       </div>
 

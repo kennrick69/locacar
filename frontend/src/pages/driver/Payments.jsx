@@ -367,14 +367,34 @@ export default function DriverPayments() {
         const totalCobrado = charges.reduce((s, c) => s + parseFloat(c.valor_final || 0), 0);
         const totalPagoGeral = charges.reduce((s, c) => s + getPago(c), 0);
         const saldoDevedor = charges.filter(c => !c.pago).reduce((s, c) => s + Math.max(parseFloat(c.valor_final || 0) - getPago(c), 0), 0);
+        // FIX 2026-07-09: exibe crédito escondido (sobrepagamento em cobranças pagas)
+        const creditoDisponivel = charges
+          .filter((c) => c.pago && getPago(c) > parseFloat(c.valor_final || 0) + 0.01)
+          .reduce((s, c) => s + (getPago(c) - parseFloat(c.valor_final || 0)), 0);
 
-        if (saldoDevedor <= 0.01) return null;
+        if (saldoDevedor <= 0.01 && creditoDisponivel <= 0.01) return null;
+        if (saldoDevedor <= 0.01 && creditoDisponivel > 0.01) {
+          return (
+            <div className="card border-2 border-green-200 bg-green-50">
+              <p className="text-sm text-green-700 font-medium">Crédito disponível</p>
+              <p className="text-3xl font-bold text-green-700">R$ {fmt(creditoDisponivel)}</p>
+              <p className="text-xs text-green-600 mt-1">
+                Você pagou a mais em semanas anteriores. Este valor será descontado da sua próxima cobrança.
+              </p>
+            </div>
+          );
+        }
         return (
           <div className="card border-2 border-red-200 bg-red-50">
             <div className="flex items-center justify-between mb-3">
               <div>
                 <p className="text-sm text-red-600 font-medium">Saldo Devedor</p>
                 <p className="text-3xl font-bold text-red-700">R$ {fmt(saldoDevedor)}</p>
+                {creditoDisponivel > 0.01 && (
+                  <p className="text-xs text-green-700 mt-1">
+                    Você tem R$ {fmt(creditoDisponivel)} de crédito que será aplicado automaticamente na próxima cobrança.
+                  </p>
+                )}
               </div>
             </div>
             <button
@@ -514,11 +534,27 @@ export default function DriverPayments() {
                       </div>
                     )}
 
+                    {/* Aviso: abatimento pendente de aprovação */}
+                    {!isPaid && abatList.some((a) => !a.aprovado) && (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-xs text-yellow-800">
+                        Você tem abatimento pendente de aprovação. Aguarde a análise antes de pagar o valor cheio — se pagar antes, o desconto ficará como crédito para a próxima semana.
+                      </div>
+                    )}
+
                     {/* Ações */}
                     {!isPaid && (
                       <div className="flex gap-2 pt-2">
                         <button
-                          onClick={() => openPayModal('weekly', charge.id, charge.valor_final, totalPago)}
+                          onClick={() => {
+                            const pend = abatList.some((a) => !a.aprovado);
+                            if (pend) {
+                              const ok = window.confirm(
+                                'Você tem abatimento pendente. Se pagar agora o valor cheio, o desconto vira crédito para a próxima semana em vez de reduzir esta. Continuar?'
+                              );
+                              if (!ok) return;
+                            }
+                            openPayModal('weekly', charge.id, charge.valor_final, totalPago);
+                          }}
                           className="btn-primary flex-1 flex items-center justify-center gap-2 text-sm"
                         >
                           <CreditCard className="w-4 h-4" /> {isParcial ? 'Pagar Restante' : 'Pagar'}

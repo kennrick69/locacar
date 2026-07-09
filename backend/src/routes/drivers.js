@@ -581,11 +581,14 @@ router.get('/me/balance', auth, driverOnly, async (req, res) => {
     const driverId = profile.rows[0].id;
 
     // Total cobrado, pago (real via payment_entries + payments), saldo devedor
+    // FIX 2026-07-09: adiciona credito_disponivel (sobrepagamento em cobranças pagas
+    // que não foi propagado — bug histórico corrigido no fix da aprovação de abatimento)
     const stats = await pool.query(`
       SELECT
         COALESCE(SUM(valor_final), 0) as total_cobrado,
         COALESCE(SUM(COALESCE(valor_pago_total, 0)), 0) as total_pago,
         COALESCE(SUM(CASE WHEN pago = false THEN GREATEST(valor_final - COALESCE(valor_pago_total, 0), 0) ELSE 0 END), 0) as saldo_devedor,
+        COALESCE(SUM(CASE WHEN pago = true AND valor_pago_total > valor_final + 0.01 THEN valor_pago_total - valor_final ELSE 0 END), 0) as credito_disponivel,
         COALESCE(SUM(multa), 0) as total_multas,
         COALESCE(SUM(abatimentos), 0) as total_abatimentos,
         COUNT(*) as total_semanas,
@@ -1262,22 +1265,24 @@ router.post('/:id/charges', auth, adminOnly, async (req, res) => {
       return res.status(400).json({ error: 'semana_ref e valor_base são obrigatórios' });
     }
 
-    // Buscar crédito da semana anterior
-    const lastCharge = await client.query(`
-      SELECT credito_anterior, valor_final, pago FROM weekly_charges
-      WHERE driver_id = $1
-      ORDER BY semana_ref DESC LIMIT 1
-    `, [driverId]);
-
-    let creditoAnterior = 0;
-    if (lastCharge.rows.length > 0) {
-      const last = lastCharge.rows[0];
-      // Se a última foi paga e sobrou crédito, carrega
-      // Crédito negativo (sobra) do motorista vira desconto
-      if (last.pago && parseFloat(last.credito_anterior) < 0) {
-        creditoAnterior = parseFloat(last.credito_anterior);
-      }
-    }
+    // FIX 2026-07-09: calcula crédito real (sobrepagamento em pagas menos já aplicado)
+    const creditoTotalQ = await client.query(
+      `SELECT COALESCE(SUM(valor_pago_total - valor_final), 0) AS total
+         FROM weekly_charges
+        WHERE driver_id = $1 AND pago = true
+          AND valor_pago_total > valor_final + 0.01`,
+      [driverId]
+    );
+    const jaAplicadoQ = await client.query(
+      `SELECT COALESCE(SUM(-credito_anterior), 0) AS ja_aplicado
+         FROM weekly_charges
+        WHERE driver_id = $1 AND credito_anterior < 0`,
+      [driverId]
+    );
+    const creditoDisponivel =
+      parseFloat(creditoTotalQ.rows[0].total) -
+      parseFloat(jaAplicadoQ.rows[0].ja_aplicado);
+    const creditoAnterior = creditoDisponivel > 0.01 ? -creditoDisponivel : 0;
 
     // Busca settings de multa
     const settingsResult = await client.query(
@@ -1345,15 +1350,27 @@ router.post('/charges/auto-generate', auth, adminOnly, async (req, res) => {
         continue;
       }
 
-      // Busca crédito da última cobrança
-      const lastCharge = await client.query(
-        'SELECT credito_anterior, pago FROM weekly_charges WHERE driver_id = $1 ORDER BY semana_ref DESC LIMIT 1',
+      // FIX 2026-07-09: calcula crédito real disponível.
+      // Antes: copiava credito_anterior da última — propagava crédito pra sempre sem consumir.
+      // Agora: soma sobrepagamento em cobranças pagas MENOS o que já foi aplicado em
+      // cobranças anteriores (via credito_anterior negativo).
+      const creditoTotalQ = await client.query(
+        `SELECT COALESCE(SUM(valor_pago_total - valor_final), 0) AS total
+           FROM weekly_charges
+          WHERE driver_id = $1 AND pago = true
+            AND valor_pago_total > valor_final + 0.01`,
         [drv.id]
       );
-      let creditoAnterior = 0;
-      if (lastCharge.rows.length > 0 && lastCharge.rows[0].pago && parseFloat(lastCharge.rows[0].credito_anterior) < 0) {
-        creditoAnterior = parseFloat(lastCharge.rows[0].credito_anterior);
-      }
+      const jaAplicadoQ = await client.query(
+        `SELECT COALESCE(SUM(-credito_anterior), 0) AS ja_aplicado
+           FROM weekly_charges
+          WHERE driver_id = $1 AND credito_anterior < 0`,
+        [drv.id]
+      );
+      const creditoDisponivel =
+        parseFloat(creditoTotalQ.rows[0].total) -
+        parseFloat(jaAplicadoQ.rows[0].ja_aplicado);
+      const creditoAnterior = creditoDisponivel > 0.01 ? -creditoDisponivel : 0;
 
       const base = parseFloat(drv.valor_semanal);
       const valorFinal = Math.max(base + creditoAnterior, 0);
@@ -1424,13 +1441,82 @@ router.patch('/:driverId/abatimentos/:id/approve', auth, adminOnly, async (req, 
       [abatimento.charge_id]
     );
 
+    let creditoAplicadoEm = null;
+    let creditoValor = 0;
+    let cobrancaMarcadaPaga = false;
+
     if (charge.rows.length > 0) {
       const c = charge.rows[0];
       const valorFinal = parseFloat(c.valor_base) - total + parseFloat(c.credito_anterior) + parseFloat(c.multa);
+      const novoFinal = Math.max(valorFinal, 0);
       await client.query(
         'UPDATE weekly_charges SET abatimentos = $1, valor_final = $2, updated_at = NOW() WHERE id = $3',
-        [total, Math.max(valorFinal, 0), abatimento.charge_id]
+        [total, novoFinal, abatimento.charge_id]
       );
+
+      // FIX 2026-07-09 (bug de crédito escondido em abatimento aprovado)
+      // Dois cenários a corrigir aqui:
+      //  (1) cobrança já estava paga E novo valor_final < valor_pago_total → gera crédito
+      //  (2) cobrança estava em aberto MAS pagamento já cobria o novo valor_final →
+      //      marca como paga E propaga sobrepagamento como crédito.
+      const chargeAtualizada = await client.query(
+        'SELECT pago, valor_pago_total FROM weekly_charges WHERE id = $1',
+        [abatimento.charge_id]
+      );
+      const cAtual = chargeAtualizada.rows[0];
+      const vPago = parseFloat(cAtual.valor_pago_total || 0);
+      const jaPaga = cAtual.pago;
+
+      // Cenário (2): quita automaticamente se pagamento já cobria o novo total
+      if (!jaPaga && vPago >= novoFinal - 0.01) {
+        const saldoDev = Math.max(novoFinal - vPago, 0);
+        await client.query(
+          `UPDATE weekly_charges
+              SET pago = true, saldo_devedor = $1, data_pagamento = NOW(), updated_at = NOW()
+            WHERE id = $2`,
+          [saldoDev, abatimento.charge_id]
+        );
+        cobrancaMarcadaPaga = true;
+      } else if (!jaPaga) {
+        // Ainda em aberto, apenas reajusta saldo_devedor
+        await client.query(
+          `UPDATE weekly_charges
+              SET saldo_devedor = $1, updated_at = NOW()
+            WHERE id = $2`,
+          [Math.max(novoFinal - vPago, 0), abatimento.charge_id]
+        );
+      }
+
+      // Se sobrepagamento existir (jaPaga ou recém-marcada), gera crédito na próxima
+      if ((jaPaga || cobrancaMarcadaPaga) && vPago > novoFinal + 0.01) {
+        creditoValor = vPago - novoFinal;
+        const proxima = await client.query(
+          `SELECT id, valor_base, credito_anterior, abatimentos, multa, semana_ref
+             FROM weekly_charges
+            WHERE driver_id = $1 AND pago = false AND id != $2
+            ORDER BY semana_ref ASC LIMIT 1`,
+          [abatimento.driver_id, abatimento.charge_id]
+        );
+        if (proxima.rows.length > 0) {
+          const p = proxima.rows[0];
+          const novoCredAnt = parseFloat(p.credito_anterior) - creditoValor;
+          const novoValFinalProx = Math.max(
+            parseFloat(p.valor_base) - parseFloat(p.abatimentos) +
+              novoCredAnt + parseFloat(p.multa),
+            0
+          );
+          await client.query(
+            `UPDATE weekly_charges
+                SET credito_anterior = $1, valor_final = $2, updated_at = NOW()
+              WHERE id = $3`,
+            [novoCredAnt, novoValFinalProx, p.id]
+          );
+          creditoAplicadoEm = { charge_id: p.id, semana_ref: p.semana_ref };
+        }
+        // Se não houver próxima em aberto, o crédito fica no sobrepagamento da
+        // própria linha e será consumido na próxima geração automática de cobrança
+        // (ver charges/auto-generate — ajustado abaixo).
+      }
     }
 
     // Registra automaticamente na manutenção do veículo
@@ -1453,7 +1539,13 @@ router.patch('/:driverId/abatimentos/:id/approve', auth, adminOnly, async (req, 
     }
 
     await client.query('COMMIT');
-    res.json({ message: 'Abatimento aprovado', abatimento: { ...abatimento, aprovado: true } });
+    res.json({
+      message: 'Abatimento aprovado',
+      abatimento: { ...abatimento, aprovado: true },
+      credito_gerado: creditoValor,
+      credito_aplicado_em: creditoAplicadoEm,
+      cobranca_marcada_paga: cobrancaMarcadaPaga,
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Erro ao aprovar abatimento:', err);
