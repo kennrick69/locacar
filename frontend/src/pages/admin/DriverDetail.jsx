@@ -198,6 +198,27 @@ export default function AdminDriverDetail() {
     } catch (e) { toast.error('Erro ao fixar documento'); }
   };
   const handleCreateCharge = async () => { if (!chargeForm.semana_ref || !chargeForm.valor_base) return toast.warning('Preencha semana e valor'); setProcessing(true); try { await driversAPI.createCharge(id, chargeForm); toast.success('Cobrança criada!'); setChargeModal(false); setChargeForm({ semana_ref: '', valor_base: '', observacoes: '', titulo: '' }); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } finally { setProcessing(false); } };
+  const handleReconciliar = async () => {
+    if (!window.confirm(
+      'Reconciliar as cobranças deste motorista?\n\n' +
+      'O sistema vai:\n' +
+      '• Recalcular valor_final respeitando multa diferida\n' +
+      '• Marcar cobranças pagas quando pagamento cobrir o novo total\n' +
+      '• Propagar sobrepagamento como crédito na próxima semana'
+    )) return;
+    try {
+      const res = await driversAPI.reconciliar(id);
+      const r = res?.data?.resumo || {};
+      toast.success(
+        `Reconciliado — ${r.cobrancas_recalculadas || 0} recalc, ` +
+        `R$ ${Number(r.credito_propagado || 0).toFixed(2)} de crédito propagado`
+      );
+      await loadData();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erro ao reconciliar');
+    }
+  };
+
   const handleDeleteAbatimento = async (abat) => {
     const desc = abat.descricao || 'sem descrição';
     const valorFmt = `R$ ${Number(abat.valor).toFixed(2)}`;
@@ -1036,6 +1057,12 @@ export default function AdminDriverDetail() {
                           className="text-xs bg-purple-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-purple-700"
                           title="Lançar manutenção que o motorista adiantou (troca de óleo, etc.) — abate direto da cobrança">
                           <Receipt className="w-3 h-3" /> Manutenção
+                        </button>
+                        <button
+                          onClick={handleReconciliar}
+                          className="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-blue-100"
+                          title="Recalcula valor_final de todas cobranças deste motorista, respeitando multa diferida, e propaga sobrepagamento como crédito na próxima semana">
+                          <RefreshCw className="w-3 h-3" /> Reconciliar
                         </button>
                         {!charge.pago && (
                           <button onClick={() => { setAcrescimoChargeId(charge.id); setAcrescimoForm({ descricao: '', valor: '' }); }}
