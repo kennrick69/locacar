@@ -809,6 +809,7 @@ export default function AdminDriverDetail() {
             {driver.charges.map(charge => {
               const abats = charge.abatimentos_lista || [];
               const pendingAbats = abats.filter(a => !a.aprovado);
+              const approvedAbats = abats.filter(a => a.aprovado);
               const acrescimos = charge.acrescimos_lista || [];
               const totalAcrescimos = acrescimos.reduce((s, a) => s + parseFloat(a.valor), 0);
               const pagManuais = charge.pagamentos_manuais || [];
@@ -868,11 +869,11 @@ export default function AdminDriverDetail() {
                   {/* Expanded details */}
                   {isExpanded && (
                     <div className="mt-3 pt-3 border-t border-gray-200 space-y-3">
-                      {/* Todos os pagamentos */}
+                      {/* Todos os pagamentos (dinheiro + abatimento aprovado) */}
                       {(() => {
                         const mpPags = (charge.pagamentos_mp || []).filter(p => typeof p === 'object');
                         const manPags = pagManuais;
-                        const temPagamentos = mpPags.length > 0 || manPags.length > 0;
+                        const temPagamentos = mpPags.length > 0 || manPags.length > 0 || approvedAbats.length > 0;
                         if (!temPagamentos) return null;
                         return (
                           <div>
@@ -892,6 +893,16 @@ export default function AdminDriverDetail() {
                                   {fmtDate(p.data_pagamento)} — <strong>R$ {fmt(p.valor_pago)}</strong>
                                   {' · '}<span className="text-blue-600 font-medium">Registrado</span>
                                   {p.observacoes ? ` · ${p.observacoes}` : ''}
+                                </span>
+                              </div>
+                            ))}
+                            {approvedAbats.map((a) => (
+                              <div key={`abat-${a.id}`} className="flex items-center justify-between bg-purple-50 rounded px-2 py-1 mb-0.5">
+                                <span className="text-xs">
+                                  {fmtDate(a.created_at)} — <strong>R$ {fmt(a.valor)}</strong>
+                                  {' · '}<span className="text-purple-600 font-medium">Abatimento</span>
+                                  {a.descricao ? ` · ${a.descricao}` : ''}
+                                  {' · '}<span className="text-green-600">✓</span>
                                 </span>
                               </div>
                             ))}

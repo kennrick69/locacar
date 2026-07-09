@@ -518,15 +518,20 @@ export default function DriverPayments() {
                       )}
                     </div>
 
-                    {/* Lista de abatimentos */}
+                    {/* Lista de abatimentos — mostra status detalhado */}
                     {abatList.length > 0 && (
                       <div className="bg-gray-50 rounded-lg p-3">
-                        <p className="text-xs font-medium text-gray-500 mb-2">Abatimentos solicitados:</p>
+                        <p className="text-xs font-medium text-gray-500 mb-2">Abatimentos:</p>
                         {abatList.map((abat, i) => (
                           <div key={i} className="flex items-center justify-between text-xs py-1">
                             <div className="flex items-center gap-2">
                               <span className={`w-2 h-2 rounded-full ${abat.aprovado ? 'bg-green-500' : 'bg-yellow-500'}`} />
-                              <span className="text-gray-600">{abat.descricao || 'Sem descrição'}</span>
+                              <span className="text-gray-600">
+                                {abat.descricao || 'Sem descrição'}
+                                <span className={`ml-1 font-medium ${abat.aprovado ? 'text-green-600' : 'text-yellow-600'}`}>
+                                  {abat.aprovado ? '· aprovado ✓' : '· pendente'}
+                                </span>
+                              </span>
                             </div>
                             <span className="font-medium">R$ {fmt(abat.valor)}</span>
                           </div>
