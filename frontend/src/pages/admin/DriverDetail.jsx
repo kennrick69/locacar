@@ -125,10 +125,16 @@ export default function AdminDriverDetail() {
       if (driverRes.data.car_swaps) setSwapHistory(driverRes.data.car_swaps);
       if (driverRes.data.charges) {
         const pending = driverRes.data.charges.filter(c => !c.pago);
+        // FIX 2026-07-09: multa_diferida→acumula multa de TODAS as cobranças
+        // (as pagas também têm multa registrada mas não cobrada — vira dívida na rescisão)
+        const todasMultas = driverRes.data.charges
+          .reduce((s, c) => s + parseFloat(c.multa || 0), 0);
+        const debitosPend = pending
+          .reduce((s, c) => s + Math.max(parseFloat(c.valor_final || 0) - parseFloat(c.valor_pago_total || 0), 0), 0);
         setSettlementForm(prev => ({
           ...prev,
-          debitos_pendentes: pending.reduce((s, c) => s + parseFloat(c.valor_final || 0), 0).toFixed(2),
-          multas_acumuladas: pending.reduce((s, c) => s + parseFloat(c.multa || 0), 0).toFixed(2),
+          debitos_pendentes: debitosPend.toFixed(2),
+          multas_acumuladas: todasMultas.toFixed(2),
         }));
       }
       // Carregar documentos com status fixado

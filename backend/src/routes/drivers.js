@@ -1440,6 +1440,13 @@ router.post('/:driverId/charges/:chargeId/manutencao',
       }
       const c = chargeQ.rows[0];
 
+      // FIX 2026-07-09: respeita multa_diferida
+      const multaDifQ = await client.query(
+        `SELECT valor FROM settings WHERE chave = 'multa_diferida'`
+      );
+      const multaDiferida = multaDifQ.rows[0]?.valor === 'true';
+      const multaEfetiva = multaDiferida ? 0 : parseFloat(c.multa);
+
       const notaUrl = req.file
         ? (await processUpload(req.file, 'notas') || `/uploads/notas/${req.file.filename}`)
         : null;
@@ -1459,7 +1466,7 @@ router.post('/:driverId/charges/:chargeId/manutencao',
       const totalAbat = parseFloat(totalAbatQ.rows[0].total);
       const novoFinal = Math.max(
         parseFloat(c.valor_base) - totalAbat +
-          parseFloat(c.credito_anterior) + parseFloat(c.multa),
+          parseFloat(c.credito_anterior) + multaEfetiva,
         0
       );
       await client.query(
@@ -1595,9 +1602,16 @@ router.patch('/:driverId/abatimentos/:id/approve', auth, adminOnly, async (req, 
     let creditoValor = 0;
     let cobrancaMarcadaPaga = false;
 
+    // FIX 2026-07-09: respeita multa_diferida — se true, multa NÃO entra no valor_final
+    const multaDifQ = await client.query(
+      `SELECT valor FROM settings WHERE chave = 'multa_diferida'`
+    );
+    const multaDiferida = multaDifQ.rows[0]?.valor === 'true';
+
     if (charge.rows.length > 0) {
       const c = charge.rows[0];
-      const valorFinal = parseFloat(c.valor_base) - total + parseFloat(c.credito_anterior) + parseFloat(c.multa);
+      const multaEfetiva = multaDiferida ? 0 : parseFloat(c.multa);
+      const valorFinal = parseFloat(c.valor_base) - total + parseFloat(c.credito_anterior) + multaEfetiva;
       const novoFinal = Math.max(valorFinal, 0);
       await client.query(
         'UPDATE weekly_charges SET abatimentos = $1, valor_final = $2, updated_at = NOW() WHERE id = $3',
