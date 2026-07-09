@@ -222,8 +222,17 @@ export default function DriverPayments() {
     if (!payModal) return;
     const valorPagar = showParcial ? parseFloat(valorCustom) : payModal.valor;
     if (!valorPagar || valorPagar <= 0) return toast.warning('Informe um valor válido');
-    if (valorPagar > payModal.valor + 0.01) return toast.warning(`Valor máximo: R$ ${fmt(payModal.valor)}`);
-    if (showParcial && !justificativa.trim()) {
+    // Se for maior que o total dessa semana, avisa que o excedente vai pra próxima
+    if (valorPagar > payModal.valor + 0.01) {
+      const ok = window.confirm(
+        `Você vai pagar R$ ${fmt(valorPagar)}, mas essa semana só cobra R$ ${fmt(payModal.valor)}.\n\n` +
+        `O excedente de R$ ${fmt(valorPagar - payModal.valor)} vai automaticamente pra próxima semana. Confirmar?`
+      );
+      if (!ok) return;
+    }
+    // Só exige justificativa se pagar MENOS que o total (pagamento parcial de fato)
+    const ehParcial = showParcial && valorPagar < payModal.valor - 0.01;
+    if (ehParcial && !justificativa.trim()) {
       return toast.warning('Informe uma justificativa para pagamento parcial');
     }
 
@@ -1071,24 +1080,28 @@ export default function DriverPayments() {
                           onClick={() => { setShowParcial(true); setValorCustom(''); }}
                           className="text-xs text-gray-400 hover:text-brand-600 underline w-full text-center"
                         >
-                          Não consigo pagar o valor total
+                          Pagar um valor diferente
                         </button>
                       ) : (
                         <div className="bg-gray-50 rounded-lg p-3 space-y-3 border border-gray-200">
                           <div className="flex items-center justify-between">
-                            <p className="text-sm font-medium text-gray-700">Pagamento parcial</p>
+                            <p className="text-sm font-medium text-gray-700">Pagar valor customizado</p>
                             <button onClick={() => { setShowParcial(false); setValorCustom(payModal.valor.toFixed(2)); setJustificativa(''); }}
                               className="text-xs text-gray-400 hover:text-gray-600 underline">Cancelar</button>
                           </div>
                           <div>
-                            <label className="block text-xs text-gray-500 mb-1">Valor que consigo pagar</label>
+                            <label className="block text-xs text-gray-500 mb-1">
+                              Valor que quer pagar
+                              <span className="text-gray-400 ml-1">
+                                (pode ser menor ou maior — se pagar mais, o excedente vai automaticamente pra próxima semana)
+                              </span>
+                            </label>
                             <div className="relative">
                               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">R$</span>
                               <input
                                 type="number"
                                 step="0.01"
                                 min="0.01"
-                                max={payModal.valor}
                                 value={valorCustom}
                                 onChange={e => {
                                   setValorCustom(e.target.value);

@@ -62,11 +62,11 @@ async function runReconciliacao(pool, { driverId = null, apply = true, log = con
         const multaEf = multaDiferida ? 0 : parseFloat(c.multa || 0);
         const jurosEf = jurosDiferido ? 0 : parseFloat(c.juros_acumulados || 0);
         const acresc = parseFloat(c.acrescimos_total || 0);
-
-        const novoFinal = Math.max(
-          parseFloat(c.valor_base) - parseFloat(c.abatimentos) + acresc + multaEf + jurosEf,
-          0
-        );
+        const valorTeorico = parseFloat(c.valor_base) - parseFloat(c.abatimentos) + acresc + multaEf + jurosEf;
+        const novoFinal = Math.max(valorTeorico, 0);
+        // Excesso de abatimento (abatimento maior que a própria cobrança) —
+        // vira crédito de manutenção pra cobrança seguinte via payment_entry.
+        c._excesso_abatimento = valorTeorico < 0 ? -valorTeorico : 0;
 
         // Ler soma real de pagamentos
         const pagosQ = await client.query(
@@ -117,17 +117,38 @@ async function runReconciliacao(pool, { driverId = null, apply = true, log = con
         }
       }
 
-      // Segunda passada: sobrepagamento em pagas vira payment_entry na próxima
-      const pagasSobrepagoQ = await client.query(
-        `SELECT id, semana_ref, valor_final, valor_pago_total,
-                (valor_pago_total - valor_final) AS excedente
-           FROM weekly_charges
-          WHERE driver_id = $1
-            AND pago = true
-            AND valor_pago_total > valor_final + 0.01
-          ORDER BY semana_ref ASC`,
-        [drvId]
-      );
+      // Segunda passada: sobrepagamento (em pagas) OU excesso_abatimento (em pagas
+      // OU em aberto) vira payment_entry na próxima cobrança. Loop até estabilizar
+      // pra cobrir cascata em série (motorista paga muito acima do total).
+      let iteracoes = 0;
+      const MAX_ITER = 20;
+      while (iteracoes < MAX_ITER) {
+        iteracoes++;
+        // Excedente = valor_pago_total > valor_final (sobrepagamento em dinheiro)
+        // OU cobrança onde abatimento zerou o valor_final MAS ainda tem excesso
+        // não propagado (abatimento > base + acréscimos + multa_ef + juros_ef).
+        // Como o valor_final é clampado em 0, precisamos calcular via valor_base
+        // e checar se abatimento estoura.
+        const pagasSobrepagoQ = await client.query(
+          `SELECT wc.id, wc.semana_ref, wc.valor_final, wc.valor_pago_total,
+                  wc.valor_base, wc.abatimentos, wc.multa,
+                  COALESCE(wc.juros_acumulados, 0) AS juros_acumulados,
+                  COALESCE((SELECT SUM(valor) FROM acrescimos WHERE charge_id = wc.id), 0) AS acresc,
+                  (wc.valor_pago_total - wc.valor_final) AS excedente_dinheiro
+             FROM weekly_charges wc
+            WHERE wc.driver_id = $1
+              AND (
+                (wc.pago = true AND wc.valor_pago_total > wc.valor_final + 0.01)
+                OR
+                (wc.abatimentos > wc.valor_base
+                  + COALESCE((SELECT SUM(valor) FROM acrescimos WHERE charge_id = wc.id), 0)
+                  + (CASE WHEN $2 THEN 0 ELSE wc.multa END)
+                  + (CASE WHEN $3 THEN 0 ELSE COALESCE(wc.juros_acumulados, 0) END) + 0.01)
+              )
+            ORDER BY wc.semana_ref ASC`,
+          [drvId, multaDiferida, jurosDiferido]
+        );
+        if (pagasSobrepagoQ.rows.length === 0) break;
 
       for (const origem of pagasSobrepagoQ.rows) {
         // Próxima cobrança em aberto após esta
@@ -151,7 +172,22 @@ async function runReconciliacao(pool, { driverId = null, apply = true, log = con
           [p.id, origem.id]
         );
 
-        const excedente = parseFloat(origem.excedente);
+        // Calcula excedente considerando ambas as fontes:
+        //  - sobrepagamento em dinheiro (valor_pago_total > valor_final)
+        //  - excesso de abatimento (abatimento > base + acresc + multa_ef + juros_ef)
+        const multaEfOrig = multaDiferida ? 0 : parseFloat(origem.multa || 0);
+        const jurosEfOrig = jurosDiferido ? 0 : parseFloat(origem.juros_acumulados || 0);
+        const capacidade = parseFloat(origem.valor_base) + parseFloat(origem.acresc) + multaEfOrig + jurosEfOrig;
+        const excessoAbatimento = Math.max(parseFloat(origem.abatimentos) - capacidade, 0);
+        const excedenteDinheiro = Math.max(parseFloat(origem.excedente_dinheiro || 0), 0);
+        // Descontar o que já foi propagado como payment_entries com esta origem
+        const jaPropQ = await client.query(
+          `SELECT COALESCE(SUM(valor_pago), 0) AS total FROM payment_entries WHERE origem_charge_id = $1`,
+          [origem.id]
+        );
+        const jaProp = parseFloat(jaPropQ.rows[0].total);
+        const excedente = Math.max(excedenteDinheiro + excessoAbatimento - jaProp, 0);
+        if (excedente <= 0.01) continue;
 
         if (apply) {
           if (jaExisteQ.rows.length === 0) {
@@ -212,6 +248,10 @@ async function runReconciliacao(pool, { driverId = null, apply = true, log = con
             [novoFinalP, totalPagoP, novoSaldoP, pagoP, p.id]
           );
         }
+      }
+      } // fim do while cascata
+      if (iteracoes >= MAX_ITER) {
+        log(`[reconcilia] AVISO driver ${drvId}: cascata atingiu ${MAX_ITER} iterações, parou.`);
       }
     }
 

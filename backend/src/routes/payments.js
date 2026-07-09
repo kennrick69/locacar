@@ -301,7 +301,12 @@ router.post('/weekly/:chargeId', auth, driverOnly, async (req, res) => {
     if (isNaN(valor) || valor <= 0) {
       return res.status(400).json({ error: 'Valor deve ser um número maior que zero' });
     }
-    if (valor > restante + 0.01) return res.status(400).json({ error: `Valor máximo: R$ ${restante.toFixed(2)}` });
+    // FIX 2026-07-09: permite pagar valor MAIOR que a cobrança — excedente
+    // cascatateia pra próximas semanas (via ReconciliacaoService no webhook).
+    // Teto de segurança: não permite valores absurdos (10x o restante).
+    if (valor > restante * 10) {
+      return res.status(400).json({ error: `Valor muito alto — máximo aceito: R$ ${(restante * 10).toFixed(2)}` });
+    }
 
     const resultado = await PaymentService.criarPagamento({
       userId: req.user.id,

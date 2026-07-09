@@ -453,6 +453,16 @@ class PaymentService {
               `, [totalPago, saldo, isPago, payment.charge_id]);
             }
           }
+
+          // FIX 2026-07-09: se o pagamento excedeu essa cobrança, cascatear
+          // pra próximas cobranças em aberto E propagar sobrepagamento como
+          // payment_entry na próxima futura (novo modelo).
+          try {
+            const { runReconciliacao } = require('./ReconciliacaoService');
+            await runReconciliacao(pool, { driverId: payment.driver_id, apply: true, log: () => {} });
+          } catch (recErr) {
+            console.error('[WEBHOOK] erro no runReconciliacao (não bloqueante):', recErr.message);
+          }
         }
 
         console.log(`[WEBHOOK] Pagamento ${payment.id} confirmado via MP!`);
