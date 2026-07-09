@@ -367,10 +367,15 @@ export default function DriverPayments() {
         const totalCobrado = charges.reduce((s, c) => s + parseFloat(c.valor_final || 0), 0);
         const totalPagoGeral = charges.reduce((s, c) => s + getPago(c), 0);
         const saldoDevedor = charges.filter(c => !c.pago).reduce((s, c) => s + Math.max(parseFloat(c.valor_final || 0) - getPago(c), 0), 0);
-        // FIX 2026-07-09: exibe crédito escondido (sobrepagamento em cobranças pagas)
-        const creditoDisponivel = charges
+        // FIX 2026-07-09: crédito = sobrepagamento em pagas MENOS já propagado
+        // como credito_anterior negativo (evita dupla contagem)
+        const creditoBruto = charges
           .filter((c) => c.pago && getPago(c) > parseFloat(c.valor_final || 0) + 0.01)
           .reduce((s, c) => s + (getPago(c) - parseFloat(c.valor_final || 0)), 0);
+        const creditoJaAplicado = charges
+          .filter((c) => parseFloat(c.credito_anterior || 0) < 0)
+          .reduce((s, c) => s + -parseFloat(c.credito_anterior || 0), 0);
+        const creditoDisponivel = Math.max(creditoBruto - creditoJaAplicado, 0);
 
         if (saldoDevedor <= 0.01 && creditoDisponivel <= 0.01) return null;
         if (saldoDevedor <= 0.01 && creditoDisponivel > 0.01) {

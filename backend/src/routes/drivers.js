@@ -581,14 +581,19 @@ router.get('/me/balance', auth, driverOnly, async (req, res) => {
     const driverId = profile.rows[0].id;
 
     // Total cobrado, pago (real via payment_entries + payments), saldo devedor
-    // FIX 2026-07-09: adiciona credito_disponivel (sobrepagamento em cobranças pagas
-    // que não foi propagado — bug histórico corrigido no fix da aprovação de abatimento)
+    // FIX 2026-07-09: credito_disponivel = sobrepagamento em pagas MENOS o que já
+    // foi propagado como credito_anterior negativo em cobrança futura (evita
+    // contar o mesmo crédito duas vezes)
     const stats = await pool.query(`
       SELECT
         COALESCE(SUM(valor_final), 0) as total_cobrado,
         COALESCE(SUM(COALESCE(valor_pago_total, 0)), 0) as total_pago,
         COALESCE(SUM(CASE WHEN pago = false THEN GREATEST(valor_final - COALESCE(valor_pago_total, 0), 0) ELSE 0 END), 0) as saldo_devedor,
-        COALESCE(SUM(CASE WHEN pago = true AND valor_pago_total > valor_final + 0.01 THEN valor_pago_total - valor_final ELSE 0 END), 0) as credito_disponivel,
+        GREATEST(
+          COALESCE(SUM(CASE WHEN pago = true AND valor_pago_total > valor_final + 0.01 THEN valor_pago_total - valor_final ELSE 0 END), 0)
+          - COALESCE(SUM(CASE WHEN credito_anterior < 0 THEN -credito_anterior ELSE 0 END), 0),
+          0
+        ) as credito_disponivel,
         COALESCE(SUM(multa), 0) as total_multas,
         COALESCE(SUM(abatimentos), 0) as total_abatimentos,
         COUNT(*) as total_semanas,

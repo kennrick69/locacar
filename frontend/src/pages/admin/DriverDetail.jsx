@@ -411,10 +411,15 @@ export default function AdminDriverDetail() {
   const totalDevido = (driver.charges || []).reduce((s, c) => s + parseFloat(c.valor_final || 0), 0);
   const totalPagoGlobal = (driver.charges || []).reduce((s, c) => s + parseFloat(c.valor_pago_total || c.total_pago || 0), 0);
   const saldoGlobal = totalDevido - totalPagoGlobal;
-  // FIX 2026-07-09: crédito escondido (sobrepagamento em cobranças já pagas)
-  const creditoEscondido = (driver.charges || [])
+  // FIX 2026-07-09: crédito escondido = sobrepagamento em pagas MENOS o que já
+  // foi propagado como credito_anterior negativo (evita dupla contagem)
+  const creditoBruto = (driver.charges || [])
     .filter((c) => c.pago && parseFloat(c.valor_pago_total || c.total_pago || 0) > parseFloat(c.valor_final || 0) + 0.01)
     .reduce((s, c) => s + (parseFloat(c.valor_pago_total || c.total_pago || 0) - parseFloat(c.valor_final || 0)), 0);
+  const creditoJaAplicado = (driver.charges || [])
+    .filter((c) => parseFloat(c.credito_anterior || 0) < 0)
+    .reduce((s, c) => s + -parseFloat(c.credito_anterior || 0), 0);
+  const creditoEscondido = Math.max(creditoBruto - creditoJaAplicado, 0);
 
   // Step definitions
   const vistoriaDocs = adminDocs.filter(d => d.tipo === 'vistoria_retirada');
