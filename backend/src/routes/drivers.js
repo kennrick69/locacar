@@ -581,10 +581,10 @@ router.get('/me/balance', auth, driverOnly, async (req, res) => {
 
     const driverId = profile.rows[0].id;
 
-    // Total cobrado, pago (real via payment_entries + payments), saldo devedor
-    // FIX 2026-07-09: credito_disponivel = sobrepagamento em pagas MENOS o que já
-    // foi propagado como credito_anterior negativo em cobrança futura (evita
-    // contar o mesmo crédito duas vezes)
+    // Total cobrado, pago, saldo devedor
+    // FIX 2026-07-09 v2: credito_disponivel = sobrepagamento em pagas MENOS o
+    // que já foi propagado (via credito_anterior legado OU payment_entries com
+    // origem_charge_id no modelo novo)
     const stats = await pool.query(`
       SELECT
         COALESCE(SUM(valor_final), 0) as total_cobrado,
@@ -592,7 +592,8 @@ router.get('/me/balance', auth, driverOnly, async (req, res) => {
         COALESCE(SUM(CASE WHEN pago = false THEN GREATEST(valor_final - COALESCE(valor_pago_total, 0), 0) ELSE 0 END), 0) as saldo_devedor,
         GREATEST(
           COALESCE(SUM(CASE WHEN pago = true AND valor_pago_total > valor_final + 0.01 THEN valor_pago_total - valor_final ELSE 0 END), 0)
-          - COALESCE(SUM(CASE WHEN credito_anterior < 0 THEN -credito_anterior ELSE 0 END), 0),
+          - COALESCE(SUM(CASE WHEN credito_anterior < 0 THEN -credito_anterior ELSE 0 END), 0)
+          - COALESCE((SELECT SUM(valor_pago) FROM payment_entries pe WHERE pe.driver_id = $1 AND pe.origem_charge_id IS NOT NULL), 0),
           0
         ) as credito_disponivel,
         COALESCE(SUM(multa), 0) as total_multas,
