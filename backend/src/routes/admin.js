@@ -13,7 +13,7 @@ router.get('/reconciliacao/status', auth, adminOnly, async (req, res) => {
   try {
     const flagQ = await pool.query(
       `SELECT valor, descricao, updated_at FROM settings
-        WHERE chave = 'reconciliado_valor_final_2026_07_09'`
+        WHERE chave = 'reconciliado_v2_2026_07_09'`
     );
     const flag = flagQ.rows[0] || null;
 
@@ -55,7 +55,7 @@ router.post('/reconciliacao/run', auth, adminOnly, async (req, res) => {
         `INSERT INTO settings (chave, valor, descricao) VALUES ($1, $2, $3)
          ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, updated_at = NOW()`,
         [
-          'reconciliado_valor_final_2026_07_09',
+          'reconciliado_v2_2026_07_09',
           'true',
           `Reconciliação manual: ${JSON.stringify(resumo)}`,
         ]

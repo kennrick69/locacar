@@ -3,6 +3,7 @@ const pool = require('../config/database');
 const { auth, driverOnly, adminOnly } = require('../middleware/auth');
 const { upload, setUploadDir, processUpload } = require('../middleware/upload');
 const { sendEmail, notifyAdmin } = require('../utils/email');
+const { runReconciliacao } = require('../services/ReconciliacaoService');
 
 const router = express.Router();
 
@@ -1464,64 +1465,10 @@ router.post('/:driverId/charges/:chargeId/manutencao',
         [chargeId]
       );
       const totalAbat = parseFloat(totalAbatQ.rows[0].total);
-      const novoFinal = Math.max(
-        parseFloat(c.valor_base) - totalAbat +
-          parseFloat(c.credito_anterior) + multaEfetiva,
-        0
-      );
       await client.query(
-        'UPDATE weekly_charges SET abatimentos = $1, valor_final = $2, updated_at = NOW() WHERE id = $3',
-        [totalAbat, novoFinal, chargeId]
+        'UPDATE weekly_charges SET abatimentos = $1, updated_at = NOW() WHERE id = $2',
+        [totalAbat, chargeId]
       );
-
-      // Aplica mesma lógica de quitar/creditar
-      const vPago = parseFloat(c.valor_pago_total || 0);
-      let cobrancaMarcadaPaga = false;
-      let creditoValor = 0;
-      let creditoAplicadoEm = null;
-
-      if (!c.pago && vPago >= novoFinal - 0.01) {
-        await client.query(
-          `UPDATE weekly_charges
-              SET pago = true, saldo_devedor = $1, data_pagamento = NOW(), updated_at = NOW()
-            WHERE id = $2`,
-          [Math.max(novoFinal - vPago, 0), chargeId]
-        );
-        cobrancaMarcadaPaga = true;
-      } else if (!c.pago) {
-        await client.query(
-          `UPDATE weekly_charges
-              SET saldo_devedor = $1, updated_at = NOW()
-            WHERE id = $2`,
-          [Math.max(novoFinal - vPago, 0), chargeId]
-        );
-      }
-      if ((c.pago || cobrancaMarcadaPaga) && vPago > novoFinal + 0.01) {
-        creditoValor = vPago - novoFinal;
-        const proxima = await client.query(
-          `SELECT id, valor_base, credito_anterior, abatimentos, multa, semana_ref
-             FROM weekly_charges
-            WHERE driver_id = $1 AND pago = false AND id != $2
-            ORDER BY semana_ref ASC LIMIT 1`,
-          [driverId, chargeId]
-        );
-        if (proxima.rows.length > 0) {
-          const p = proxima.rows[0];
-          const novoCredAnt = parseFloat(p.credito_anterior) - creditoValor;
-          const novoValFinalProx = Math.max(
-            parseFloat(p.valor_base) - parseFloat(p.abatimentos) +
-              novoCredAnt + parseFloat(p.multa),
-            0
-          );
-          await client.query(
-            `UPDATE weekly_charges
-                SET credito_anterior = $1, valor_final = $2, updated_at = NOW()
-              WHERE id = $3`,
-            [novoCredAnt, novoValFinalProx, p.id]
-          );
-          creditoAplicadoEm = { charge_id: p.id, semana_ref: p.semana_ref };
-        }
-      }
 
       // Registra na manutenção do veículo
       const driverCar = await client.query(
@@ -1543,11 +1490,12 @@ router.post('/:driverId/charges/:chargeId/manutencao',
       }
 
       await client.query('COMMIT');
+      // Service reconcilia: recalcula valor_final, marca cobranças pagas,
+      // propaga sobrepagamento como payment_entry na próxima semana
+      const resumo = await runReconciliacao(pool, { driverId, apply: true });
       res.status(201).json({
         message: 'Manutenção lançada',
-        credito_gerado: creditoValor,
-        credito_aplicado_em: creditoAplicadoEm,
-        cobranca_marcada_paga: cobrancaMarcadaPaga,
+        reconciliacao: resumo,
       });
     } catch (err) {
       await client.query('ROLLBACK');
@@ -1592,96 +1540,11 @@ router.patch('/:driverId/abatimentos/:id/approve', auth, adminOnly, async (req, 
 
     const total = parseFloat(totalAbat.rows[0].total);
 
-    // Recalcula valor_final
-    const charge = await client.query(
-      'SELECT valor_base, credito_anterior, multa FROM weekly_charges WHERE id = $1',
-      [abatimento.charge_id]
+    // Grava total de abatimentos (o service reconcilia o valor_final)
+    await client.query(
+      'UPDATE weekly_charges SET abatimentos = $1, updated_at = NOW() WHERE id = $2',
+      [total, abatimento.charge_id]
     );
-
-    let creditoAplicadoEm = null;
-    let creditoValor = 0;
-    let cobrancaMarcadaPaga = false;
-
-    // FIX 2026-07-09: respeita multa_diferida — se true, multa NÃO entra no valor_final
-    const multaDifQ = await client.query(
-      `SELECT valor FROM settings WHERE chave = 'multa_diferida'`
-    );
-    const multaDiferida = multaDifQ.rows[0]?.valor === 'true';
-
-    if (charge.rows.length > 0) {
-      const c = charge.rows[0];
-      const multaEfetiva = multaDiferida ? 0 : parseFloat(c.multa);
-      const valorFinal = parseFloat(c.valor_base) - total + parseFloat(c.credito_anterior) + multaEfetiva;
-      const novoFinal = Math.max(valorFinal, 0);
-      await client.query(
-        'UPDATE weekly_charges SET abatimentos = $1, valor_final = $2, updated_at = NOW() WHERE id = $3',
-        [total, novoFinal, abatimento.charge_id]
-      );
-
-      // FIX 2026-07-09 (bug de crédito escondido em abatimento aprovado)
-      // Dois cenários a corrigir aqui:
-      //  (1) cobrança já estava paga E novo valor_final < valor_pago_total → gera crédito
-      //  (2) cobrança estava em aberto MAS pagamento já cobria o novo valor_final →
-      //      marca como paga E propaga sobrepagamento como crédito.
-      const chargeAtualizada = await client.query(
-        'SELECT pago, valor_pago_total FROM weekly_charges WHERE id = $1',
-        [abatimento.charge_id]
-      );
-      const cAtual = chargeAtualizada.rows[0];
-      const vPago = parseFloat(cAtual.valor_pago_total || 0);
-      const jaPaga = cAtual.pago;
-
-      // Cenário (2): quita automaticamente se pagamento já cobria o novo total
-      if (!jaPaga && vPago >= novoFinal - 0.01) {
-        const saldoDev = Math.max(novoFinal - vPago, 0);
-        await client.query(
-          `UPDATE weekly_charges
-              SET pago = true, saldo_devedor = $1, data_pagamento = NOW(), updated_at = NOW()
-            WHERE id = $2`,
-          [saldoDev, abatimento.charge_id]
-        );
-        cobrancaMarcadaPaga = true;
-      } else if (!jaPaga) {
-        // Ainda em aberto, apenas reajusta saldo_devedor
-        await client.query(
-          `UPDATE weekly_charges
-              SET saldo_devedor = $1, updated_at = NOW()
-            WHERE id = $2`,
-          [Math.max(novoFinal - vPago, 0), abatimento.charge_id]
-        );
-      }
-
-      // Se sobrepagamento existir (jaPaga ou recém-marcada), gera crédito na próxima
-      if ((jaPaga || cobrancaMarcadaPaga) && vPago > novoFinal + 0.01) {
-        creditoValor = vPago - novoFinal;
-        const proxima = await client.query(
-          `SELECT id, valor_base, credito_anterior, abatimentos, multa, semana_ref
-             FROM weekly_charges
-            WHERE driver_id = $1 AND pago = false AND id != $2
-            ORDER BY semana_ref ASC LIMIT 1`,
-          [abatimento.driver_id, abatimento.charge_id]
-        );
-        if (proxima.rows.length > 0) {
-          const p = proxima.rows[0];
-          const novoCredAnt = parseFloat(p.credito_anterior) - creditoValor;
-          const novoValFinalProx = Math.max(
-            parseFloat(p.valor_base) - parseFloat(p.abatimentos) +
-              novoCredAnt + parseFloat(p.multa),
-            0
-          );
-          await client.query(
-            `UPDATE weekly_charges
-                SET credito_anterior = $1, valor_final = $2, updated_at = NOW()
-              WHERE id = $3`,
-            [novoCredAnt, novoValFinalProx, p.id]
-          );
-          creditoAplicadoEm = { charge_id: p.id, semana_ref: p.semana_ref };
-        }
-        // Se não houver próxima em aberto, o crédito fica no sobrepagamento da
-        // própria linha e será consumido na próxima geração automática de cobrança
-        // (ver charges/auto-generate — ajustado abaixo).
-      }
-    }
 
     // Registra automaticamente na manutenção do veículo
     const driverCar = await client.query(
@@ -1703,12 +1566,13 @@ router.patch('/:driverId/abatimentos/:id/approve', auth, adminOnly, async (req, 
     }
 
     await client.query('COMMIT');
+    // Reconcilia o motorista: recalcula valor_final, marca cobranças pagas
+    // quando pagamento cobrir, propaga sobrepagamento como payment_entry
+    const resumo = await runReconciliacao(pool, { driverId: abatimento.driver_id, apply: true });
     res.json({
       message: 'Abatimento aprovado',
       abatimento: { ...abatimento, aprovado: true },
-      credito_gerado: creditoValor,
-      credito_aplicado_em: creditoAplicadoEm,
-      cobranca_marcada_paga: cobrancaMarcadaPaga,
+      reconciliacao: resumo,
     });
   } catch (err) {
     await client.query('ROLLBACK');

@@ -420,6 +420,17 @@ async function start() {
         await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS valor_pago_total DECIMAL(10,2) DEFAULT 0`);
         await pool.query(`ALTER TABLE weekly_charges ADD COLUMN IF NOT EXISTS saldo_devedor DECIMAL(10,2) DEFAULT 0`);
 
+        // FIX 2026-07-09: coluna pra rastrear pagamento propagado como crédito
+        // da semana anterior (idempotência ao recalcular)
+        await pool.query(`ALTER TABLE payment_entries ADD COLUMN IF NOT EXISTS origem_charge_id INTEGER NULL REFERENCES weekly_charges(id) ON DELETE SET NULL`);
+
+        // FIX 2026-07-09: setting juros_diferido (mesmo espírito de multa_diferida)
+        await pool.query(`
+          INSERT INTO settings (chave, valor, descricao)
+          VALUES ('juros_diferido', 'true', 'Se true, juros acumulam e só são cobrados na rescisão')
+          ON CONFLICT (chave) DO NOTHING
+        `);
+
         // Indexes para performance
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_driver_profiles_user_id ON driver_profiles (user_id)`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_driver_profiles_status ON driver_profiles (status)`);
@@ -666,7 +677,7 @@ async function start() {
   // (multa embutida quando multa_diferida=true). Marca em settings.
   setTimeout(async () => {
     try {
-      const CHAVE = 'reconciliado_valor_final_2026_07_09';
+      const CHAVE = 'reconciliado_v2_2026_07_09';
       const jaRodou = await pool.query(`SELECT valor FROM settings WHERE chave = $1`, [CHAVE]);
       if (jaRodou.rows.length > 0 && jaRodou.rows[0].valor === 'true') {
         console.log(`🔧 Reconciliação já foi executada — pulando`);
