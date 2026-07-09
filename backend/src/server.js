@@ -678,21 +678,29 @@ async function start() {
         const now = new Date();
         // Ajusta para horário de Brasília (UTC-3)
         const brDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-        const diaSemana = diasMap[brDate.getDay()];
-        const semanaRef = brDate.toISOString().split('T')[0];
+        const diaSemanaHoje = diasMap[brDate.getDay()];
 
-        console.log(`⏰ CRON: Verificando cobranças para ${diaSemana} (${semanaRef})...`);
+        // FIX 2026-07-09: gera cobrança da PRÓXIMA semana (vencimento em 7 dias)
+        // Assim quando chega o dia do vencimento, a cobrança já está disponível há
+        // uma semana inteira pro motorista pagar antecipadamente.
+        // Se hoje é sábado e o motorista tem dia_cobranca=sábado, geramos a cobrança
+        // com semana_ref=próximo sábado (7 dias à frente).
+        const proxVencimento = new Date(brDate);
+        proxVencimento.setDate(brDate.getDate() + 7);
+        const semanaRef = proxVencimento.toISOString().split('T')[0];
 
-        // Busca motoristas ativos com carro nesse dia
+        console.log(`⏰ CRON: Gerando cobranças ${diaSemanaHoje} c/ vencimento ${semanaRef}...`);
+
+        // Motoristas cujo dia de vencimento é HOJE (mesmo dia da semana → 7 dias à frente)
         const drivers = await pool.query(`
           SELECT dp.id, dp.car_id, c.valor_semanal
           FROM driver_profiles dp
           JOIN cars c ON c.id = dp.car_id
           WHERE dp.status = 'ativo' AND dp.car_id IS NOT NULL AND dp.dia_cobranca = $1
-        `, [diaSemana]);
+        `, [diaSemanaHoje]);
 
         if (drivers.rows.length === 0) {
-          console.log(`⏰ CRON: Nenhum motorista para cobrar na ${diaSemana}.`);
+          console.log(`⏰ CRON: Nenhum motorista com dia_cobranca=${diaSemanaHoje}.`);
           return;
         }
 
@@ -708,15 +716,24 @@ async function start() {
             );
             if (exists.rows.length > 0) continue;
 
-            // Crédito anterior
-            const lastCharge = await client.query(
-              'SELECT credito_anterior, pago FROM weekly_charges WHERE driver_id = $1 ORDER BY semana_ref DESC LIMIT 1',
+            // Crédito real disponível (sobrepagamento em pagas - já aplicado)
+            const creditoTotalQ = await client.query(
+              `SELECT COALESCE(SUM(valor_pago_total - valor_final), 0) AS total
+                 FROM weekly_charges
+                WHERE driver_id = $1 AND pago = true
+                  AND valor_pago_total > valor_final + 0.01`,
               [drv.id]
             );
-            let creditoAnterior = 0;
-            if (lastCharge.rows.length > 0 && lastCharge.rows[0].pago && parseFloat(lastCharge.rows[0].credito_anterior) < 0) {
-              creditoAnterior = parseFloat(lastCharge.rows[0].credito_anterior);
-            }
+            const jaAplicadoQ = await client.query(
+              `SELECT COALESCE(SUM(-credito_anterior), 0) AS ja_aplicado
+                 FROM weekly_charges
+                WHERE driver_id = $1 AND credito_anterior < 0`,
+              [drv.id]
+            );
+            const creditoDisponivel =
+              parseFloat(creditoTotalQ.rows[0].total) -
+              parseFloat(jaAplicadoQ.rows[0].ja_aplicado);
+            const creditoAnterior = creditoDisponivel > 0.01 ? -creditoDisponivel : 0;
 
             const base = parseFloat(drv.valor_semanal);
             const valorFinal = Math.max(base + creditoAnterior, 0);
@@ -736,9 +753,9 @@ async function start() {
         }
 
         if (geradas > 0) {
-          console.log(`✅ CRON: ${geradas} cobrança(s) gerada(s) para ${diaSemana} (${semanaRef})`);
+          console.log(`✅ CRON: ${geradas} cobrança(s) gerada(s) c/ vencimento ${semanaRef}`);
         } else {
-          console.log(`⏰ CRON: Cobranças de ${diaSemana} já existiam.`);
+          console.log(`⏰ CRON: Cobranças para vencimento ${semanaRef} já existiam.`);
         }
       } catch (err) {
         console.error('❌ CRON erro:', err.message);

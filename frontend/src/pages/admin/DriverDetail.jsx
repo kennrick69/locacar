@@ -7,7 +7,7 @@ import {
   Eye, X, Shield, UserCheck, AlertCircle, Plus, Banknote,
   Check, Download, Upload, Pencil, Save, Calendar, User, Trash2,
   RefreshCw, ArrowRightLeft, History, DollarSign, ChevronDown, ChevronUp,
-  Lock, Unlock, Camera
+  Lock, Unlock, Camera, Receipt
 } from 'lucide-react';
 
 const STATUS_BADGE = {
@@ -109,6 +109,11 @@ export default function AdminDriverDetail() {
   // === NEW: Expanded charge ===
   const [expandedCharge, setExpandedCharge] = useState(null);
 
+  // === NEW: Manutenção lançada pelo admin ===
+  const [manutModal, setManutModal] = useState(null); // charge object
+  const [manutForm, setManutForm] = useState({ descricao: '', valor: '', nota: null });
+  const [manutSaving, setManutSaving] = useState(false);
+
   useEffect(() => { loadData(); }, [id]);
 
   const loadData = async () => {
@@ -187,6 +192,39 @@ export default function AdminDriverDetail() {
     } catch (e) { toast.error('Erro ao fixar documento'); }
   };
   const handleCreateCharge = async () => { if (!chargeForm.semana_ref || !chargeForm.valor_base) return toast.warning('Preencha semana e valor'); setProcessing(true); try { await driversAPI.createCharge(id, chargeForm); toast.success('Cobrança criada!'); setChargeModal(false); setChargeForm({ semana_ref: '', valor_base: '', observacoes: '', titulo: '' }); await loadData(); } catch (e) { toast.error(e.response?.data?.error || 'Erro'); } finally { setProcessing(false); } };
+  const handleAddManutencao = async () => {
+    if (!manutModal || !manutForm.descricao || !manutForm.valor) {
+      return toast.warning('Preencha descrição e valor');
+    }
+    setManutSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append('descricao', manutForm.descricao);
+      fd.append('valor', manutForm.valor);
+      if (manutForm.nota) fd.append('nota', manutForm.nota);
+      const res = await driversAPI.addManutencao(id, manutModal.id, fd);
+      const d = res?.data || {};
+      const partes = ['Manutenção lançada'];
+      if (d.cobranca_marcada_paga) partes.push('cobrança quitada');
+      if (d.credito_gerado > 0.01) {
+        const cred = `R$ ${Number(d.credito_gerado).toFixed(2)}`;
+        if (d.credito_aplicado_em?.semana_ref) {
+          partes.push(`${cred} creditado em ${d.credito_aplicado_em.semana_ref}`);
+        } else {
+          partes.push(`${cred} de crédito gerado`);
+        }
+      }
+      toast.success(partes.join(' — '));
+      setManutModal(null);
+      setManutForm({ descricao: '', valor: '', nota: null });
+      await loadData();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erro ao lançar manutenção');
+    } finally {
+      setManutSaving(false);
+    }
+  };
+
   const handleApproveAbatimento = async (abatId) => {
     try {
       const res = await driversAPI.approveAbatimento(id, abatId);
@@ -942,6 +980,12 @@ export default function AdminDriverDetail() {
                           className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-green-700">
                           <DollarSign className="w-3 h-3" /> Registrar Pagamento
                         </button>
+                        <button
+                          onClick={() => { setManutModal(charge); setManutForm({ descricao: '', valor: '', nota: null }); }}
+                          className="text-xs bg-purple-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-purple-700"
+                          title="Lançar manutenção que o motorista adiantou (troca de óleo, etc.) — abate direto da cobrança">
+                          <Receipt className="w-3 h-3" /> Manutenção
+                        </button>
                         {!charge.pago && (
                           <button onClick={() => { setAcrescimoChargeId(charge.id); setAcrescimoForm({ descricao: '', valor: '' }); }}
                             className="text-xs bg-red-50 text-red-600 px-3 py-1.5 rounded-lg flex items-center gap-1 hover:bg-red-100">
@@ -1389,6 +1433,77 @@ export default function AdminDriverDetail() {
               <button onClick={() => setDeleteConfirm(false)} className="btn-secondary flex-1">Cancelar</button>
               <button onClick={handleDeleteDriver} disabled={processing} className="btn-danger flex-1 flex items-center justify-center gap-2">
                 {processing ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Trash2 className="w-4 h-4" />} Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal — Lançar Manutenção (admin adianta abatimento aprovado) */}
+      {manutModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-5 max-w-md w-full space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold flex items-center gap-2">
+                <Receipt className="w-4 h-4 text-purple-600" /> Lançar Manutenção
+              </h3>
+              <button onClick={() => setManutModal(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500">
+              Cobrança: <strong>{fmtDate(manutModal.semana_ref)}</strong> · Valor atual R$ {fmt(manutModal.valor_final)}
+            </p>
+            <div>
+              <label className="text-xs font-medium text-gray-600">Descrição *</label>
+              <input
+                type="text"
+                value={manutForm.descricao}
+                onChange={(e) => setManutForm({ ...manutForm, descricao: e.target.value })}
+                placeholder="Ex.: Troca de óleo e bujão"
+                className="input-field text-sm mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600">Valor (R$) *</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={manutForm.valor}
+                onChange={(e) => setManutForm({ ...manutForm, valor: e.target.value })}
+                placeholder="0,00"
+                className="input-field text-sm mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600">Nota fiscal (opcional)</label>
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setManutForm({ ...manutForm, nota: e.target.files?.[0] || null })}
+                className="input-field text-xs mt-1"
+              />
+            </div>
+            <p className="text-[11px] text-gray-500 leading-tight">
+              A manutenção será lançada como abatimento aprovado. Se o motorista já
+              tiver pago a semana, o valor vira crédito na próxima cobrança.
+            </p>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setManutModal(null)} className="btn-secondary flex-1 text-sm">
+                Cancelar
+              </button>
+              <button
+                onClick={handleAddManutencao}
+                disabled={manutSaving}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg py-2 text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {manutSaving ? (
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4" />
+                )}
+                Lançar
               </button>
             </div>
           </div>

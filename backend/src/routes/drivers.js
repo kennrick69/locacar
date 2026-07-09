@@ -1403,6 +1403,151 @@ router.post('/charges/auto-generate', auth, adminOnly, async (req, res) => {
 });
 
 /**
+ * POST /api/drivers/:driverId/charges/:chargeId/manutencao
+ * Admin lança manutenção diretamente (cria abatimento JÁ aprovado, sem esperar submit
+ * do motorista). Reaproveita a lógica de propagar crédito, marcar cobrança paga, etc.
+ */
+router.post('/:driverId/charges/:chargeId/manutencao',
+  auth, adminOnly,
+  setUploadDir('notas'),
+  upload.single('nota'),
+  async (req, res) => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { driverId, chargeId } = req.params;
+      const { descricao, valor } = req.body;
+      const valorAbate = parseFloat(valor);
+      if (!valor || isNaN(valorAbate) || valorAbate <= 0) {
+        return res.status(400).json({ error: 'Valor é obrigatório e deve ser positivo' });
+      }
+
+      const chargeQ = await client.query(
+        `SELECT id, valor_base, valor_final, valor_pago_total, pago,
+                credito_anterior, abatimentos AS abat_atual, multa
+           FROM weekly_charges
+          WHERE id = $1 AND driver_id = $2`,
+        [chargeId, driverId]
+      );
+      if (chargeQ.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Cobrança não encontrada' });
+      }
+      const c = chargeQ.rows[0];
+
+      const notaUrl = req.file
+        ? (await processUpload(req.file, 'notas') || `/uploads/notas/${req.file.filename}`)
+        : null;
+
+      // Insere abatimento JÁ aprovado
+      await client.query(
+        `INSERT INTO abatimentos (charge_id, driver_id, descricao, valor, nota_url, aprovado)
+         VALUES ($1, $2, $3, $4, $5, true)`,
+        [chargeId, driverId, descricao || null, valorAbate, notaUrl]
+      );
+
+      // Recalcula abatimentos totais + valor_final da cobrança
+      const totalAbatQ = await client.query(
+        'SELECT COALESCE(SUM(valor), 0) as total FROM abatimentos WHERE charge_id = $1 AND aprovado = true',
+        [chargeId]
+      );
+      const totalAbat = parseFloat(totalAbatQ.rows[0].total);
+      const novoFinal = Math.max(
+        parseFloat(c.valor_base) - totalAbat +
+          parseFloat(c.credito_anterior) + parseFloat(c.multa),
+        0
+      );
+      await client.query(
+        'UPDATE weekly_charges SET abatimentos = $1, valor_final = $2, updated_at = NOW() WHERE id = $3',
+        [totalAbat, novoFinal, chargeId]
+      );
+
+      // Aplica mesma lógica de quitar/creditar
+      const vPago = parseFloat(c.valor_pago_total || 0);
+      let cobrancaMarcadaPaga = false;
+      let creditoValor = 0;
+      let creditoAplicadoEm = null;
+
+      if (!c.pago && vPago >= novoFinal - 0.01) {
+        await client.query(
+          `UPDATE weekly_charges
+              SET pago = true, saldo_devedor = $1, data_pagamento = NOW(), updated_at = NOW()
+            WHERE id = $2`,
+          [Math.max(novoFinal - vPago, 0), chargeId]
+        );
+        cobrancaMarcadaPaga = true;
+      } else if (!c.pago) {
+        await client.query(
+          `UPDATE weekly_charges
+              SET saldo_devedor = $1, updated_at = NOW()
+            WHERE id = $2`,
+          [Math.max(novoFinal - vPago, 0), chargeId]
+        );
+      }
+      if ((c.pago || cobrancaMarcadaPaga) && vPago > novoFinal + 0.01) {
+        creditoValor = vPago - novoFinal;
+        const proxima = await client.query(
+          `SELECT id, valor_base, credito_anterior, abatimentos, multa, semana_ref
+             FROM weekly_charges
+            WHERE driver_id = $1 AND pago = false AND id != $2
+            ORDER BY semana_ref ASC LIMIT 1`,
+          [driverId, chargeId]
+        );
+        if (proxima.rows.length > 0) {
+          const p = proxima.rows[0];
+          const novoCredAnt = parseFloat(p.credito_anterior) - creditoValor;
+          const novoValFinalProx = Math.max(
+            parseFloat(p.valor_base) - parseFloat(p.abatimentos) +
+              novoCredAnt + parseFloat(p.multa),
+            0
+          );
+          await client.query(
+            `UPDATE weekly_charges
+                SET credito_anterior = $1, valor_final = $2, updated_at = NOW()
+              WHERE id = $3`,
+            [novoCredAnt, novoValFinalProx, p.id]
+          );
+          creditoAplicadoEm = { charge_id: p.id, semana_ref: p.semana_ref };
+        }
+      }
+
+      // Registra na manutenção do veículo
+      const driverCar = await client.query(
+        'SELECT dp.car_id, u.nome FROM driver_profiles dp JOIN users u ON u.id = dp.user_id WHERE dp.id = $1',
+        [driverId]
+      );
+      if (driverCar.rows.length > 0 && driverCar.rows[0].car_id) {
+        await client.query(
+          `INSERT INTO car_maintenance (car_id, tipo, descricao, data_realizacao, valor, observacoes)
+           VALUES ($1, $2, $3, NOW(), $4, $5)`,
+          [
+            driverCar.rows[0].car_id,
+            descricao || 'Manutenção (lançada pelo admin)',
+            descricao || null,
+            valorAbate,
+            `Lançada diretamente pelo admin — ${driverCar.rows[0].nome}`,
+          ]
+        );
+      }
+
+      await client.query('COMMIT');
+      res.status(201).json({
+        message: 'Manutenção lançada',
+        credito_gerado: creditoValor,
+        credito_aplicado_em: creditoAplicadoEm,
+        cobranca_marcada_paga: cobrancaMarcadaPaga,
+      });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('Erro ao lançar manutenção:', err);
+      res.status(500).json({ error: err.message || 'Erro interno' });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/**
  * PATCH /api/drivers/:driverId/abatimentos/:id/approve - Admin: aprovar abatimento
  */
 router.patch('/:driverId/abatimentos/:id/approve', auth, adminOnly, async (req, res) => {
