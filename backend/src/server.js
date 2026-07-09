@@ -662,6 +662,30 @@ async function start() {
     console.log('🚗 IMP Locadora API porta ' + PORT + ' | ' + (process.env.NODE_ENV || 'development'));
   });
 
+  // 4.5) Reconciliação one-shot: roda uma vez pra corrigir bug de valor_final
+  // (multa embutida quando multa_diferida=true). Marca em settings.
+  setTimeout(async () => {
+    try {
+      const CHAVE = 'reconciliado_valor_final_2026_07_09';
+      const jaRodou = await pool.query(`SELECT valor FROM settings WHERE chave = $1`, [CHAVE]);
+      if (jaRodou.rows.length > 0 && jaRodou.rows[0].valor === 'true') {
+        console.log(`🔧 Reconciliação já foi executada — pulando`);
+        return;
+      }
+      console.log(`🔧 Executando reconciliação financeira one-shot...`);
+      const { runReconciliacao } = require('./services/ReconciliacaoService');
+      const resumo = await runReconciliacao(pool, { apply: true });
+      console.log(`🔧 Reconciliação concluída:`, resumo);
+      await pool.query(
+        `INSERT INTO settings (chave, valor, descricao) VALUES ($1, $2, $3)
+         ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, updated_at = NOW()`,
+        [CHAVE, 'true', `Reconciliação executada: ${JSON.stringify(resumo)}`]
+      );
+    } catch (err) {
+      console.error(`🔧 Erro na reconciliação (não bloqueante):`, err.message);
+    }
+  }, 8000);
+
   // 5) CRON: Gerar cobranças automáticas diariamente.
   // Singleton guard: nodemon/hot-reload pode chamar start() 2x; o handler
   // de SIGTERM limpa o interval em shutdown gracioso pro Railway.
