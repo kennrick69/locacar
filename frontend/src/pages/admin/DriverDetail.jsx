@@ -906,6 +906,8 @@ export default function AdminDriverDetail() {
                       </div>
                       <p className="text-xs text-gray-400 mt-0.5">
                         Base: R$ {fmt(charge.valor_base)}
+                        {parseFloat(charge.abatimentos || 0) > 0 && <span className="text-purple-600"> | Abatido: R$ {fmt(charge.abatimentos)}</span>}
+                        {parseFloat(charge.credito_anterior || 0) < 0 && <span className="text-green-700"> | Crédito: R$ {fmt(Math.abs(parseFloat(charge.credito_anterior)))}</span>}
                         {juros > 0 && <span className="text-red-500"> + Juros: R$ {fmt(juros)}</span>}
                         {totalAcrescimos > 0 && ` | Acrés: +R$ ${fmt(totalAcrescimos)}`}
                         {totalPago > 0 && <span className="text-green-600"> | Pago: R$ {fmt(totalPago)}</span>}

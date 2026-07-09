@@ -1,8 +1,72 @@
 const express = require('express');
 const pool = require('../config/database');
 const { auth, adminOnly } = require('../middleware/auth');
+const { runReconciliacao } = require('../services/ReconciliacaoService');
 
 const router = express.Router();
+
+/**
+ * GET /api/admin/reconciliacao/status — mostra se a reconciliação one-shot
+ * foi executada e o resumo. Também dá snapshot do motorista informado por email.
+ */
+router.get('/reconciliacao/status', auth, adminOnly, async (req, res) => {
+  try {
+    const flagQ = await pool.query(
+      `SELECT valor, descricao, updated_at FROM settings
+        WHERE chave = 'reconciliado_valor_final_2026_07_09'`
+    );
+    const flag = flagQ.rows[0] || null;
+
+    let motorista = null;
+    if (req.query.email) {
+      const dQ = await pool.query(
+        `SELECT dp.id, u.nome, u.email FROM driver_profiles dp
+           JOIN users u ON u.id = dp.user_id
+          WHERE u.email = $1`,
+        [req.query.email]
+      );
+      if (dQ.rows.length > 0) {
+        const d = dQ.rows[0];
+        const cQ = await pool.query(
+          `SELECT id, semana_ref, valor_base, abatimentos, credito_anterior,
+                  multa, valor_final, valor_pago_total, pago
+             FROM weekly_charges WHERE driver_id = $1 ORDER BY semana_ref DESC LIMIT 8`,
+          [d.id]
+        );
+        motorista = { ...d, charges: cQ.rows };
+      }
+    }
+    res.json({ flag, motorista });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/admin/reconciliacao/run — força rodar a reconciliação manualmente
+ * (útil se o boot-hook falhou silenciosamente).
+ */
+router.post('/reconciliacao/run', auth, adminOnly, async (req, res) => {
+  try {
+    const driverId = req.body?.driver_id || null;
+    const resumo = await runReconciliacao(pool, { driverId, apply: true });
+    if (!driverId) {
+      await pool.query(
+        `INSERT INTO settings (chave, valor, descricao) VALUES ($1, $2, $3)
+         ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor, updated_at = NOW()`,
+        [
+          'reconciliado_valor_final_2026_07_09',
+          'true',
+          `Reconciliação manual: ${JSON.stringify(resumo)}`,
+        ]
+      );
+    }
+    res.json({ ok: true, resumo });
+  } catch (err) {
+    console.error('Erro reconciliacao/run:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ============================================================
 // BACKUP EXPORT — JSON dump completo do banco (admin only).

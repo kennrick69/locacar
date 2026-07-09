@@ -489,10 +489,16 @@ export default function DriverPayments() {
                         </div>
                       )}
 
-                      {parseFloat(charge.credito_anterior) !== 0 && (
-                        <div className="flex justify-between text-blue-600">
-                          <span>Crédito anterior</span>
-                          <span>R$ {fmt(charge.credito_anterior)}</span>
+                      {parseFloat(charge.credito_anterior) < 0 && (
+                        <div className="flex justify-between text-green-600">
+                          <span>Crédito de semanas anteriores</span>
+                          <span>- R$ {fmt(Math.abs(parseFloat(charge.credito_anterior)))}</span>
+                        </div>
+                      )}
+                      {parseFloat(charge.credito_anterior) > 0 && (
+                        <div className="flex justify-between text-orange-600">
+                          <span>Débito da semana anterior</span>
+                          <span>+ R$ {fmt(charge.credito_anterior)}</span>
                         </div>
                       )}
 
