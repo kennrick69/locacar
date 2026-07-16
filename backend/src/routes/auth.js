@@ -22,6 +22,17 @@ function _hashToken(raw) {
   return crypto.createHash('sha256').update(raw).digest('hex');
 }
 
+// Escapa HTML de input do usuário antes de interpolar em email (mesma
+// proteção XSS aplicada em drivers.js na wave 1 — aqui faltava).
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function _adminEmailsSet() {
   const raw = (process.env.ADMIN_EMAILS || '').trim();
   if (!raw) return new Set();
@@ -105,28 +116,31 @@ router.post('/register', async (req, res) => {
             [car_interesse_id]
           );
           const c = carRes.rows[0];
-          if (c) interesseHtml = `<p>Interesse: <strong>${c.marca} ${c.modelo} ${c.ano || ''} (${c.placa})</strong></p>`;
+          if (c) interesseHtml = `<p>Interesse: <strong>${escapeHtml(c.marca)} ${escapeHtml(c.modelo)} ${escapeHtml(c.ano || '')} (${escapeHtml(c.placa)})</strong></p>`;
         } else if (property_interesse_id) {
           const propRes = await pool.query(
             'SELECT titulo FROM properties WHERE id = $1',
             [property_interesse_id]
           );
           const p = propRes.rows[0];
-          if (p) interesseHtml = `<p>Interesse: imóvel <strong>${p.titulo}</strong></p>`;
+          if (p) interesseHtml = `<p>Interesse: imóvel <strong>${escapeHtml(p.titulo)}</strong></p>`;
         }
       } catch (e) { /* ignora */ }
 
+      // XSS fix 2026-07-15: nome/email/telefone/endereço vêm do formulário
+      // público de cadastro — sem escape, um cadastro malicioso executava
+      // HTML/JS no email do admin (mesma classe corrigida em drivers.js).
       notifyAdmin({
         subject: `[IMP Locadora] Novo cadastro: ${nome}`,
         html: `
           <h2>Novo motorista cadastrado</h2>
-          <p><strong>${nome}</strong> acabou de se cadastrar e quer alugar um veículo.</p>
+          <p><strong>${escapeHtml(nome)}</strong> acabou de se cadastrar e quer alugar um veículo.</p>
           ${interesseHtml}
           <ul>
-            <li>Email: ${email}</li>
-            <li>Telefone: ${telefone}</li>
-            <li>CPF: ${cpfClean}</li>
-            ${endereco ? `<li>Endereço: ${endereco}</li>` : ''}
+            <li>Email: ${escapeHtml(email)}</li>
+            <li>Telefone: ${escapeHtml(telefone)}</li>
+            <li>CPF: ${escapeHtml(cpfClean)}</li>
+            ${endereco ? `<li>Endereço: ${escapeHtml(endereco)}</li>` : ''}
           </ul>
           <p>Acesse o painel admin para revisar e aprovar.</p>
         `,
@@ -258,7 +272,9 @@ router.post('/token-login', async (req, res) => {
       return res.status(400).json({ error: 'Token deve ter exatamente 6 dígitos numéricos' });
     }
 
-    console.log(`🔑 Token-login tentativa: "${cleanToken}"`);
+    // Não loga o token em claro (token = 6 primeiros dígitos do CPF —
+    // vazar em log/screenshot facilita brute-force e expõe dado pessoal).
+    console.log(`🔑 Token-login tentativa (token mascarado: ${cleanToken.slice(0, 2)}****)`);
 
     const result = await pool.query(`
       SELECT u.id, u.nome, u.email, u.role, u.ativo, dp.id as profile_id, dp.status, dp.token_externo

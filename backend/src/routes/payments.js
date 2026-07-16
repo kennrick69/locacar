@@ -62,8 +62,10 @@ router.get('/admin', auth, adminOnly, async (req, res) => {
 /**
  * GET /api/payments/mp-diag
  * Diagnóstico das credenciais MP (temporário)
+ * FIX 2026-07-15: adminOnly — antes qualquer motorista autenticado via
+ * preview do access token (15 chars), URL do webhook e presença de env vars.
  */
-router.get('/mp-diag', auth, async (req, res) => {
+router.get('/mp-diag', auth, adminOnly, async (req, res) => {
   try {
     const mp = await getMercadoPago(pool);
     const inst = mpInstance; // singleton always exists even if not configured
@@ -90,12 +92,19 @@ router.get('/mp-diag', auth, async (req, res) => {
 router.get('/public-key', auth, async (req, res) => {
   try {
     const s = await pool.query(
-      "SELECT chave, valor FROM settings WHERE chave IN ('mp_public_key', 'mp_modo') LIMIT 2"
+      "SELECT chave, valor FROM settings WHERE chave IN ('mp_public_key', 'mp_public_key_test', 'mp_modo')"
     );
     const sMap = {};
     s.rows.forEach(r => { sMap[r.chave] = r.valor; });
-    const publicKey = process.env.MP_PUBLIC_KEY || sMap.mp_public_key || null;
     const modo = sMap.mp_modo || 'test';
+    // FIX 2026-07-15: mesma lógica do MercadoPagoService (DB tem prioridade,
+    // modo test usa mp_public_key_test). Antes, env ganhava do painel e a
+    // chave test era ignorada — frontend podia inicializar o SDK com uma
+    // public key de conta diferente do access token usado pelo backend.
+    const dbKey = modo === 'production'
+      ? sMap.mp_public_key
+      : (sMap.mp_public_key_test || sMap.mp_public_key);
+    const publicKey = dbKey || process.env.MP_PUBLIC_KEY || null;
     res.json({ publicKey, modo });
   } catch (err) {
     res.json({ publicKey: process.env.MP_PUBLIC_KEY || null, modo: 'test' });
@@ -345,43 +354,83 @@ router.post('/:id/regenerate-pix', auth, async (req, res) => {
 
 /**
  * POST /api/payments/:id/confirm
- * Confirmar pagamento (simulação / manual)
+ * Confirmar pagamento — SÓ pagamento SIMULADO (mp_payment_id 'SIM_%' ou nulo,
+ * quando MP não está configurado) ou admin.
+ *
+ * FIX 2026-07-15 (P0): antes, QUALQUER motorista autenticado podia chamar
+ * este endpoint com o id do próprio PIX real pendente e marcar como pago
+ * sem pagar (disparando inclusive confirmarCaucao → liberação). O botão
+ * "Simular confirmação" do frontend só aparece pra pagamento SIM_, mas o
+ * backend não impunha isso. Agora impõe. Pagamento real só confirma via
+ * webhook MP (validado por assinatura + valor) ou por admin.
  */
 router.post('/:id/confirm', auth, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
+    const isAdmin = req.user.role === 'admin';
     const payment = await client.query(
-      'SELECT * FROM payments WHERE id = $1 AND user_id = $2',
-      [req.params.id, req.user.id]
+      isAdmin
+        ? 'SELECT * FROM payments WHERE id = $1'
+        : 'SELECT * FROM payments WHERE id = $1 AND user_id = $2',
+      isAdmin ? [req.params.id] : [req.params.id, req.user.id]
     );
-    if (payment.rows.length === 0) return res.status(404).json({ error: 'Pagamento não encontrado' });
+    if (payment.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Pagamento não encontrado' });
+    }
 
     const p = payment.rows[0];
-    if (p.status === 'pago') return res.status(400).json({ error: 'Pagamento já confirmado' });
+    if (p.status === 'pago') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Pagamento já confirmado' });
+    }
 
-    await client.query(`
-      UPDATE payments SET status = 'pago', data_pagamento = NOW(), updated_at = NOW() WHERE id = $1
+    // Guard anti-bypass: motorista só confirma pagamento SIMULADO.
+    const isSimulado = !p.mp_payment_id || String(p.mp_payment_id).startsWith('SIM_');
+    if (!isAdmin && !isSimulado) {
+      await client.query('ROLLBACK');
+      try {
+        await pool.query(
+          `INSERT INTO audit_log (user_id, user_email, acao, recurso, recurso_id, ip, via)
+           VALUES ($1, $2, 'confirm_pagamento_real_bloqueado', 'payments', $3, $4, 'api')`,
+          [req.user.id, req.user.email || null, String(p.id), req.ip || null]
+        );
+      } catch (_) { /* audit pode não existir */ }
+      return res.status(403).json({ error: 'Pagamento real é confirmado automaticamente pelo Mercado Pago. Aguarde alguns instantes após pagar.' });
+    }
+
+    // Claim atômico (mesmo padrão do webhook) — evita confirmação dupla
+    const upd = await client.query(`
+      UPDATE payments SET status = 'pago', data_pagamento = NOW(), updated_at = NOW()
+      WHERE id = $1 AND status = 'pendente' RETURNING id
     `, [p.id]);
+    if (upd.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Pagamento não está mais pendente' });
+    }
 
     if (p.tipo === 'caucao') {
       await PaymentService.confirmarCaucao(p.driver_id);
     }
 
     if (p.tipo === 'semanal' && p.charge_id) {
-      // Verifica se a cobrança foi totalmente paga
+      // Verifica se a cobrança foi totalmente paga.
+      // FIX 2026-07-15: o SUM já enxerga o UPDATE acima (mesma transação) —
+      // somar p.valor de novo contava o pagamento 2x e marcava a cobrança
+      // como paga antes da hora.
       const totalPago = await client.query(
         "SELECT COALESCE(SUM(valor), 0) as total FROM payments WHERE charge_id = $1 AND status = 'pago'",
         [p.charge_id]
       );
       const charge = await client.query('SELECT valor_final FROM weekly_charges WHERE id = $1', [p.charge_id]);
-      
+
       if (charge.rows.length > 0) {
-        const pago = parseFloat(totalPago.rows[0].total) + parseFloat(p.valor);
+        const pago = parseFloat(totalPago.rows[0].total) || 0;
         const devido = parseFloat(charge.rows[0].valor_final);
-        
-        if (pago >= devido - 0.01) {
+
+        if (!isNaN(devido) && pago >= devido - 0.01) {
           // Totalmente pago
           await client.query(`
             UPDATE weekly_charges SET pago = true, data_pagamento = NOW(), updated_at = NOW() WHERE id = $1
@@ -393,7 +442,7 @@ router.post('/:id/confirm', auth, async (req, res) => {
     await client.query('COMMIT');
     res.json({ message: 'Pagamento confirmado' });
   } catch (err) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch (_) {}
     console.error('Erro ao confirmar:', err);
     res.status(500).json({ error: 'Erro interno' });
   } finally {
@@ -430,11 +479,21 @@ router.post('/card-token', auth, driverOnly, async (req, res) => {
     } else if (tipo === 'semanal' || tipo === 'weekly') {
       if (!charge_id) return res.status(400).json({ error: 'charge_id obrigatório para pagamento semanal' });
       const charge = await pool.query(
-        'SELECT valor_final FROM weekly_charges WHERE id = $1 AND driver_id = $2',
+        'SELECT valor_final, pago FROM weekly_charges WHERE id = $1 AND driver_id = $2',
         [charge_id, p.id]
       );
       if (charge.rows.length === 0) return res.status(404).json({ error: 'Cobrança não encontrada' });
-      valor = parseFloat(charge.rows[0].valor_final);
+      // FIX 2026-07-15: antes não checava `pago` nem descontava pagamentos
+      // parciais — motorista com cobrança já quitada (ou meio paga via Pix)
+      // era cobrado o valor_final CHEIO de novo no cartão.
+      if (charge.rows[0].pago) return res.status(400).json({ error: 'Esta cobrança já foi paga' });
+      const jaPago = await pool.query(
+        "SELECT COALESCE(SUM(valor), 0) as total FROM payments WHERE charge_id = $1 AND status = 'pago'",
+        [charge_id]
+      );
+      const restante = (parseFloat(charge.rows[0].valor_final) || 0) - (parseFloat(jaPago.rows[0].total) || 0);
+      if (restante <= 0.01) return res.status(400).json({ error: 'Esta cobrança já está quitada' });
+      valor = Math.round(restante * 100) / 100;
       chargeId = charge_id;
     } else {
       return res.status(400).json({ error: 'tipo inválido' });

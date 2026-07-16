@@ -142,6 +142,15 @@ async function start() {
   const pool = require('./config/database');
   const bcrypt = require('bcryptjs');
 
+  // 0) Sanity de secrets (warn-only — nunca derruba produção).
+  // Sem JWT_SECRET o primeiro login crasha com erro criptico do jsonwebtoken;
+  // secret curto é brute-forceável offline a partir de 1 token vazado.
+  if (!process.env.JWT_SECRET) {
+    console.error('⚠️  CRÍTICO: JWT_SECRET não configurado — login vai falhar. Configure no Railway (sugestão: 64 chars aleatórios).');
+  } else if (process.env.JWT_SECRET.length < 32) {
+    console.error(`⚠️  ALERTA: JWT_SECRET tem só ${process.env.JWT_SECRET.length} chars (< 32) — fraco contra brute-force offline. Recomendado: 64 chars aleatórios.`);
+  }
+
   // 1) Testa conexão
   try {
     const res = await pool.query('SELECT NOW()');
