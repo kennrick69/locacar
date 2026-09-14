@@ -107,7 +107,8 @@ export default function AdminDriverDetail() {
   const [loadingEntries, setLoadingEntries] = useState(false);
 
   // === NEW: Expanded charge ===
-  const [expandedCharge, setExpandedCharge] = useState(null);
+  // Default: todas as cobranças abertas. Click contrai só aquela (funciona como separador de semanas).
+  const [collapsedCharges, setCollapsedCharges] = useState(() => new Set());
 
   // === NEW: Manutenção lançada pelo admin ===
   const [manutModal, setManutModal] = useState(null); // charge object
@@ -915,11 +916,15 @@ export default function AdminDriverDetail() {
               const saldoDev = parseFloat(charge.saldo_devedor || (parseFloat(charge.valor_final) - totalPago));
               const juros = parseFloat(charge.juros_acumulados || 0);
               const isParcial = !charge.pago && totalPago > 0;
-              const isExpanded = expandedCharge === charge.id;
+              const isExpanded = !collapsedCharges.has(charge.id);
 
               return (
                 <div key={charge.id} className={`bg-gray-50 rounded-lg p-3 border transition-all ${charge.tipo === 'caucao' ? 'border-amber-300 bg-amber-50/50' : charge.pago ? 'border-green-200' : saldoDev > 0 ? 'border-red-200' : 'border-gray-200'}`}>
-                  <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedCharge(isExpanded ? null : charge.id)}>
+                  <div className="flex items-center justify-between cursor-pointer" onClick={() => setCollapsedCharges(prev => {
+                    const next = new Set(prev);
+                    if (next.has(charge.id)) next.delete(charge.id); else next.add(charge.id);
+                    return next;
+                  })}>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-medium">
