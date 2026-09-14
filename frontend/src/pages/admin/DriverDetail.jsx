@@ -525,7 +525,9 @@ export default function AdminDriverDetail() {
   };
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-5">
+    <div className="p-4 md:p-6 max-w-6xl mx-auto lg:grid lg:grid-cols-[320px_1fr] lg:gap-6 lg:items-start space-y-5 lg:space-y-0">
+      {/* ========== SIDEBAR (dados + progresso) — sticky no topo em desktop ========== */}
+      <aside className="lg:sticky lg:top-4 space-y-4">
       {/* Header */}
       <div className="flex items-center gap-3">
         <button onClick={() => navigate('/admin/motoristas')} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-5 h-5" /></button>
@@ -622,6 +624,10 @@ export default function AdminDriverDetail() {
           </span>
         </div>
       </div>
+      </aside>
+
+      {/* ========== MAIN (etapas/financeiro/cobranças) ========== */}
+      <div className="space-y-5 min-w-0">
 
       {/* ========== TOGGLE ETAPAS / FINANCEIRO ========== */}
       {isAtivo && (
@@ -904,7 +910,7 @@ export default function AdminDriverDetail() {
         </div>
 
         {driver.charges?.length > 0 ? (
-          <div className="space-y-2 max-h-[600px] overflow-auto">
+          <div className="space-y-2">
             {driver.charges.map(charge => {
               const abats = charge.abatimentos_lista || [];
               const pendingAbats = abats.filter(a => !a.aprovado);
@@ -1598,6 +1604,7 @@ export default function AdminDriverDetail() {
           </div>
         </div>
       )}
+      </div>{/* fim MAIN */}
     </div>
   );
 }
