@@ -199,7 +199,7 @@ async function runReconciliacao(pool, { driverId = null, apply = true, log = con
                 drvId,
                 p.id,
                 excedente,
-                `Crédito da semana ${origem.semana_ref} (pagamento antecipado)`,
+                `Crédito da semana ${new Date(origem.semana_ref).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} (pagamento antecipado)`,
                 origem.id,
               ]
             );
